@@ -1,12 +1,10 @@
 'use client'
 
-import { useCallback, useReducer, useMemo, useRef, useEffect } from 'react'
+import { useCallback, useReducer, useRef, useEffect } from 'react'
 import { FFmpegService } from '@/app/services/ffmpeg'
 import { TranscodeOptions, PreviewOutput, TranscodeOutput } from '@/app/services/ffmpeg/types'
 
 export type FFmpegState = {
-  isLoaded: boolean
-  isLoading: boolean
   isTranscoding: boolean
   isGeneratingPreview: boolean
   progress: number
@@ -14,9 +12,6 @@ export type FFmpegState = {
 }
 
 export type FFmpegAction =
-  | { type: 'LOAD_START' }
-  | { type: 'LOAD_SUCCESS' }
-  | { type: 'LOAD_FAILURE'; error: string }
   | { type: 'PREVIEW_START' }
   | { type: 'PREVIEW_SUCCESS' }
   | { type: 'PREVIEW_FAILURE'; error: string }
@@ -35,12 +30,6 @@ export type FFmpegAction =
  */
 function ffmpegReducer(state: FFmpegState, action: FFmpegAction): FFmpegState {
   switch (action.type) {
-    case 'LOAD_START':
-      return { ...state, isLoading: true }
-    case 'LOAD_SUCCESS':
-      return { ...state, isLoaded: true, isLoading: false }
-    case 'LOAD_FAILURE':
-      return { ...state, isLoading: false, error: { type: 'Load Error', message: action.error } }
     case 'PREVIEW_START':
       return { ...state, isGeneratingPreview: true, error: null }
     case 'PREVIEW_SUCCESS':
@@ -58,15 +47,13 @@ function ffmpegReducer(state: FFmpegState, action: FFmpegAction): FFmpegState {
     case 'ABORT':
       return { ...state, isTranscoding: false, isGeneratingPreview: false, progress: 0 }
     case 'TERMINATE':
-      return { ...state, isLoaded: false, isLoading: false, isTranscoding: false, isGeneratingPreview: false }
+      return { ...state, isTranscoding: false, isGeneratingPreview: false }
     default:
       return state
   }
 }
 
 const initialState: FFmpegState = {
-  isLoaded: false,
-  isLoading: false,
   isTranscoding: false,
   isGeneratingPreview: false,
   progress: 0,
@@ -77,7 +64,6 @@ const initialState: FFmpegState = {
  * Hook for managing FFmpeg video processing operations
  * @returns Object containing FFmpeg state and methods for video processing
  * - state: Current processing state and progress
- * - load: Function to initialize FFmpeg
  * - abort: Function to cancel current operation
  * - transcode: Function to convert video to different format/quality
  * - generateVideoPreview: Function to create preview version of video
@@ -124,20 +110,6 @@ export const useFfmpeg = () => {
       cleanupComplete()
     }
   }, [state.isTranscoding, state.isGeneratingPreview])
-
-  /**
-   * Initializes FFmpeg service
-   */
-  const load = useCallback(async () => {
-    if (!ffmpegServiceRef.current) return
-    dispatch({ type: 'LOAD_START' })
-    try {
-      await ffmpegServiceRef.current.load()
-      dispatch({ type: 'LOAD_SUCCESS' })
-    } catch (error) {
-      dispatch({ type: 'LOAD_FAILURE', error: (error as Error).message })
-    }
-  }, [])
 
   /**
    * Terminates the FFmpeg service and resets the state
@@ -198,14 +170,11 @@ export const useFfmpeg = () => {
     [terminate]
   )
 
-  return useMemo(
-    () => ({
-      ...state,
-      load,
-      transcode,
-      generateVideoPreview,
-      terminate,
-    }),
-    [state, load, transcode, generateVideoPreview, terminate]
-  )
+  return {
+    state,
+    abort: () => dispatch({ type: 'ABORT' }),
+    terminate,
+    transcode,
+    generateVideoPreview,
+  }
 }

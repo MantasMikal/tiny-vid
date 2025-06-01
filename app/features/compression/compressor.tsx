@@ -30,7 +30,7 @@ export default function Compressor() {
   const debouncePreviewTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [cOptions, setCOptions] = useState<CompressionOptions>({
     quality: 65,
-    preset: 'superfast',
+    preset: 'fast',
     fps: 30,
     scale: 1,
     removeAudio: false,
@@ -41,28 +41,12 @@ export default function Compressor() {
   console.log('🚀 ~ Render')
 
   const {
-    error,
-    isLoaded: isFfmpegLoaded,
-    isLoading: isFfmpegLoading,
-    isTranscoding,
-    isGeneratingPreview,
+    state: { error, isTranscoding, isGeneratingPreview, progress },
     generateVideoPreview,
-    progress,
     transcode,
-    load,
   } = useFfmpeg()
 
-  // Load FFmpeg when component mounts
-  useEffect(() => {
-    load()
-  }, [load])
-
   const handleTranscode = async () => {
-    if (!isFfmpegLoaded) {
-      console.error('FFmpeg not loaded')
-      return
-    }
-
     const file = files[0]
     if (!file) {
       console.error('No file to transcode')
@@ -95,7 +79,6 @@ export default function Compressor() {
   }
 
   const handleGeneratePreview = async (file: File, options: CompressionOptions) => {
-    if (!isFfmpegLoaded) return
     try {
       const result = await generateVideoPreview(file, options)
       if (!result) return
@@ -125,14 +108,14 @@ export default function Compressor() {
     debouncedGeneratePreview(options)
   }
 
-  const isDisabled = !isFfmpegLoaded || isTranscoding
+  const isDisabled = isTranscoding
 
   return (
-    <div className="grow flex flex-col gap-4 h-full w-full overflow-hidden">
-      <div className="grow grid items-start md:grid-cols-3 gap-4 w-full h-full mx-auto overflow-hidden">
+    <div className="grow flex flex-col gap-4 h-full w-full overflow-y-auto md:overflow-hidden">
+      <div className="grow grid items-start md:grid-cols-3 gap-4 w-full h-full mx-auto md:overflow-hidden">
         <div className="relative flex flex-col gap-2 md:col-span-2 border p-2 rounded-md bg-card h-full min-h-[300px]">
           <div className="relative flex items-center justify-center h-full">
-            {files.length === 0 && !isFfmpegLoading && (
+            {files.length === 0 && (
               <Dropzone
                 containerClassName="w-full h-full"
                 dropZoneClassName="w-full h-full"
@@ -154,9 +137,9 @@ export default function Compressor() {
                 }}
               />
             )}
-            {(videoUploading || isFfmpegLoading) && <Spinner className="absolute inset-0 m-auto w-12 h-12" />}
+            {videoUploading && <Spinner className="absolute inset-0 m-auto w-12 h-12" />}
             {files.length > 0 && videoPreview && !videoUploading && (
-              <div className="relative w-full h-full flex bg-black rounded-md overflow-hidden">
+              <div className="relative w-full h-full flex bg-black rounded-md md:overflow-hidden">
                 <VideoPreview videoPreview={videoPreview} />
                 <Button size="icon" onClick={() => setFiles([])} className="absolute top-4 right-4">
                   <TrashIcon className="h-5 w-5" />
@@ -201,8 +184,8 @@ export default function Compressor() {
             )}
           </AnimatePresence>
         </div>
-        <aside className="flex flex-col col-span-1 gap-4 h-full overflow-hidden">
-          <div className="flex flex-col border p-1 bg-card rounded-md overflow-hidden">
+        <aside className="flex flex-col col-span-1 gap-4 h-full md:overflow-hidden">
+          <div className="flex flex-col border p-1 bg-card rounded-md md:overflow-hidden">
             <ScrollArea className="p-2 h-full">
               <div className="flex p-1 flex-col gap-2 grow">
                 <h2 className="text-xl font-semibold">Settings</h2>
