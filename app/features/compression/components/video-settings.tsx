@@ -1,253 +1,272 @@
-"use client";
+'use client'
 
-import { motion, AnimatePresence } from "framer-motion";
-import { Label } from "@/app/components/ui/label";
-import { Slider } from "@/app/components/ui/slider";
-import { Input } from "@/app/components/ui/input";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/app/components/ui/select";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/app/components/ui/tabs";
-import { ToggleGroup, ToggleGroupItem } from "@/app/components/ui/toggle-group";
-import {
-  BikeIcon,
-  CarFrontIcon,
-  CookingPotIcon,
-  LucideIcon,
-  RocketIcon,
-} from "lucide-react";
-import { useState } from "react";
-import { Checkbox } from "@/app/components/ui/checkbox";
+import { motion, AnimatePresence } from 'framer-motion'
+import { Label } from '@/app/components/ui/label'
+import { Slider } from '@/app/components/ui/slider'
+import { Input } from '@/app/components/ui/input'
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select'
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs'
+import { ToggleGroup, ToggleGroupItem } from '@/app/components/ui/toggle-group'
+import { BikeIcon, CarFrontIcon, CookingPotIcon, LucideIcon, RocketIcon } from 'lucide-react'
+import { useState } from 'react'
+import { Checkbox } from '@/app/components/ui/checkbox'
+import { Separator } from '@/app/components/ui/separator'
 
 export type CompressionOptions = {
-  quality: number;
-  preset: (typeof presets)[number]["value"];
-  fps: number;
-  scale: number;
-  removeAudio: boolean;
-  codec: string;
-  generatePreview?: boolean;
-  previewDuration?: number;
-};
+  quality: number
+  bitrate?: number
+  preset: (typeof presets)[number]['value']
+  fps: number
+  scale: number
+  removeAudio: boolean
+  codec: string
+  generatePreview?: boolean
+  previewDuration?: number
+}
 
-type BasicPresets = "basic" | "super" | "ultra" | "cooked";
-type TabOptions = "basic" | "advanced";
+type BasicPresets = 'basic' | 'super' | 'ultra' | 'cooked'
+type TabOptions = 'basic' | 'advanced'
 
 type ConfigOption = {
-  value: string;
-  icon: LucideIcon;
-  title: string;
-  description: string;
-  options: CompressionOptions;
-};
+  value: string
+  icon: LucideIcon
+  title: string
+  description: string
+  options: CompressionOptions
+}
 
 const toggleConfig: ConfigOption[] = [
   {
-    value: "basic",
+    value: 'basic',
     icon: BikeIcon,
-    title: "Basic",
-    description: "Basic compression with minimal loss in quality",
+    title: 'Basic',
+    description: 'Basic compression with minimal loss in quality',
     options: {
       quality: 90,
-      preset: "fast",
+      preset: 'fast',
       fps: 30,
       scale: 1,
       removeAudio: false,
-      codec: "libx264",
+      codec: 'libx264',
       generatePreview: true,
     },
   },
   {
-    value: "super",
+    value: 'super',
     icon: CarFrontIcon,
-    title: "Medium",
-    description: "Medium compression with some loss in quality",
+    title: 'Medium',
+    description: 'Medium compression with some loss in quality',
     options: {
       quality: 65,
-      preset: "fast",
+      preset: 'fast',
       fps: 30,
       scale: 1,
       removeAudio: false,
-      codec: "libx264",
+      codec: 'libx264',
       generatePreview: true,
     },
   },
   {
-    value: "ultra",
+    value: 'ultra',
     icon: RocketIcon,
-    title: "Strong",
-    description: "Strong compression with loss in quality",
+    title: 'Strong',
+    description: 'Strong compression with loss in quality',
     options: {
       quality: 50,
-      preset: "fast",
+      preset: 'fast',
       fps: 30,
       scale: 1,
       removeAudio: false,
-      codec: "libx264",
+      codec: 'libx264',
       generatePreview: true,
     },
   },
   {
-    value: "cooked",
+    value: 'cooked',
     icon: CookingPotIcon,
-    title: "Cooked",
-    description: "Deep fried with extra crunch",
+    title: 'Cooked',
+    description: 'Deep fried with extra crunch',
     options: {
       quality: 30,
-      preset: "fast",
+      preset: 'fast',
       fps: 30,
       scale: 1,
       removeAudio: false,
-      codec: "libx264",
+      codec: 'libx264',
       generatePreview: true,
     },
   },
-] as const;
+] as const
 
 export const codecs = [
   {
-    name: "H.264 (Best compatibility)",
-    value: "libx264",
+    name: 'H.264 (Best compatibility)',
+    value: 'libx264',
   },
   {
-    name: "H.265 (Better compression)",
-    value: "libx265",
+    name: 'H.265 (Better compression)',
+    value: 'libx265',
   },
-] as const;
+] as const
+
+export const bitratePresets = [
+  { name: 'Low (500 kbps)', value: '500' },
+  { name: 'Medium (1000 kbps)', value: '1000' },
+  { name: 'High (2000 kbps)', value: '2000' },
+  { name: 'Very High (4000 kbps)', value: '4000' },
+  { name: 'Ultra (8000 kbps)', value: '8000' },
+  { name: 'Custom', value: 'custom' },
+] as const
 
 export const presets = [
   {
-    name: "Ultra Fast",
-    value: "ultrafast",
+    name: 'Ultra Fast',
+    value: 'ultrafast',
   },
   {
-    name: "Super Fast",
-    value: "superfast",
+    name: 'Super Fast',
+    value: 'superfast',
   },
   {
-    name: "Very Fast",
-    value: "veryfast",
+    name: 'Very Fast',
+    value: 'veryfast',
   },
   {
-    name: "Faster",
-    value: "faster",
+    name: 'Faster',
+    value: 'faster',
   },
   {
-    name: "Fast",
-    value: "fast",
+    name: 'Fast',
+    value: 'fast',
   },
   {
-    name: "Medium",
-    value: "medium",
+    name: 'Medium',
+    value: 'medium',
   },
   {
-    name: "Slow",
-    value: "slow",
+    name: 'Slow',
+    value: 'slow',
   },
-] as const;
+] as const
 
-const MotionTabsContent = motion.create(TabsContent);
+const MotionTabsContent = motion.create(TabsContent)
 
 interface VideoSettingsProps {
-  isDisabled: boolean;
-  cOptions: CompressionOptions;
-  onOptionsChange: (options: CompressionOptions) => void;
+  isDisabled: boolean
+  cOptions: CompressionOptions
+  onOptionsChange: (options: CompressionOptions) => void
 }
 
-export function VideoSettings({
-  isDisabled,
-  cOptions,
-  onOptionsChange,
-}: VideoSettingsProps) {
-  const [activeTab, setActiveTab] = useState<TabOptions>("basic");
-  const [basicPreset, setBasicPreset] = useState<BasicPresets>("super");
+export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSettingsProps) {
+  const [activeTab, setActiveTab] = useState<TabOptions>('basic')
+  const [basicPreset, setBasicPreset] = useState<BasicPresets>('super')
+  const [mode, setMode] = useState<'quality' | 'bitrate'>('quality')
+  const [showCustomBitrate, setShowCustomBitrate] = useState(false)
 
   const handleQualityChange = (value: number) => {
     onOptionsChange({
       ...cOptions,
       quality: value,
-    });
-  };
+      bitrate: undefined,
+    })
+  }
+
+  const handleBitrateChange = (value: number | undefined) => {
+    onOptionsChange({
+      ...cOptions,
+      bitrate: value,
+    })
+  }
+
+  const handleBitratePresetChange = (value: string) => {
+    if (value === 'custom') {
+      setShowCustomBitrate(true)
+    } else {
+      const numericValue = parseInt(value)
+      handleBitrateChange(numericValue)
+      setShowCustomBitrate(false)
+    }
+  }
 
   const handleScaleChange = (value: number) => {
     onOptionsChange({
       ...cOptions,
       scale: value,
-    });
-  };
+    })
+  }
 
   const handlePresetChange = (value: string) => {
     onOptionsChange({
       ...cOptions,
-      preset: value as CompressionOptions["preset"],
-    });
-  };
+      preset: value as CompressionOptions['preset'],
+    })
+  }
 
   const handleFpsChange = (value: number | string) => {
-    if (typeof value === "number") {
+    if (typeof value === 'number') {
       onOptionsChange({
         ...cOptions,
         fps: value,
-      });
+      })
     }
-  };
+  }
 
   const handleAudioChange = (value: boolean) => {
     onOptionsChange({
       ...cOptions,
       removeAudio: value,
-    });
-  };
+    })
+  }
 
   const handlePreviewDurationChange = (value: number) => {
     onOptionsChange({
       ...cOptions,
       previewDuration: value,
-    });
-  };
+    })
+  }
 
   const handlePreviewEnabledChange = (value: boolean) => {
     onOptionsChange({
       ...cOptions,
       generatePreview: value,
-    });
-  };
+    })
+  }
 
   const handleCodecChange = (value: string) => {
     onOptionsChange({
       ...cOptions,
       codec: value,
-    });
-  };
+    })
+  }
 
   const handleBasicPresetChange = (value: BasicPresets) => {
-    if (!value) return;
-    const preset = toggleConfig.find((config) => config.value === value);
-    setBasicPreset(value);
+    if (!value) return
+    const preset = toggleConfig.find((config) => config.value === value)
+    setBasicPreset(value)
     if (preset) {
       onOptionsChange({
         ...cOptions,
         ...preset.options,
-      });
+      })
     }
-  };
+  }
+
+  const handleModeChange = (value: 'quality' | 'bitrate') => {
+    setMode(value)
+    if (value === 'bitrate') {
+      if (cOptions.bitrate) return
+      handleBitrateChange(parseInt(bitratePresets[1].value))
+    }
+  }
 
   return (
-    <Tabs
-      value={activeTab}
-      className="w-full"
-      onValueChange={(value) => setActiveTab(value as TabOptions)}
-    >
-      <TabsList className="grid w-full grid-cols-2">
+    <Tabs value={activeTab} className="w-full" onValueChange={(value) => setActiveTab(value as TabOptions)}>
+      <TabsList className="grid w-full mb-4 grid-cols-2">
         <TabsTrigger value="basic">Basic</TabsTrigger>
         <TabsTrigger value="advanced">Advanced</TabsTrigger>
       </TabsList>
       <AnimatePresence initial={false}>
-        {activeTab === "basic" && (
+        {activeTab === 'basic' && (
           <MotionTabsContent
             key="basic"
             className="flex flex-col gap-4"
@@ -296,7 +315,7 @@ export function VideoSettings({
             </div>
           </MotionTabsContent>
         )}
-        {activeTab === "advanced" && (
+        {activeTab === 'advanced' && (
           <MotionTabsContent
             key="advanced"
             className="flex flex-col gap-4"
@@ -311,29 +330,6 @@ export function VideoSettings({
               translateX: 100,
             }}
           >
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="quality">
-                Quality
-              </Label>
-              <Slider
-                disabled={isDisabled}
-                name="quality"
-                id="quality"
-                min={1}
-                max={100}
-                step={1}
-                defaultValue={[cOptions.quality]}
-                value={[cOptions.quality]}
-                onValueChange={(value) => {
-                  handleQualityChange(value[0]);
-                }}
-              />
-              <p className="text-sm text-gray-500">
-                Lower quality will result in smaller file size. At maximum
-                quality the video will still be compressed with minimum impact
-                on quality.
-              </p>
-            </div>
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-2">
                 <Label className="text-base font-bold" htmlFor="codec">
@@ -357,29 +353,103 @@ export function VideoSettings({
                 </Select>
               </div>
               <p className="text-sm text-gray-500">
-                H.264 offers best compatibility across devices and platforms. H.265 provides better compression but may have compatibility issues on older devices.
+                Codec used to compress the video
               </p>
             </div>
+            <Separator />
             <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="scale">
-                Scale
-              </Label>
-              <Slider
-                disabled={isDisabled}
-                name="scale"
-                id="scale"
-                min={0.01}
-                max={1}
-                step={0.01}
-                defaultValue={[cOptions.scale]}
-                value={[cOptions.scale]}
-                onValueChange={(value) => handleScaleChange(value[0])}
-              />
-              <p className="text-sm text-gray-500">
-                This will shrink the video resolution. Can greatly reduce file
-                size.
-              </p>
+              <h3 className="text-base font-bold">Compression Mode</h3>
+              <Tabs
+                onValueChange={(value) => handleModeChange(value as 'quality' | 'bitrate')}
+                value={mode}
+                defaultValue="quality"
+                className="w-full"
+              >
+                <TabsList className="grid w-3/4 grid-cols-2">
+                  <TabsTrigger value="quality">Quality (CRF)</TabsTrigger>
+                  <TabsTrigger value="bitrate">Bitrate</TabsTrigger>
+                </TabsList>
+
+                <TabsContent value="quality">
+                  <div className="flex flex-col gap-2">
+                    <Label className="text-base font-bold" htmlFor="quality">
+                      Quality (CRF)
+                    </Label>
+                    <Slider
+                      disabled={isDisabled}
+                      name="quality"
+                      id="quality"
+                      min={1}
+                      max={100}
+                      step={1}
+                      defaultValue={[cOptions.quality]}
+                      value={[cOptions.quality]}
+                      onValueChange={(value) => {
+                        handleQualityChange(value[0])
+                      }}
+                    />
+                    <p className="text-sm text-gray-500">
+                      Quality-based encoding. Lower quality will result in smaller file size.
+                      {cOptions.bitrate && cOptions.bitrate > 0 ? ' (Disabled when bitrate is set)' : ''}
+                    </p>
+                  </div>
+                </TabsContent>
+                <TabsContent value="bitrate">
+                  <div className="flex flex-col gap-2">
+                    <div className="flex flex-col gap-2">
+                      <Label className="text-base font-medium" htmlFor="bitratePreset">
+                        Bitrate Preset
+                      </Label>
+                      <Select
+                        value={
+                          showCustomBitrate
+                            ? 'custom'
+                            : bitratePresets.find((p) => p.value === cOptions.bitrate?.toString())?.value || 'custom'
+                        }
+                        disabled={isDisabled}
+                        onValueChange={handleBitratePresetChange}
+                      >
+                        <SelectTrigger className="w-full">
+                          <SelectValue />
+                        </SelectTrigger>
+                        <SelectContent>
+                          {bitratePresets.map((preset) => (
+                            <SelectItem key={preset.value} value={preset.value}>
+                              {preset.name}
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                    </div>
+                    {showCustomBitrate && (
+                      <div className="flex flex-col gap-2">
+                        <Label className="text-sm font-medium" htmlFor="customBitrate">
+                          Custom Bitrate (kbps)
+                        </Label>
+                        <Input
+                          disabled={isDisabled}
+                          onChange={(e) => {
+                            const value = parseInt(e.target.value)
+                            handleBitrateChange(isNaN(value) || value <= 0 ? undefined : value)
+                          }}
+                          value={cOptions.bitrate || ''}
+                          type="number"
+                          id="customBitrate"
+                          min={100}
+                          max={50000}
+                          placeholder="e.g. 2000"
+                        />
+                      </div>
+                    )}
+                    <p className="text-sm text-gray-500">
+                      Choose a preset or use custom bitrate. Higher bitrate = better quality but larger file size.
+                      Quality mode uses CRF for consistent quality.
+                    </p>
+                  </div>
+                </TabsContent>
+              </Tabs>
             </div>
+            <Separator />
             <div className="flex flex-col gap-2">
               <div className="flex flex-col gap-2">
                 <Label className="text-base font-bold" htmlFor="preset">
@@ -403,11 +473,30 @@ export function VideoSettings({
                 </Select>
               </div>
               <p className="text-sm text-gray-500">
-                Compression speed. A slower preset will provide slightly better
-                quality, but will take longer to process and potential crash the compression. Faster values are
-                recommended for most cases.
+                Compression speed. A slower preset will provide better quality, but will take longer to process.
               </p>
             </div>
+            <Separator />
+            <div className="flex flex-col gap-2">
+              <Label className="text-base font-bold" htmlFor="scale">
+                Scale
+              </Label>
+              <Slider
+                disabled={isDisabled}
+                name="scale"
+                id="scale"
+                min={0.01}
+                max={1}
+                step={0.01}
+                defaultValue={[cOptions.scale]}
+                value={[cOptions.scale]}
+                onValueChange={(value) => handleScaleChange(value[0])}
+              />
+              <p className="text-sm text-gray-500">
+                This will shrink the video resolution. Can greatly reduce file size.
+              </p>
+            </div>
+            <Separator />
             <div className="flex flex-col gap-2">
               <Label className="text-base font-bold" htmlFor="fps">
                 FPS
@@ -420,10 +509,9 @@ export function VideoSettings({
                 id="fps"
                 max={120}
               />
-              <p className="text-sm text-gray-500">
-                Frames per second. Lower FPS will result in smaller file size
-              </p>
+              <p className="text-sm text-gray-500">Frames per second. Lower FPS will result in smaller file size</p>
             </div>
+            <Separator />
             <div className="flex flex-col gap-2">
               <h3 className="text-base font-bold">Audio</h3>
               <div className="flex items-center space-x-2">
@@ -441,6 +529,7 @@ export function VideoSettings({
                 </label>
               </div>
             </div>
+            <Separator />
             <div className="flex flex-col gap-2">
               <h3 className="text-base font-bold">Preview</h3>
               <div className="flex items-center space-x-2">
@@ -448,9 +537,7 @@ export function VideoSettings({
                   id="generatePreview"
                   disabled={isDisabled}
                   checked={cOptions.generatePreview}
-                  onCheckedChange={(checked) =>
-                    handlePreviewEnabledChange(!!checked)
-                  }
+                  onCheckedChange={(checked) => handlePreviewEnabledChange(!!checked)}
                 />
                 <label
                   htmlFor="generatePreview"
@@ -466,39 +553,31 @@ export function VideoSettings({
               </Label>
               <Input
                 disabled={isDisabled}
-                onChange={(e) =>
-                  handlePreviewDurationChange(parseInt(e.target.value))
-                }
+                onChange={(e) => handlePreviewDurationChange(parseInt(e.target.value))}
                 value={cOptions.previewDuration}
                 type="number"
                 min={1}
                 id="previewDuration"
               />
               <p className="text-sm text-gray-500">
-                Will change the duration of the preview video. Will provide
-                better estimate of the output file size.
+                Will change the duration of the preview video. Will provide better estimate of the output file size.
               </p>
             </div>
           </MotionTabsContent>
         )}
       </AnimatePresence>
     </Tabs>
-  );
+  )
 }
 
 interface ToggleItemProps {
-  value: string;
-  icon: LucideIcon;
-  title: string;
-  description: string;
+  value: string
+  icon: LucideIcon
+  title: string
+  description: string
 }
 
-const ToggleItem: React.FC<ToggleItemProps> = ({
-  value,
-  icon: Icon,
-  title,
-  description,
-}) => (
+const ToggleItem: React.FC<ToggleItemProps> = ({ value, icon: Icon, title, description }) => (
   <ToggleGroupItem
     variant="outline"
     className="flex flex-row w-full justify-start items-center gap-3 h-16"
@@ -512,4 +591,4 @@ const ToggleItem: React.FC<ToggleItemProps> = ({
       <p className="text-xs">{description}</p>
     </div>
   </ToggleGroupItem>
-);
+)

@@ -49,6 +49,7 @@ function transcodeOptionsToArgs(options: TranscodeOptions): string[] {
   const {
     codec = DEFAULTS.CODEC,
     quality = DEFAULTS.QUALITY,
+    bitrate,
     scale = DEFAULTS.SCALE,
     fps = DEFAULTS.FPS,
     removeAudio = DEFAULTS.REMOVE_AUDIO,
@@ -67,7 +68,10 @@ function transcodeOptionsToArgs(options: TranscodeOptions): string[] {
     args.push('-c:v', codec)
   }
 
-  if (quality !== undefined) {
+  // Use bitrate if specified, otherwise use CRF quality
+  if (bitrate && bitrate > 0) {
+    args.push('-b:v', `${bitrate}k`)
+  } else if (quality !== undefined) {
     args.push('-crf', qualityToCrf(quality).toString())
   }
 

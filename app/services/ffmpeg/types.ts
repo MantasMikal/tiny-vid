@@ -12,6 +12,7 @@ export type PresetOptions =
 export type TranscodeOptions = {
   codec?: string
   quality: number
+  bitrate?: number
   format?: string
   scale: number
   preset: PresetOptions
@@ -45,6 +46,7 @@ export const DEFAULTS = {
   PREVIEW_DURATION: 3,
   CODEC: 'libx264',
   QUALITY: 100,
+  BITRATE: 2000,
   SCALE: 1,
   REMOVE_AUDIO: false,
   FPS: 30,
