@@ -7,10 +7,12 @@ import { Input } from '@/app/components/ui/input'
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/app/components/ui/select'
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/app/components/ui/toggle-group'
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/app/components/ui/tooltip'
 import { BikeIcon, CarFrontIcon, CookingPotIcon, LucideIcon, RocketIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Checkbox } from '@/app/components/ui/checkbox'
 import { Separator } from '@/app/components/ui/separator'
+import { InfoCircledIcon } from '@radix-ui/react-icons'
 
 export type CompressionOptions = {
   quality: number
@@ -282,302 +284,314 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
   }
 
   return (
-    <Tabs value={activeTab} className="w-full" onValueChange={(value) => setActiveTab(value as TabOptions)}>
-      <TabsList className="grid w-full mb-4 grid-cols-2">
-        <TabsTrigger value="basic">Basic</TabsTrigger>
-        <TabsTrigger value="advanced">Advanced</TabsTrigger>
-      </TabsList>
-      <AnimatePresence initial={false}>
-        {activeTab === 'basic' && (
-          <MotionTabsContent
-            key="basic"
-            className="flex flex-col gap-4"
-            value="basic"
-            initial={{
-              opacity: 0,
-              translateX: 100,
-            }}
-            animate={{ opacity: 1, translateX: 0 }}
-            exit={{
-              opacity: 0,
-              translateX: -100,
-            }}
-          >
-            <div className="flex flex-col gap-2">
-              <h3 className="text-base font-bold">Preset</h3>
-              <ToggleGroup
-                value={basicPreset}
-                onValueChange={handleBasicPresetChange}
-                disabled={isDisabled}
-                className="w-full flex-col items-start gap-2"
-                type="single"
-                size="lg"
-              >
-                {toggleConfig.map((config) => (
-                  <ToggleItem key={config.value} {...config} />
-                ))}
-              </ToggleGroup>
-            </div>
-            <div className="flex flex-col gap-2">
-              <h3 className="text-base font-bold">Audio</h3>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="removeAudio"
+    <TooltipProvider>
+      <Tabs value={activeTab} className="w-full" onValueChange={(value) => setActiveTab(value as TabOptions)}>
+        <TabsList className="grid w-full mb-4 grid-cols-2">
+          <TabsTrigger value="basic">Basic</TabsTrigger>
+          <TabsTrigger value="advanced">Advanced</TabsTrigger>
+        </TabsList>
+        <AnimatePresence initial={false}>
+          {activeTab === 'basic' && (
+            <MotionTabsContent
+              key="basic"
+              className="flex flex-col gap-4"
+              value="basic"
+              initial={{
+                opacity: 0,
+                translateX: 100,
+              }}
+              animate={{ opacity: 1, translateX: 0 }}
+              exit={{
+                opacity: 0,
+                translateX: -100,
+              }}
+            >
+              <div className="flex flex-col gap-2">
+                <h3 className="text-base font-bold">Preset</h3>
+                <ToggleGroup
+                  value={basicPreset}
+                  onValueChange={handleBasicPresetChange}
                   disabled={isDisabled}
-                  checked={cOptions.removeAudio}
-                  onCheckedChange={(checked) => handleAudioChange(!!checked)}
-                />
-                <label
-                  htmlFor="removeAudio"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  className="w-full flex-col items-start gap-2"
+                  type="single"
+                  size="lg"
                 >
-                  Remove soundtrack
-                </label>
-              </div>
-            </div>
-          </MotionTabsContent>
-        )}
-        {activeTab === 'advanced' && (
-          <MotionTabsContent
-            key="advanced"
-            className="flex flex-col gap-4"
-            value="advanced"
-            initial={{
-              opacity: 0,
-              translateX: -100,
-            }}
-            animate={{ opacity: 1, translateX: 0 }}
-            exit={{
-              opacity: 0,
-              translateX: 100,
-            }}
-          >
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="codec">
-                Codec
-              </Label>
-              <Select value={cOptions.codec} disabled={isDisabled} onValueChange={(value) => handleCodecChange(value)}>
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {codecs.map((codec) => (
-                    <SelectItem key={codec.value} value={codec.value}>
-                      {codec.name}
-                    </SelectItem>
+                  {toggleConfig.map((config) => (
+                    <ToggleItem key={config.value} {...config} />
                   ))}
-                </SelectContent>
-              </Select>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="quality">
-                Quality (CRF)
-              </Label>
-              <Slider
-                disabled={isDisabled}
-                name="quality"
-                id="quality"
-                min={1}
-                max={100}
-                step={1}
-                defaultValue={[cOptions.quality]}
-                value={[cOptions.quality]}
-                onValueChange={(value) => {
-                  handleQualityChange(value[0])
-                }}
-              />
-              <p className="text-sm text-gray-500">
-                Quality level using CRF (Constant Rate Factor). Lower values = better quality but larger files.
-              </p>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="maxBitrate">
-                Max Bitrate Constraint
-              </Label>
-              <Select
-                value={
-                  showCustomMaxBitrate
-                    ? 'custom'
-                    : cOptions.maxBitrate === undefined
-                      ? 'none'
-                      : maxBitratePresets.find((p) => p.value === cOptions.maxBitrate)?.value?.toString() || 'custom'
-                }
-                disabled={isDisabled}
-                onValueChange={handleMaxBitratePresetChange}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {maxBitratePresets.map((preset) => (
-                    <SelectItem key={preset.value} value={preset.value.toString()}>
-                      {preset.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              {showCustomMaxBitrate && (
-                <Input
-                  disabled={isDisabled}
-                  onChange={(e) => {
-                    const value = parseInt(e.target.value)
-                    handleMaxBitrateChange(isNaN(value) || value <= 0 ? undefined : value)
-                  }}
-                  value={cOptions.maxBitrate || ''}
-                  type="number"
-                  min={100}
-                  max={50000}
-                  placeholder="e.g. 2000"
-                />
-              )}
-              <p className="text-sm text-gray-500">
-                Optional maximum bitrate constraint for CRF. Set to prevent bitrate spikes. Leave unset for pure CRF
-                encoding.
-              </p>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="preset">
-                Encoding Preset
-              </Label>
-              <Select
-                value={cOptions.preset}
-                disabled={isDisabled}
-                onValueChange={(value) => handlePresetChange(value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {presets.map((preset) => (
-                    <SelectItem key={preset.value} value={preset.value}>
-                      {preset.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-gray-500">
-                Compression speed. Slower presets provide better quality but take longer to process.
-              </p>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="tune">
-                Tune
-              </Label>
-              <Select
-                value={cOptions.tune ?? 'none'}
-                disabled={isDisabled}
-                onValueChange={(value) => handleTuneChange(value)}
-              >
-                <SelectTrigger className="w-full">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {tuneOptions.map((tune) => (
-                    <SelectItem key={tune.value} value={tune.value}>
-                      {tune.name}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <p className="text-sm text-gray-500">
-                Tune options optimize the encoder for specific content types (screen capture, film, animation, etc.).
-              </p>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="scale">
-                Resolution Scale
-              </Label>
-              <Slider
-                disabled={isDisabled}
-                name="scale"
-                id="scale"
-                min={0.25}
-                max={1}
-                step={0.05}
-                defaultValue={[cOptions.scale]}
-                value={[cOptions.scale]}
-                onValueChange={(value) => handleScaleChange(value[0])}
-              />
-              <p className="text-sm text-gray-500">
-                Scale video resolution. 1.0 = original size, 0.5 = half size. Greatly affects file size.
-              </p>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="fps">
-                Frame Rate (FPS)
-              </Label>
-              <Input
-                disabled={isDisabled}
-                onChange={(e) => handleFpsChange(parseInt(e.target.value))}
-                value={cOptions.fps}
-                type="number"
-                id="fps"
-                min={1}
-                max={120}
-              />
-              <p className="text-sm text-gray-500">Frames per second. Lower FPS reduces file size.</p>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <h3 className="text-base font-bold">Audio</h3>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="removeAudio"
-                  checked={cOptions.removeAudio}
-                  disabled={isDisabled}
-                  onCheckedChange={(checked) => handleAudioChange(!!checked)}
-                />
-                <label
-                  htmlFor="removeAudio"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  Remove soundtrack
-                </label>
-              </div>
-            </div>
-            <Separator />
-            <div className="flex flex-col gap-2">
-              <h3 className="text-base font-bold">Preview</h3>
-              <div className="flex items-center space-x-2">
-                <Checkbox
-                  id="generatePreview"
-                  disabled={isDisabled}
-                  checked={cOptions.generatePreview}
-                  onCheckedChange={(checked) => handlePreviewEnabledChange(!!checked)}
-                />
-                <label
-                  htmlFor="generatePreview"
-                  className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
-                >
-                  Generate preview automatically
-                </label>
+                </ToggleGroup>
               </div>
               <div className="flex flex-col gap-2">
-                <Label className="text-sm font-medium" htmlFor="previewDuration">
-                  Preview Duration (seconds)
-                </Label>
+                <h3 className="text-base font-bold">Audio</h3>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="removeAudio"
+                    disabled={isDisabled}
+                    checked={cOptions.removeAudio}
+                    onCheckedChange={(checked) => handleAudioChange(!!checked)}
+                  />
+                  <label
+                    htmlFor="removeAudio"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Remove soundtrack
+                  </label>
+                </div>
+              </div>
+            </MotionTabsContent>
+          )}
+          {activeTab === 'advanced' && (
+            <MotionTabsContent
+              key="advanced"
+              className="flex flex-col gap-4"
+              value="advanced"
+              initial={{
+                opacity: 0,
+                translateX: -100,
+              }}
+              animate={{ opacity: 1, translateX: 0 }}
+              exit={{
+                opacity: 0,
+                translateX: 100,
+              }}
+            >
+              <div className="flex flex-col gap-2">
+                <TooltipLabel
+                  className="text-base font-bold"
+                  htmlFor="codec"
+                  tooltip="Choose the video compression codec. H.264 has best compatibility, H.265 provides better compression, AV1 is most efficient but slowest."
+                >
+                  Codec
+                </TooltipLabel>
+                <Select
+                  value={cOptions.codec}
+                  disabled={isDisabled}
+                  onValueChange={(value) => handleCodecChange(value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {codecs.map((codec) => (
+                      <SelectItem key={codec.value} value={codec.value}>
+                        {codec.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <TooltipLabel
+                  className="text-base font-bold"
+                  htmlFor="quality"
+                  tooltip="Quality level using CRF (Constant Rate Factor). Lower values = better quality but larger files."
+                >
+                  Quality (CRF)
+                </TooltipLabel>
+                <Slider
+                  disabled={isDisabled}
+                  name="quality"
+                  id="quality"
+                  min={1}
+                  max={100}
+                  step={1}
+                  defaultValue={[cOptions.quality]}
+                  value={[cOptions.quality]}
+                  onValueChange={(value) => {
+                    handleQualityChange(value[0])
+                  }}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <TooltipLabel
+                  className="text-base font-bold"
+                  htmlFor="maxBitrate"
+                  tooltip="Optional maximum bitrate constraint for CRF. Set to prevent bitrate spikes. Leave unset for pure CRF encoding."
+                >
+                  Max Bitrate Constraint
+                </TooltipLabel>
+                <Select
+                  value={
+                    showCustomMaxBitrate
+                      ? 'custom'
+                      : cOptions.maxBitrate === undefined
+                        ? 'none'
+                        : maxBitratePresets.find((p) => p.value === cOptions.maxBitrate)?.value?.toString() || 'custom'
+                  }
+                  disabled={isDisabled}
+                  onValueChange={handleMaxBitratePresetChange}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {maxBitratePresets.map((preset) => (
+                      <SelectItem key={preset.value} value={preset.value.toString()}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                {showCustomMaxBitrate && (
+                  <Input
+                    disabled={isDisabled}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value)
+                      handleMaxBitrateChange(isNaN(value) || value <= 0 ? undefined : value)
+                    }}
+                    value={cOptions.maxBitrate || ''}
+                    type="number"
+                    min={100}
+                    max={50000}
+                    placeholder="e.g. 2000"
+                  />
+                )}
+              </div>
+              <div className="flex flex-col gap-2">
+                <TooltipLabel
+                  className="text-base font-bold"
+                  htmlFor="preset"
+                  tooltip="Compression speed. Slower presets provide better quality but take longer to process."
+                >
+                  Encoding Preset
+                </TooltipLabel>
+                <Select
+                  value={cOptions.preset}
+                  disabled={isDisabled}
+                  onValueChange={(value) => handlePresetChange(value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {presets.map((preset) => (
+                      <SelectItem key={preset.value} value={preset.value}>
+                        {preset.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <TooltipLabel
+                  className="text-base font-bold"
+                  htmlFor="tune"
+                  tooltip="Tune options optimize the encoder for specific content types (screen capture, film, animation, etc.)."
+                >
+                  Tune
+                </TooltipLabel>
+                <Select
+                  value={cOptions.tune ?? 'none'}
+                  disabled={isDisabled}
+                  onValueChange={(value) => handleTuneChange(value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {tuneOptions.map((tune) => (
+                      <SelectItem key={tune.value} value={tune.value}>
+                        {tune.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className="flex flex-col gap-2">
+                <TooltipLabel
+                  className="text-base font-bold"
+                  htmlFor="scale"
+                  tooltip="Scale video resolution. 1.0 = original size, 0.5 = half size. Greatly affects file size."
+                >
+                  Resolution Scale
+                </TooltipLabel>
+                <Slider
+                  disabled={isDisabled}
+                  name="scale"
+                  id="scale"
+                  min={0.25}
+                  max={1}
+                  step={0.05}
+                  defaultValue={[cOptions.scale]}
+                  value={[cOptions.scale]}
+                  onValueChange={(value) => handleScaleChange(value[0])}
+                />
+              </div>
+              <div className="flex flex-col gap-2">
+                <TooltipLabel
+                  className="text-base font-bold"
+                  htmlFor="fps"
+                  tooltip="Frames per second. Lower FPS reduces file size."
+                >
+                  Frame Rate (FPS)
+                </TooltipLabel>
                 <Input
                   disabled={isDisabled}
-                  onChange={(e) => handlePreviewDurationChange(parseInt(e.target.value))}
-                  value={cOptions.previewDuration}
+                  onChange={(e) => handleFpsChange(parseInt(e.target.value))}
+                  value={cOptions.fps}
                   type="number"
+                  id="fps"
                   min={1}
-                  max={30}
-                  id="previewDuration"
+                  max={120}
                 />
-                <p className="text-sm text-gray-500">Duration of preview video for size estimation.</p>
               </div>
-            </div>
-          </MotionTabsContent>
-        )}
-      </AnimatePresence>
-    </Tabs>
+              <div className="flex flex-col gap-2">
+                <h3 className="text-base font-bold">Audio</h3>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="removeAudio"
+                    checked={cOptions.removeAudio}
+                    disabled={isDisabled}
+                    onCheckedChange={(checked) => handleAudioChange(!!checked)}
+                  />
+                  <label
+                    htmlFor="removeAudio"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Remove soundtrack
+                  </label>
+                </div>
+              </div>
+              <div className="flex flex-col gap-2">
+                <h3 className="text-base font-bold">Preview</h3>
+                <div className="flex items-center space-x-2">
+                  <Checkbox
+                    id="generatePreview"
+                    disabled={isDisabled}
+                    checked={cOptions.generatePreview}
+                    onCheckedChange={(checked) => handlePreviewEnabledChange(!!checked)}
+                  />
+                  <label
+                    htmlFor="generatePreview"
+                    className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
+                  >
+                    Generate preview automatically
+                  </label>
+                </div>
+                <div className="flex flex-col gap-2">
+                  <TooltipLabel
+                    className="text-sm font-medium"
+                    htmlFor="previewDuration"
+                    tooltip="Duration of preview video for size estimation."
+                  >
+                    Preview Duration (seconds)
+                  </TooltipLabel>
+                  <Input
+                    disabled={isDisabled}
+                    onChange={(e) => handlePreviewDurationChange(parseInt(e.target.value))}
+                    value={cOptions.previewDuration}
+                    type="number"
+                    min={1}
+                    max={30}
+                    id="previewDuration"
+                  />
+                </div>
+              </div>
+            </MotionTabsContent>
+          )}
+        </AnimatePresence>
+      </Tabs>
+    </TooltipProvider>
   )
 }
 
@@ -602,4 +616,27 @@ const ToggleItem: React.FC<ToggleItemProps> = ({ value, icon: Icon, title, descr
       <p className="text-xs">{description}</p>
     </div>
   </ToggleGroupItem>
+)
+
+interface TooltipLabelProps {
+  htmlFor?: string
+  className?: string
+  children: React.ReactNode
+  tooltip: string
+}
+
+const TooltipLabel: React.FC<TooltipLabelProps> = ({ htmlFor, className, children, tooltip }) => (
+  <div className="flex items-center gap-2">
+    <Label className={className} htmlFor={htmlFor}>
+      {children}
+    </Label>
+    <Tooltip>
+      <TooltipTrigger asChild>
+        <InfoCircledIcon className="h-4 w-4 text-muted-foreground" />
+      </TooltipTrigger>
+      <TooltipContent className="max-w-44">
+        <p>{tooltip}</p>
+      </TooltipContent>
+    </Tooltip>
+  </div>
 )
