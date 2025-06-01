@@ -34,6 +34,7 @@ export default function Compressor() {
     fps: 30,
     scale: 1,
     removeAudio: false,
+    codec: 'libx264',
     generatePreview: true,
     previewDuration: 3,
   })

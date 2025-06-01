@@ -29,6 +29,7 @@ export type CompressionOptions = {
   fps: number;
   scale: number;
   removeAudio: boolean;
+  codec: string;
   generatePreview?: boolean;
   previewDuration?: number;
 };
@@ -56,6 +57,7 @@ const toggleConfig: ConfigOption[] = [
       fps: 30,
       scale: 1,
       removeAudio: false,
+      codec: "libx264",
       generatePreview: true,
     },
   },
@@ -70,6 +72,7 @@ const toggleConfig: ConfigOption[] = [
       fps: 30,
       scale: 1,
       removeAudio: false,
+      codec: "libx264",
       generatePreview: true,
     },
   },
@@ -84,6 +87,7 @@ const toggleConfig: ConfigOption[] = [
       fps: 30,
       scale: 1,
       removeAudio: false,
+      codec: "libx264",
       generatePreview: true,
     },
   },
@@ -98,8 +102,20 @@ const toggleConfig: ConfigOption[] = [
       fps: 30,
       scale: 1,
       removeAudio: false,
+      codec: "libx264",
       generatePreview: true,
     },
+  },
+] as const;
+
+export const codecs = [
+  {
+    name: "H.264 (Best compatibility)",
+    value: "libx264",
+  },
+  {
+    name: "H.265 (Better compression)",
+    value: "libx265",
   },
 ] as const;
 
@@ -198,6 +214,13 @@ export function VideoSettings({
     onOptionsChange({
       ...cOptions,
       generatePreview: value,
+    });
+  };
+
+  const handleCodecChange = (value: string) => {
+    onOptionsChange({
+      ...cOptions,
+      codec: value,
     });
   };
 
@@ -309,6 +332,32 @@ export function VideoSettings({
                 Lower quality will result in smaller file size. At maximum
                 quality the video will still be compressed with minimum impact
                 on quality.
+              </p>
+            </div>
+            <div className="flex flex-col gap-2">
+              <div className="flex flex-col gap-2">
+                <Label className="text-base font-bold" htmlFor="codec">
+                  Codec
+                </Label>
+                <Select
+                  value={cOptions.codec}
+                  disabled={isDisabled}
+                  onValueChange={(value) => handleCodecChange(value)}
+                >
+                  <SelectTrigger className="w-full">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {codecs.map((codec) => (
+                      <SelectItem key={codec.value} value={codec.value}>
+                        {codec.name}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              </div>
+              <p className="text-sm text-gray-500">
+                H.264 offers best compatibility across devices and platforms. H.265 provides better compression but may have compatibility issues on older devices.
               </p>
             </div>
             <div className="flex flex-col gap-2">
