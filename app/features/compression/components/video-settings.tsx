@@ -14,7 +14,7 @@ import { Separator } from '@/app/components/ui/separator'
 
 export type CompressionOptions = {
   quality: number
-  bitrate?: number
+  maxBitrate?: number
   preset: (typeof presets)[number]['value']
   fps: number
   scale: number
@@ -57,7 +57,7 @@ const toggleConfig: ConfigOption[] = [
     title: 'Medium',
     description: 'Medium compression with some loss in quality',
     options: {
-      quality: 65,
+      quality: 75,
       preset: 'fast',
       fps: 30,
       scale: 1,
@@ -72,7 +72,7 @@ const toggleConfig: ConfigOption[] = [
     title: 'Strong',
     description: 'Strong compression with loss in quality',
     options: {
-      quality: 50,
+      quality: 60,
       preset: 'fast',
       fps: 30,
       scale: 1,
@@ -87,7 +87,7 @@ const toggleConfig: ConfigOption[] = [
     title: 'Cooked',
     description: 'Deep fried with extra crunch',
     options: {
-      quality: 30,
+      quality: 40,
       preset: 'fast',
       fps: 30,
       scale: 1,
@@ -109,12 +109,13 @@ export const codecs = [
   },
 ] as const
 
-export const bitratePresets = [
-  { name: 'Low (500 kbps)', value: '500' },
-  { name: 'Medium (1000 kbps)', value: '1000' },
-  { name: 'High (2000 kbps)', value: '2000' },
-  { name: 'Very High (4000 kbps)', value: '4000' },
-  { name: 'Ultra (8000 kbps)', value: '8000' },
+export const maxBitratePresets = [
+  { name: 'No limit', value: 'none' },
+  { name: 'Low (500 kbps)', value: 500 },
+  { name: 'Medium (1000 kbps)', value: 1000 },
+  { name: 'High (2000 kbps)', value: 2000 },
+  { name: 'Very High (4000 kbps)', value: 4000 },
+  { name: 'Ultra (8000 kbps)', value: 8000 },
   { name: 'Custom', value: 'custom' },
 ] as const
 
@@ -160,31 +161,32 @@ interface VideoSettingsProps {
 export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSettingsProps) {
   const [activeTab, setActiveTab] = useState<TabOptions>('basic')
   const [basicPreset, setBasicPreset] = useState<BasicPresets>('super')
-  const [mode, setMode] = useState<'quality' | 'bitrate'>('quality')
-  const [showCustomBitrate, setShowCustomBitrate] = useState(false)
+  const [showCustomMaxBitrate, setShowCustomMaxBitrate] = useState(false)
 
   const handleQualityChange = (value: number) => {
     onOptionsChange({
       ...cOptions,
       quality: value,
-      bitrate: undefined,
     })
   }
 
-  const handleBitrateChange = (value: number | undefined) => {
+  const handleMaxBitrateChange = (value: number | undefined) => {
     onOptionsChange({
       ...cOptions,
-      bitrate: value,
+      maxBitrate: value,
     })
   }
 
-  const handleBitratePresetChange = (value: string) => {
+  const handleMaxBitratePresetChange = (value: string | number) => {
     if (value === 'custom') {
-      setShowCustomBitrate(true)
+      setShowCustomMaxBitrate(true)
+    } else if (value === 'none') {
+      handleMaxBitrateChange(undefined)
+      setShowCustomMaxBitrate(false)
     } else {
-      const numericValue = parseInt(value)
-      handleBitrateChange(numericValue)
-      setShowCustomBitrate(false)
+      const numericValue = typeof value === 'number' ? value : parseInt(value.toString())
+      handleMaxBitrateChange(numericValue)
+      setShowCustomMaxBitrate(false)
     }
   }
 
@@ -248,14 +250,6 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
         ...cOptions,
         ...preset.options,
       })
-    }
-  }
-
-  const handleModeChange = (value: 'quality' | 'bitrate') => {
-    setMode(value)
-    if (value === 'bitrate') {
-      if (cOptions.bitrate) return
-      handleBitrateChange(parseInt(bitratePresets[1].value))
     }
   }
 
@@ -331,175 +325,142 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
             }}
           >
             <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-2">
-                <Label className="text-base font-bold" htmlFor="codec">
-                  Codec
-                </Label>
-                <Select
-                  value={cOptions.codec}
-                  disabled={isDisabled}
-                  onValueChange={(value) => handleCodecChange(value)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {codecs.map((codec) => (
-                      <SelectItem key={codec.value} value={codec.value}>
-                        {codec.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Label className="text-base font-bold" htmlFor="codec">
+                Codec
+              </Label>
+              <Select
+                value={cOptions.codec}
+                disabled={isDisabled}
+                onValueChange={(value) => handleCodecChange(value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {codecs.map((codec) => (
+                    <SelectItem key={codec.value} value={codec.value}>
+                      {codec.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+            <Separator />
+            <div className="flex flex-col gap-2">
+              <Label className="text-base font-bold" htmlFor="quality">
+                Quality (CRF)
+              </Label>
+              <Slider
+                disabled={isDisabled}
+                name="quality"
+                id="quality"
+                min={1}
+                max={100}
+                step={1}
+                defaultValue={[cOptions.quality]}
+                value={[cOptions.quality]}
+                onValueChange={(value) => {
+                  handleQualityChange(value[0])
+                }}
+              />
               <p className="text-sm text-gray-500">
-                Codec used to compress the video
+                Quality level using CRF (Constant Rate Factor). Lower values = better quality but larger files.
               </p>
             </div>
             <Separator />
             <div className="flex flex-col gap-2">
-              <h3 className="text-base font-bold">Compression Mode</h3>
-              <Tabs
-                onValueChange={(value) => handleModeChange(value as 'quality' | 'bitrate')}
-                value={mode}
-                defaultValue="quality"
-                className="w-full"
+              <Label className="text-base font-bold" htmlFor="maxBitrate">
+                Max Bitrate Constraint
+              </Label>
+              <Select
+                value={
+                  showCustomMaxBitrate
+                    ? 'custom'
+                    : cOptions.maxBitrate === undefined
+                    ? 'none'
+                    : maxBitratePresets.find((p) => p.value === cOptions.maxBitrate)?.value?.toString() || 'custom'
+                }
+                disabled={isDisabled}
+                onValueChange={handleMaxBitratePresetChange}
               >
-                <TabsList className="grid w-3/4 grid-cols-2">
-                  <TabsTrigger value="quality">Quality (CRF)</TabsTrigger>
-                  <TabsTrigger value="bitrate">Bitrate</TabsTrigger>
-                </TabsList>
-
-                <TabsContent value="quality">
-                  <div className="flex flex-col gap-2">
-                    <Label className="text-base font-bold" htmlFor="quality">
-                      Quality (CRF)
-                    </Label>
-                    <Slider
-                      disabled={isDisabled}
-                      name="quality"
-                      id="quality"
-                      min={1}
-                      max={100}
-                      step={1}
-                      defaultValue={[cOptions.quality]}
-                      value={[cOptions.quality]}
-                      onValueChange={(value) => {
-                        handleQualityChange(value[0])
-                      }}
-                    />
-                    <p className="text-sm text-gray-500">
-                      Quality-based encoding. Lower quality will result in smaller file size.
-                      {cOptions.bitrate && cOptions.bitrate > 0 ? ' (Disabled when bitrate is set)' : ''}
-                    </p>
-                  </div>
-                </TabsContent>
-                <TabsContent value="bitrate">
-                  <div className="flex flex-col gap-2">
-                    <div className="flex flex-col gap-2">
-                      <Label className="text-base font-medium" htmlFor="bitratePreset">
-                        Bitrate Preset
-                      </Label>
-                      <Select
-                        value={
-                          showCustomBitrate
-                            ? 'custom'
-                            : bitratePresets.find((p) => p.value === cOptions.bitrate?.toString())?.value || 'custom'
-                        }
-                        disabled={isDisabled}
-                        onValueChange={handleBitratePresetChange}
-                      >
-                        <SelectTrigger className="w-full">
-                          <SelectValue />
-                        </SelectTrigger>
-                        <SelectContent>
-                          {bitratePresets.map((preset) => (
-                            <SelectItem key={preset.value} value={preset.value}>
-                              {preset.name}
-                            </SelectItem>
-                          ))}
-                        </SelectContent>
-                      </Select>
-                    </div>
-                    {showCustomBitrate && (
-                      <div className="flex flex-col gap-2">
-                        <Label className="text-sm font-medium" htmlFor="customBitrate">
-                          Custom Bitrate (kbps)
-                        </Label>
-                        <Input
-                          disabled={isDisabled}
-                          onChange={(e) => {
-                            const value = parseInt(e.target.value)
-                            handleBitrateChange(isNaN(value) || value <= 0 ? undefined : value)
-                          }}
-                          value={cOptions.bitrate || ''}
-                          type="number"
-                          id="customBitrate"
-                          min={100}
-                          max={50000}
-                          placeholder="e.g. 2000"
-                        />
-                      </div>
-                    )}
-                    <p className="text-sm text-gray-500">
-                      Choose a preset or use custom bitrate. Higher bitrate = better quality but larger file size.
-                      Quality mode uses CRF for consistent quality.
-                    </p>
-                  </div>
-                </TabsContent>
-              </Tabs>
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {maxBitratePresets.map((preset) => (
+                    <SelectItem key={preset.value} value={preset.value.toString()}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              {showCustomMaxBitrate && (
+                                  <Input
+                    disabled={isDisabled}
+                    onChange={(e) => {
+                      const value = parseInt(e.target.value)
+                      handleMaxBitrateChange(isNaN(value) || value <= 0 ? undefined : value)
+                    }}
+                    value={cOptions.maxBitrate || ''}
+                    type="number"
+                    min={100}
+                    max={50000}
+                    placeholder="e.g. 2000"
+                  />
+              )}
+              <p className="text-sm text-gray-500">
+                Optional maximum bitrate constraint for CRF. Set to prevent bitrate spikes. Leave unset for pure CRF encoding.
+              </p>
             </div>
             <Separator />
             <div className="flex flex-col gap-2">
-              <div className="flex flex-col gap-2">
-                <Label className="text-base font-bold" htmlFor="preset">
-                  Preset
-                </Label>
-                <Select
-                  value={cOptions.preset}
-                  disabled={isDisabled}
-                  onValueChange={(value) => handlePresetChange(value)}
-                >
-                  <SelectTrigger className="w-full">
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {presets.map((preset) => (
-                      <SelectItem key={preset.value} value={preset.value}>
-                        {preset.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+              <Label className="text-base font-bold" htmlFor="preset">
+                Encoding Preset
+              </Label>
+              <Select
+                value={cOptions.preset}
+                disabled={isDisabled}
+                onValueChange={(value) => handlePresetChange(value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {presets.map((preset) => (
+                    <SelectItem key={preset.value} value={preset.value}>
+                      {preset.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
               <p className="text-sm text-gray-500">
-                Compression speed. A slower preset will provide better quality, but will take longer to process.
+                Compression speed. Slower presets provide better quality but take longer to process.
               </p>
             </div>
             <Separator />
             <div className="flex flex-col gap-2">
               <Label className="text-base font-bold" htmlFor="scale">
-                Scale
+                Resolution Scale
               </Label>
               <Slider
                 disabled={isDisabled}
                 name="scale"
                 id="scale"
-                min={0.01}
+                min={0.25}
                 max={1}
-                step={0.01}
+                step={0.05}
                 defaultValue={[cOptions.scale]}
                 value={[cOptions.scale]}
                 onValueChange={(value) => handleScaleChange(value[0])}
               />
               <p className="text-sm text-gray-500">
-                This will shrink the video resolution. Can greatly reduce file size.
+                Scale video resolution. 1.0 = original size, 0.5 = half size. Greatly affects file size.
               </p>
             </div>
             <Separator />
             <div className="flex flex-col gap-2">
               <Label className="text-base font-bold" htmlFor="fps">
-                FPS
+                Frame Rate (FPS)
               </Label>
               <Input
                 disabled={isDisabled}
@@ -507,9 +468,10 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
                 value={cOptions.fps}
                 type="number"
                 id="fps"
+                min={1}
                 max={120}
               />
-              <p className="text-sm text-gray-500">Frames per second. Lower FPS will result in smaller file size</p>
+              <p className="text-sm text-gray-500">Frames per second. Lower FPS reduces file size.</p>
             </div>
             <Separator />
             <div className="flex flex-col gap-2">
@@ -543,25 +505,26 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
                   htmlFor="generatePreview"
                   className="text-sm font-medium leading-none peer-disabled:cursor-not-allowed peer-disabled:opacity-70"
                 >
-                  Automatically Generate previews
+                  Generate preview automatically
                 </label>
               </div>
-            </div>
-            <div className="flex flex-col gap-2">
-              <Label className="text-base font-bold" htmlFor="previewDuration">
-                Preview Duration (seconds)
-              </Label>
-              <Input
-                disabled={isDisabled}
-                onChange={(e) => handlePreviewDurationChange(parseInt(e.target.value))}
-                value={cOptions.previewDuration}
-                type="number"
-                min={1}
-                id="previewDuration"
-              />
-              <p className="text-sm text-gray-500">
-                Will change the duration of the preview video. Will provide better estimate of the output file size.
-              </p>
+              <div className="flex flex-col gap-2">
+                <Label className="text-sm font-medium" htmlFor="previewDuration">
+                  Preview Duration (seconds)
+                </Label>
+                <Input
+                  disabled={isDisabled}
+                  onChange={(e) => handlePreviewDurationChange(parseInt(e.target.value))}
+                  value={cOptions.previewDuration}
+                  type="number"
+                  min={1}
+                  max={30}
+                  id="previewDuration"
+                />
+                <p className="text-sm text-gray-500">
+                  Duration of preview video for size estimation.
+                </p>
+              </div>
             </div>
           </MotionTabsContent>
         )}

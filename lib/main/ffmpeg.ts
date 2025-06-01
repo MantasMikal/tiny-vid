@@ -11,14 +11,12 @@ function qualityToCrf(quality: number): number {
   return Math.round(51 - (clampedQuality / 100) * (51 - 23))
 }
 
-// Replace the single process tracking with a Set of active processes
 const activeFFmpegProcesses = new Set<ChildProcess>()
 
 function parseFFmpegProgress(
   output: string,
   currentDuration: number | null
 ): { progress: number | null; duration: number | null } {
-  // Get duration from stderr output
   const durationMatch = output.match(/Duration: (\d+):(\d+):(\d+.\d+)/)
   if (durationMatch) {
     const [, hours, minutes, seconds] = durationMatch
@@ -26,12 +24,11 @@ function parseFFmpegProgress(
     return { progress: null, duration }
   }
 
-  // Get time progress from the progress pipe format
   const timeMatch = output.match(/out_time_ms=(\d+)/)
   if (timeMatch && currentDuration !== null) {
     const currentTimeMs = parseInt(timeMatch[1], 10)
-    const currentTime = currentTimeMs / 1000000 // Convert microseconds to seconds
-    return { progress: Math.min(currentTime / currentDuration, 1), duration: currentDuration } // Ensure we don't exceed 100%
+    const currentTime = currentTimeMs / 1000000
+    return { progress: Math.min(currentTime / currentDuration, 1), duration: currentDuration }
   }
 
   return { progress: null, duration: currentDuration }
@@ -45,262 +42,268 @@ function handleFFmpegError(event: IpcMainInvokeEvent, error: Error) {
   event.sender.send(IPC_CHANNELS.FFMPEG_ERROR, error.message)
 }
 
-function transcodeOptionsToArgs(options: TranscodeOptions): string[] {
+class TempFileManager {
+  private files: string[] = []
+  
+  async create(suffix: string, content?: Buffer): Promise<string> {
+    const path = join(tmpdir(), `ffmpeg-${Date.now()}-${Math.random().toString(36).substr(2, 9)}-${suffix}`)
+    this.files.push(path)
+    if (content) {
+      await writeFile(path, content)
+    }
+    return path
+  }
+  
+  async cleanup(): Promise<void> {
+    await Promise.allSettled(this.files.map(f => unlink(f).catch(() => {})))
+    this.files = []
+  }
+}
+
+class FFmpegCommandBuilder {
+  private args: string[] = ['-progress', 'pipe:1']
+  
+  input(path: string): this {
+    this.args.push('-i', path)
+    return this
+  }
+  
+  output(path: string): this {
+    this.args.push(path)
+    return this
+  }
+  
+  codec(codec: string): this {
+    this.args.push('-c:v', codec)
+    return this
+  }
+  
+  crf(crf: number): this {
+    this.args.push('-crf', crf.toString())
+    return this
+  }
+  
+  constrainedCrf(crf: number, maxBitrate: number): this {
+    this.args.push('-crf', crf.toString(), '-maxrate', `${maxBitrate}k`, '-bufsize', `${maxBitrate * 2}k`)
+    return this
+  }
+  
+  audio(enabled: boolean): this {
+    if (enabled) {
+      this.args.push('-c:a', 'aac', '-b:a', '128k')
+    } else {
+      this.args.push('-an')
+    }
+    return this
+  }
+  
+  scale(factor: number): this {
+    if (factor < 1) {
+      this.args.push('-vf', `scale=round(iw*${factor}/2)*2:-2`)
+    }
+    return this
+  }
+  
+  preset(preset: string): this {
+    this.args.push('-preset', preset)
+    return this
+  }
+  
+  fps(fps: number): this {
+    this.args.push('-r', fps.toString())
+    return this
+  }
+  
+  extractSegment(start: number, duration: number): this {
+    this.args.push('-ss', start.toString(), '-t', duration.toString(), '-c', 'copy')
+    return this
+  }
+  
+  build(): string[] {
+    return this.args
+  }
+}
+
+class FFmpegRunner {
+  async run(
+    command: string[], 
+    event?: IpcMainInvokeEvent,
+    onProgress?: (progress: number) => void
+  ): Promise<void> {
+    const process = spawn(await getFFmpegPath(), command)
+    activeFFmpegProcesses.add(process)
+    
+    let stderrBuffer = ''
+    let duration: number | null = null
+    
+    if (event || onProgress) {
+      process.stdout.on('data', (chunk: Buffer) => {
+        const { progress, duration: d } = parseFFmpegProgress(chunk.toString(), duration)
+        if (d !== null) duration = d
+        if (progress !== null) {
+          if (onProgress) onProgress(progress)
+          if (event) sendProgress(event, progress)
+        }
+      })
+
+      process.stderr.on('data', (chunk: Buffer) => {
+        stderrBuffer += chunk.toString()
+        const lines = stderrBuffer.split('\n')
+        stderrBuffer = lines.pop() || ''
+
+        for (const line of lines) {
+          if (line.trim()) {
+            const { progress, duration: d } = parseFFmpegProgress(line, duration)
+            if (d !== null) duration = d
+            if (progress !== null) {
+              if (onProgress) onProgress(progress)
+              if (event) sendProgress(event, progress)
+            }
+          }
+        }
+      })
+    }
+    
+    return new Promise((resolve, reject) => {
+      process.on('error', (error: Error) => {
+        activeFFmpegProcesses.delete(process)
+        if (event) handleFFmpegError(event, error)
+        reject(error)
+      })
+      
+      process.on('close', (code: number) => {
+        activeFFmpegProcesses.delete(process)
+        
+        if (code === 0) {
+          resolve()
+        } else {
+          const error = new Error(`FFmpeg failed (code ${code}): ${stderrBuffer}`)
+          if (event) handleFFmpegError(event, error)
+          reject(error)
+        }
+      })
+    })
+  }
+}
+
+function buildFFmpegCommand(
+  inputPath: string, 
+  outputPath: string, 
+  options: TranscodeOptions
+): string[] {
   const {
     codec = DEFAULTS.CODEC,
     quality = DEFAULTS.QUALITY,
-    bitrate,
+    maxBitrate,
     scale = DEFAULTS.SCALE,
     fps = DEFAULTS.FPS,
     removeAudio = DEFAULTS.REMOVE_AUDIO,
     preset = DEFAULTS.PRESET,
   } = options
 
-  const args = ['-progress', 'pipe:1']
+  const crf = qualityToCrf(quality)
+  const builder = new FFmpegCommandBuilder()
+    .input(inputPath)
+    .codec(codec)
+    .audio(!removeAudio)
+    .scale(scale)
+    .preset(preset)
+    .fps(fps)
 
-  if (removeAudio) {
-    args.push('-an')
+  if (maxBitrate) {
+    builder.constrainedCrf(crf, maxBitrate)
   } else {
-    args.push('-c:a', 'aac', '-b:a', '128k')
+    builder.crf(crf)
   }
 
-  if (codec) {
-    args.push('-c:v', codec)
-  }
-
-  // Use bitrate if specified, otherwise use CRF quality
-  if (bitrate && bitrate > 0) {
-    args.push('-b:v', `${bitrate}k`)
-  } else if (quality !== undefined) {
-    args.push('-crf', qualityToCrf(quality).toString())
-  }
-
-  if (scale && scale < 1) {
-    args.push('-vf', `scale=round(iw*${scale}/2)*2:-2`)
-  }
-
-  if (preset) {
-    args.push('-preset', preset)
-  }
-
-  if (fps) {
-    args.push('-r', fps.toString())
-  }
-
-  return args
+  return builder.output(outputPath).build()
 }
 
-interface FFmpegExecOptions {
-  inputPath: string
-  outputPath: string
-  options: TranscodeOptions
-  event?: IpcMainInvokeEvent
-  trackProgress?: boolean
-  additionalArgs?: string[]
-}
-
-interface FFmpegResult<T> {
-  data: T
-}
-
-async function execFFmpeg<T>({
-  inputPath,
-  outputPath,
-  options,
-  event,
-  trackProgress = false,
-  additionalArgs = [],
-}: FFmpegExecOptions): Promise<FFmpegResult<T>> {
-  const args = ['-i', inputPath, ...transcodeOptionsToArgs(options), ...additionalArgs, outputPath]
-  const process = spawn(await getFFmpegPath(), args)
-  activeFFmpegProcesses.add(process)
-
-  let stderrBuffer = ''
-  let videoDuration: number | null = null
-
-  if (trackProgress && event) {
-    // Handle stdout for progress updates
-    process.stdout.on('data', (chunk: Buffer) => {
-      const { progress, duration } = parseFFmpegProgress(chunk.toString(), videoDuration)
-      if (duration !== null) videoDuration = duration
-      if (progress !== null) sendProgress(event, progress)
-    })
-
-    // Handle stderr for duration info and progress
-    process.stderr.on('data', (chunk: Buffer) => {
-      stderrBuffer += chunk.toString()
-      const lines = stderrBuffer.split('\n')
-      stderrBuffer = lines.pop() || ''
-
-      for (const line of lines) {
-        if (line.trim()) {
-          const { progress, duration } = parseFFmpegProgress(line, videoDuration)
-          if (duration !== null) videoDuration = duration
-          if (progress !== null) sendProgress(event, progress)
-        }
-      }
-    })
-  }
-
-  return new Promise((resolve, reject) => {
-    process.on('error', (error: Error) => {
-      activeFFmpegProcesses.delete(process)
-      if (event) handleFFmpegError(event, error)
-      reject(error)
-    })
-
-    process.on('close', async (code: number) => {
-      activeFFmpegProcesses.delete(process)
-
-      if (code !== 0) {
-        const error = new Error(`FFmpeg process failed (code ${code})`)
-        if (event) handleFFmpegError(event, error)
-        reject(error)
-        return
-      }
-
-      try {
-        const outputBuffer = await readFile(outputPath)
-        const arrayBuffer = new Uint8Array(outputBuffer).buffer
-
-        if (event) {
-          event.sender.send(IPC_CHANNELS.FFMPEG_COMPLETE)
-        }
-
-        resolve({
-          data: arrayBuffer as T,
-        })
-      } catch (error) {
-        if (event) handleFFmpegError(event, error as Error)
-        reject(error)
-      }
-    })
-  })
-}
-
-async function handleFFmpegTranscode(
-  event: IpcMainInvokeEvent,
-  data: { file: ArrayBuffer; name: string; options: TranscodeOptions }
-) {
-  const tempDir = tmpdir()
-  const inputPath = join(tempDir, `input-${Date.now()}.mp4`)
-  const intermediatePath = join(tempDir, `intermediate-${Date.now()}.mp4`)
-  const outputPath = join(tempDir, `output-${Date.now()}.mp4`)
-
-  const cleanup = async () => {
-    await Promise.all([
-      unlink(inputPath).catch(() => {}),
-      unlink(intermediatePath).catch(() => {}),
-      unlink(outputPath).catch(() => {}),
-    ])
-  }
+async function processVideo(
+  inputPath: string,
+  outputPath: string,
+  options: TranscodeOptions,
+  event: IpcMainInvokeEvent
+): Promise<ArrayBuffer> {
+  const runner = new FFmpegRunner()
+  const tempFiles = new TempFileManager()
 
   try {
-    await writeFile(inputPath, Buffer.from(data.file))
+    const command = buildFFmpegCommand(inputPath, outputPath, options)
+    await runner.run(command, event)
 
-    const copyProcess = spawn(await getFFmpegPath(), ['-i', inputPath, '-c', 'copy', intermediatePath])
+    const outputBuffer = await readFile(outputPath)
+    return new Uint8Array(outputBuffer).buffer
+  } finally {
+    await tempFiles.cleanup()
+  }
+}
 
-    await new Promise<void>((resolve, reject) => {
-      copyProcess.on('error', async (error) => {
-        await cleanup()
-        reject(error)
-      })
-      copyProcess.on('close', async (code) => {
-        if (code === 0) resolve()
-        else {
-          await cleanup()
-          reject(new Error(`Failed to prepare video for transcoding (code ${code})`))
-        }
-      })
-    })
-
-    const { data: outputBuffer } = await execFFmpeg<ArrayBuffer>({
-      inputPath: intermediatePath,
-      outputPath,
-      options: data.options,
-      event,
-      trackProgress: true,
-    })
-
-    await cleanup()
-    return { file: outputBuffer, name: `compressed-${data.name}` }
+async function transcodeVideo(
+  event: IpcMainInvokeEvent,
+  data: { file: ArrayBuffer; name: string; options: TranscodeOptions }
+): Promise<{ file: ArrayBuffer; name: string }> {
+  const tempFiles = new TempFileManager()
+  
+  try {
+    const inputPath = await tempFiles.create('input.mp4', Buffer.from(data.file))
+    const outputPath = await tempFiles.create('output.mp4')
+    
+    const outputBuffer = await processVideo(inputPath, outputPath, data.options, event)
+    
+    event.sender.send(IPC_CHANNELS.FFMPEG_COMPLETE)
+    
+    return {
+      file: outputBuffer,
+      name: `compressed-${data.name}`,
+    }
   } catch (error) {
-    await cleanup()
     handleFFmpegError(event, error as Error)
     throw error
+  } finally {
+    await tempFiles.cleanup()
   }
 }
 
-async function handleFFmpegPreview(
+async function generatePreview(
   event: IpcMainInvokeEvent,
   data: { file: ArrayBuffer; name: string; options: TranscodeOptions }
-) {
-  const tempDir = tmpdir()
-  const inputPath = join(tempDir, `preview-input-${Date.now()}.mp4`)
-  const originalPath = join(tempDir, `preview-original-${Date.now()}.mp4`)
-  const outputPath = join(tempDir, `preview-output-${Date.now()}.mp4`)
-
-  const cleanup = async () => {
-    await Promise.all([
-      unlink(inputPath).catch(() => {}),
-      unlink(originalPath).catch(() => {}),
-      unlink(outputPath).catch(() => {}),
-    ])
-  }
-
+): Promise<{ original: ArrayBuffer; compressed: ArrayBuffer; estimatedSize: number }> {
+  const tempFiles = new TempFileManager()
+  
   try {
-    await writeFile(inputPath, Buffer.from(data.file))
+    const inputPath = await tempFiles.create('input.mp4', Buffer.from(data.file))
     const previewDuration = data.options.previewDuration ?? DEFAULTS.PREVIEW_DURATION
-
-    // Extract preview segment
-    const extractProcess = spawn(await getFFmpegPath(), [
-      '-ss',
-      '0',
-      '-i',
-      inputPath,
-      '-t',
-      previewDuration.toString(),
-      '-c',
-      'copy',
-      originalPath,
-    ])
-
-    await new Promise<void>((resolve, reject) => {
-      extractProcess.on('error', async (error) => {
-        await cleanup()
-        reject(error)
-      })
-      extractProcess.on('close', async (code) => {
-        if (code === 0) resolve()
-        else {
-          await cleanup()
-          reject(new Error(`Failed to extract video preview (code ${code})`))
-        }
-      })
-    })
-
-    const { data: compressedBuffer } = await execFFmpeg<ArrayBuffer>({
-      inputPath: originalPath,
-      outputPath,
-      options: data.options,
-      event,
-      trackProgress: true,
-    })
-
+    const originalPath = await tempFiles.create('preview-original.mp4')
+    const outputPath = await tempFiles.create('preview-output.mp4')
+    
+    const extractCommand = new FFmpegCommandBuilder()
+      .input(inputPath)
+      .extractSegment(0, previewDuration)
+      .output(originalPath)
+      .build()
+    
+    const runner = new FFmpegRunner()
+    await runner.run(extractCommand)
+    
+    const compressedBuffer = await processVideo(originalPath, outputPath, data.options, event)
+    
     const originalBuffer = await readFile(originalPath)
     const ratio = compressedBuffer.byteLength / originalBuffer.length
     const estimatedSize = Math.round(data.file.byteLength * ratio)
-
-    await cleanup()
+    
+    event.sender.send(IPC_CHANNELS.FFMPEG_COMPLETE)
+    
     return {
       original: new Uint8Array(originalBuffer).buffer,
       compressed: compressedBuffer,
       estimatedSize,
     }
   } catch (error) {
-    await cleanup()
     handleFFmpegError(event, error as Error)
     throw error
+  } finally {
+    await tempFiles.cleanup()
   }
 }
 
@@ -318,11 +321,15 @@ export function setupFFmpegHandlers() {
     }
   })
 
-  ipcMain.handle(IPC_CHANNELS.FFMPEG_TRANSCODE, handleFFmpegTranscode)
-  ipcMain.handle(IPC_CHANNELS.FFMPEG_PREVIEW, handleFFmpegPreview)
+  ipcMain.handle(IPC_CHANNELS.FFMPEG_TRANSCODE, (event, data) =>
+    transcodeVideo(event, data)
+  )
+  
+  ipcMain.handle(IPC_CHANNELS.FFMPEG_PREVIEW, (event, data) =>
+    generatePreview(event, data)
+  )
 
   ipcMain.handle(IPC_CHANNELS.FFMPEG_TERMINATE, () => {
-    // Terminate all active processes
     for (const process of activeFFmpegProcesses) {
       process.kill()
     }

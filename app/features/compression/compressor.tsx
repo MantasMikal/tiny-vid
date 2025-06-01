@@ -29,7 +29,7 @@ export default function Compressor() {
   const [videoMetadata, setVideoMetadata] = useState<VideoMetadata | null>(null)
   const debouncePreviewTimerRef = useRef<NodeJS.Timeout | null>(null)
   const [cOptions, setCOptions] = useState<CompressionOptions>({
-    quality: 65,
+    quality: 75,
     preset: 'fast',
     fps: 30,
     scale: 1,
