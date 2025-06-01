@@ -10,7 +10,7 @@ export type PresetOptions =
   | 'veryslow'
 
 export type TranscodeOptions = {
-  codec?: string
+  codec: string
   quality: number
   maxBitrate?: number
   format?: string
@@ -19,6 +19,7 @@ export type TranscodeOptions = {
   fps: number
   removeAudio: boolean
   previewDuration?: number
+  tune?: string
 }
 
 export type TranscodeOutput = {
@@ -50,6 +51,7 @@ export const DEFAULTS = {
   REMOVE_AUDIO: false,
   FPS: 30,
   PRESET: 'fast' as PresetOptions,
+  TUNE: undefined,
 } as const
 
 export interface FFmpegAPI {

@@ -22,6 +22,7 @@ export type CompressionOptions = {
   codec: string
   generatePreview?: boolean
   previewDuration?: number
+  tune?: string
 }
 
 type BasicPresets = 'basic' | 'super' | 'ultra' | 'cooked'
@@ -49,6 +50,7 @@ const toggleConfig: ConfigOption[] = [
       removeAudio: false,
       codec: 'libx264',
       generatePreview: true,
+      tune: undefined,
     },
   },
   {
@@ -64,6 +66,7 @@ const toggleConfig: ConfigOption[] = [
       removeAudio: false,
       codec: 'libx264',
       generatePreview: true,
+      tune: undefined,
     },
   },
   {
@@ -79,6 +82,7 @@ const toggleConfig: ConfigOption[] = [
       removeAudio: false,
       codec: 'libx264',
       generatePreview: true,
+      tune: undefined,
     },
   },
   {
@@ -94,6 +98,7 @@ const toggleConfig: ConfigOption[] = [
       removeAudio: false,
       codec: 'libx264',
       generatePreview: true,
+      tune: undefined,
     },
   },
 ] as const
@@ -107,6 +112,22 @@ export const codecs = [
     name: 'H.265 (Better compression)',
     value: 'libx265',
   },
+  {
+    name: 'AV1 (Best, very slow)',
+    value: 'libaom-av1',
+  },
+] as const
+
+export const tuneOptions = [
+  { name: 'None (Default)', value: 'none' },
+  { name: 'Film - High quality movie content', value: 'film' },
+  { name: 'Animation - Animated content', value: 'animation' },
+  { name: 'Grain - Preserve film grain', value: 'grain' },
+  { name: 'Still Image - Optimize for still images', value: 'stillimage' },
+  { name: 'Fast Decode - Optimize for fast decoding', value: 'fastdecode' },
+  { name: 'Zero Latency - Streaming/low latency', value: 'zerolatency' },
+  { name: 'PSNR - Optimize for PSNR metric', value: 'psnr' },
+  { name: 'SSIM - Optimize for SSIM metric', value: 'ssim' },
 ] as const
 
 export const maxBitratePresets = [
@@ -241,6 +262,13 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
     })
   }
 
+  const handleTuneChange = (value: string) => {
+    onOptionsChange({
+      ...cOptions,
+      tune: value === 'none' ? undefined : value,
+    })
+  }
+
   const handleBasicPresetChange = (value: BasicPresets) => {
     if (!value) return
     const preset = toggleConfig.find((config) => config.value === value)
@@ -328,11 +356,7 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
               <Label className="text-base font-bold" htmlFor="codec">
                 Codec
               </Label>
-              <Select
-                value={cOptions.codec}
-                disabled={isDisabled}
-                onValueChange={(value) => handleCodecChange(value)}
-              >
+              <Select value={cOptions.codec} disabled={isDisabled} onValueChange={(value) => handleCodecChange(value)}>
                 <SelectTrigger className="w-full">
                   <SelectValue />
                 </SelectTrigger>
@@ -377,8 +401,8 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
                   showCustomMaxBitrate
                     ? 'custom'
                     : cOptions.maxBitrate === undefined
-                    ? 'none'
-                    : maxBitratePresets.find((p) => p.value === cOptions.maxBitrate)?.value?.toString() || 'custom'
+                      ? 'none'
+                      : maxBitratePresets.find((p) => p.value === cOptions.maxBitrate)?.value?.toString() || 'custom'
                 }
                 disabled={isDisabled}
                 onValueChange={handleMaxBitratePresetChange}
@@ -395,21 +419,22 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
                 </SelectContent>
               </Select>
               {showCustomMaxBitrate && (
-                                  <Input
-                    disabled={isDisabled}
-                    onChange={(e) => {
-                      const value = parseInt(e.target.value)
-                      handleMaxBitrateChange(isNaN(value) || value <= 0 ? undefined : value)
-                    }}
-                    value={cOptions.maxBitrate || ''}
-                    type="number"
-                    min={100}
-                    max={50000}
-                    placeholder="e.g. 2000"
-                  />
+                <Input
+                  disabled={isDisabled}
+                  onChange={(e) => {
+                    const value = parseInt(e.target.value)
+                    handleMaxBitrateChange(isNaN(value) || value <= 0 ? undefined : value)
+                  }}
+                  value={cOptions.maxBitrate || ''}
+                  type="number"
+                  min={100}
+                  max={50000}
+                  placeholder="e.g. 2000"
+                />
               )}
               <p className="text-sm text-gray-500">
-                Optional maximum bitrate constraint for CRF. Set to prevent bitrate spikes. Leave unset for pure CRF encoding.
+                Optional maximum bitrate constraint for CRF. Set to prevent bitrate spikes. Leave unset for pure CRF
+                encoding.
               </p>
             </div>
             <Separator />
@@ -435,6 +460,31 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
               </Select>
               <p className="text-sm text-gray-500">
                 Compression speed. Slower presets provide better quality but take longer to process.
+              </p>
+            </div>
+            <Separator />
+            <div className="flex flex-col gap-2">
+              <Label className="text-base font-bold" htmlFor="tune">
+                Tune
+              </Label>
+              <Select
+                value={cOptions.tune ?? 'none'}
+                disabled={isDisabled}
+                onValueChange={(value) => handleTuneChange(value)}
+              >
+                <SelectTrigger className="w-full">
+                  <SelectValue />
+                </SelectTrigger>
+                <SelectContent>
+                  {tuneOptions.map((tune) => (
+                    <SelectItem key={tune.value} value={tune.value}>
+                      {tune.name}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-sm text-gray-500">
+                Tune options optimize the encoder for specific content types (screen capture, film, animation, etc.).
               </p>
             </div>
             <Separator />
@@ -521,9 +571,7 @@ export function VideoSettings({ isDisabled, cOptions, onOptionsChange }: VideoSe
                   max={30}
                   id="previewDuration"
                 />
-                <p className="text-sm text-gray-500">
-                  Duration of preview video for size estimation.
-                </p>
+                <p className="text-sm text-gray-500">Duration of preview video for size estimation.</p>
               </div>
             </div>
           </MotionTabsContent>

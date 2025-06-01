@@ -37,6 +37,7 @@ export default function Compressor() {
     codec: 'libx264',
     generatePreview: true,
     previewDuration: 3,
+    tune: undefined,
   })
 
   console.log('🚀 ~ Render')
