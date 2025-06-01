@@ -140,7 +140,6 @@ export default function Compressor() {
                 setFilesUploaded={handleFileAccepted}
                 disabled={isDisabled}
                 maxFiles={1}
-                maxSize={1024 * 1024 * 1024 * 2}
                 accept={{
                   'video/mp4': ['.mp4'],
                   'video/mpeg': ['.mpeg'],
