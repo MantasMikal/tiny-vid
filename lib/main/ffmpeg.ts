@@ -97,7 +97,6 @@ interface FFmpegExecOptions {
 
 interface FFmpegResult<T> {
   data: T
-  cleanup: () => Promise<void>
 }
 
 async function execFFmpeg<T>({
@@ -148,6 +147,7 @@ async function execFFmpeg<T>({
 
     process.on('close', async (code: number) => {
       activeFFmpegProcesses.delete(process)
+
       if (code !== 0) {
         const error = new Error(`FFmpeg process failed (code ${code})`)
         if (event) handleFFmpegError(event, error)
@@ -165,9 +165,6 @@ async function execFFmpeg<T>({
 
         resolve({
           data: arrayBuffer as T,
-          cleanup: async () => {
-            await Promise.all([unlink(inputPath).catch(() => {}), unlink(outputPath).catch(() => {})])
-          },
         })
       } catch (error) {
         if (event) handleFFmpegError(event, error as Error)
@@ -186,20 +183,34 @@ async function handleFFmpegTranscode(
   const intermediatePath = join(tempDir, `intermediate-${Date.now()}.mp4`)
   const outputPath = join(tempDir, `output-${Date.now()}.mp4`)
 
+  const cleanup = async () => {
+    await Promise.all([
+      unlink(inputPath).catch(() => {}),
+      unlink(intermediatePath).catch(() => {}),
+      unlink(outputPath).catch(() => {}),
+    ])
+  }
+
   try {
     await writeFile(inputPath, Buffer.from(data.file))
 
-    // First copy the file to ensure it's in a proper format
     const copyProcess = spawn(await getFFmpegPath(), ['-i', inputPath, '-c', 'copy', intermediatePath])
+
     await new Promise<void>((resolve, reject) => {
-      copyProcess.on('error', reject)
-      copyProcess.on('close', (code) => {
+      copyProcess.on('error', async (error) => {
+        await cleanup()
+        reject(error)
+      })
+      copyProcess.on('close', async (code) => {
         if (code === 0) resolve()
-        else reject(new Error(`Failed to prepare video for transcoding (code ${code})`))
+        else {
+          await cleanup()
+          reject(new Error(`Failed to prepare video for transcoding (code ${code})`))
+        }
       })
     })
 
-    const { data: outputBuffer, cleanup } = await execFFmpeg<ArrayBuffer>({
+    const { data: outputBuffer } = await execFFmpeg<ArrayBuffer>({
       inputPath: intermediatePath,
       outputPath,
       options: data.options,
@@ -210,6 +221,7 @@ async function handleFFmpegTranscode(
     await cleanup()
     return { file: outputBuffer, name: `compressed-${data.name}` }
   } catch (error) {
+    await cleanup()
     handleFFmpegError(event, error as Error)
     throw error
   }
@@ -223,6 +235,14 @@ async function handleFFmpegPreview(
   const inputPath = join(tempDir, `preview-input-${Date.now()}.mp4`)
   const originalPath = join(tempDir, `preview-original-${Date.now()}.mp4`)
   const outputPath = join(tempDir, `preview-output-${Date.now()}.mp4`)
+
+  const cleanup = async () => {
+    await Promise.all([
+      unlink(inputPath).catch(() => {}),
+      unlink(originalPath).catch(() => {}),
+      unlink(outputPath).catch(() => {}),
+    ])
+  }
 
   try {
     await writeFile(inputPath, Buffer.from(data.file))
@@ -242,14 +262,20 @@ async function handleFFmpegPreview(
     ])
 
     await new Promise<void>((resolve, reject) => {
-      extractProcess.on('error', reject)
-      extractProcess.on('close', (code) => {
+      extractProcess.on('error', async (error) => {
+        await cleanup()
+        reject(error)
+      })
+      extractProcess.on('close', async (code) => {
         if (code === 0) resolve()
-        else reject(new Error(`Failed to extract video preview (code ${code})`))
+        else {
+          await cleanup()
+          reject(new Error(`Failed to extract video preview (code ${code})`))
+        }
       })
     })
 
-    const { data: compressedBuffer, cleanup } = await execFFmpeg<ArrayBuffer>({
+    const { data: compressedBuffer } = await execFFmpeg<ArrayBuffer>({
       inputPath: originalPath,
       outputPath,
       options: data.options,
@@ -268,6 +294,7 @@ async function handleFFmpegPreview(
       estimatedSize,
     }
   } catch (error) {
+    await cleanup()
     handleFFmpegError(event, error as Error)
     throw error
   }
