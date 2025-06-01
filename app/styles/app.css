@@ -1,11 +1,19 @@
 @import './globals.css';
 @import './window.css';
 
+@font-face {
+  font-family: 'Lexend';
+  src: url('@/resources/font/lexend.ttf') format('truetype');
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
+
 body {
-  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
   font-size: 14px;
   margin: 0;
   overflow: hidden;
+  font-family: 'Lexend', system-ui, sans-serif;
 }
 
 html,
