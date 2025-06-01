@@ -8,11 +8,9 @@ import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/app/components/ui/tabs'
 import { ToggleGroup, ToggleGroupItem } from '@/app/components/ui/toggle-group'
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/app/components/ui/tooltip'
-import { BikeIcon, CarFrontIcon, CookingPotIcon, LucideIcon, RocketIcon } from 'lucide-react'
+import { BikeIcon, CarFrontIcon, CookingPotIcon, InfoIcon, LucideIcon, RocketIcon } from 'lucide-react'
 import { useState } from 'react'
 import { Checkbox } from '@/app/components/ui/checkbox'
-import { Separator } from '@/app/components/ui/separator'
-import { InfoCircledIcon } from '@radix-ui/react-icons'
 
 export type CompressionOptions = {
   quality: number
@@ -632,7 +630,7 @@ const TooltipLabel: React.FC<TooltipLabelProps> = ({ htmlFor, className, childre
     </Label>
     <Tooltip>
       <TooltipTrigger asChild>
-        <InfoCircledIcon className="h-4 w-4 text-muted-foreground" />
+        <InfoIcon className="size-4 text-muted-foreground" />
       </TooltipTrigger>
       <TooltipContent className="max-w-44">
         <p>{tooltip}</p>
