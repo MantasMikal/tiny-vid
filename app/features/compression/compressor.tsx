@@ -38,7 +38,7 @@ export default function Compressor() {
     previewDuration: 3,
   })
 
-  console.log('🚀 ~ Compressor ~ videoPreview:', videoPreview)
+  console.log('🚀 ~ Render')
 
   const {
     error,
@@ -70,7 +70,6 @@ export default function Compressor() {
     }
 
     const result = await transcode(file, cOptions)
-    console.log('🚀 ~ handleTranscode ~ result:', result)
     if (!result) return
     const { file: output, name } = result
     downloadFile(output, name)
@@ -99,7 +98,6 @@ export default function Compressor() {
     if (!isFfmpegLoaded) return
     try {
       const result = await generateVideoPreview(file, options)
-      console.log('🚀 ~ handleGeneratePreview ~ result:', result)
       if (!result) return
       const { original, compressed, estimatedSize: size } = result
       setEstimatedSize(size)

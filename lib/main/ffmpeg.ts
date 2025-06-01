@@ -4,6 +4,7 @@ import { join } from 'path'
 import { writeFile, readFile, unlink } from 'fs/promises'
 import { tmpdir } from 'os'
 import { IPC_CHANNELS, TranscodeOptions, DEFAULTS } from '@/app/services/ffmpeg/types'
+import { getFFmpegPath } from './platform'
 
 function qualityToCrf(quality: number): number {
   const clampedQuality = Math.min(Math.max(quality, 0), 100)
@@ -13,11 +14,10 @@ function qualityToCrf(quality: number): number {
 // Replace the single process tracking with a Set of active processes
 const activeFFmpegProcesses = new Set<ChildProcess>()
 
-function getFFmpegPath() {
-  return process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-}
-
-function parseFFmpegProgress(output: string, currentDuration: number | null): { progress: number | null; duration: number | null } {
+function parseFFmpegProgress(
+  output: string,
+  currentDuration: number | null
+): { progress: number | null; duration: number | null } {
   // Get duration from stderr output
   const durationMatch = output.match(/Duration: (\d+):(\d+):(\d+.\d+)/)
   if (durationMatch) {
@@ -109,9 +109,9 @@ async function execFFmpeg<T>({
   additionalArgs = [],
 }: FFmpegExecOptions): Promise<FFmpegResult<T>> {
   const args = ['-i', inputPath, ...transcodeOptionsToArgs(options), ...additionalArgs, outputPath]
-  const process = spawn(getFFmpegPath(), args)
+  const process = spawn(await getFFmpegPath(), args)
   activeFFmpegProcesses.add(process)
-  
+
   let stderrBuffer = ''
   let videoDuration: number | null = null
 
@@ -158,7 +158,7 @@ async function execFFmpeg<T>({
       try {
         const outputBuffer = await readFile(outputPath)
         const arrayBuffer = new Uint8Array(outputBuffer).buffer
-        
+
         if (event) {
           event.sender.send(IPC_CHANNELS.FFMPEG_COMPLETE)
         }
@@ -166,11 +166,8 @@ async function execFFmpeg<T>({
         resolve({
           data: arrayBuffer as T,
           cleanup: async () => {
-            await Promise.all([
-              unlink(inputPath).catch(() => {}),
-              unlink(outputPath).catch(() => {}),
-            ])
-          }
+            await Promise.all([unlink(inputPath).catch(() => {}), unlink(outputPath).catch(() => {})])
+          },
         })
       } catch (error) {
         if (event) handleFFmpegError(event, error as Error)
@@ -193,7 +190,7 @@ async function handleFFmpegTranscode(
     await writeFile(inputPath, Buffer.from(data.file))
 
     // First copy the file to ensure it's in a proper format
-    const copyProcess = spawn(getFFmpegPath(), ['-i', inputPath, '-c', 'copy', intermediatePath])
+    const copyProcess = spawn(await getFFmpegPath(), ['-i', inputPath, '-c', 'copy', intermediatePath])
     await new Promise<void>((resolve, reject) => {
       copyProcess.on('error', reject)
       copyProcess.on('close', (code) => {
@@ -207,7 +204,7 @@ async function handleFFmpegTranscode(
       outputPath,
       options: data.options,
       event,
-      trackProgress: true
+      trackProgress: true,
     })
 
     await cleanup()
@@ -232,12 +229,16 @@ async function handleFFmpegPreview(
     const previewDuration = data.options.previewDuration ?? DEFAULTS.PREVIEW_DURATION
 
     // Extract preview segment
-    const extractProcess = spawn(getFFmpegPath(), [
-      '-ss', '0',
-      '-i', inputPath,
-      '-t', previewDuration.toString(),
-      '-c', 'copy',
-      originalPath
+    const extractProcess = spawn(await getFFmpegPath(), [
+      '-ss',
+      '0',
+      '-i',
+      inputPath,
+      '-t',
+      previewDuration.toString(),
+      '-c',
+      'copy',
+      originalPath,
     ])
 
     await new Promise<void>((resolve, reject) => {
@@ -253,7 +254,7 @@ async function handleFFmpegPreview(
       outputPath,
       options: data.options,
       event,
-      trackProgress: true
+      trackProgress: true,
     })
 
     const originalBuffer = await readFile(originalPath)
@@ -264,7 +265,7 @@ async function handleFFmpegPreview(
     return {
       original: new Uint8Array(originalBuffer).buffer,
       compressed: compressedBuffer,
-      estimatedSize
+      estimatedSize,
     }
   } catch (error) {
     handleFFmpegError(event, error as Error)
@@ -275,7 +276,8 @@ async function handleFFmpegPreview(
 export function setupFFmpegHandlers() {
   ipcMain.handle(IPC_CHANNELS.FFMPEG_CHECK_AVAILABILITY, async () => {
     try {
-      const ffmpeg = spawn(getFFmpegPath(), ['-version'])
+      const ffmpegPath = await getFFmpegPath()
+      const ffmpeg = spawn(ffmpegPath, ['-version'])
       return new Promise<boolean>((resolve) => {
         ffmpeg.on('close', (code) => resolve(code === 0))
         ffmpeg.on('error', () => resolve(false))

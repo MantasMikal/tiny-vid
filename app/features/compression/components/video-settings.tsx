@@ -52,7 +52,7 @@ const toggleConfig: ConfigOption[] = [
     description: "Basic compression with minimal loss in quality",
     options: {
       quality: 90,
-      preset: "superfast",
+      preset: "fast",
       fps: 30,
       scale: 1,
       removeAudio: false,
@@ -66,7 +66,7 @@ const toggleConfig: ConfigOption[] = [
     description: "Medium compression with some loss in quality",
     options: {
       quality: 65,
-      preset: "veryfast",
+      preset: "fast",
       fps: 30,
       scale: 1,
       removeAudio: false,
@@ -80,7 +80,7 @@ const toggleConfig: ConfigOption[] = [
     description: "Strong compression with loss in quality",
     options: {
       quality: 50,
-      preset: "superfast",
+      preset: "fast",
       fps: 30,
       scale: 1,
       removeAudio: false,
@@ -94,7 +94,7 @@ const toggleConfig: ConfigOption[] = [
     description: "Deep fried with extra crunch",
     options: {
       quality: 30,
-      preset: "superfast",
+      preset: "fast",
       fps: 30,
       scale: 1,
       removeAudio: false,

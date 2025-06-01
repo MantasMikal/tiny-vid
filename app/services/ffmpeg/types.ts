@@ -1,35 +1,35 @@
 export type PresetOptions =
-  | "ultrafast"
-  | "superfast"
-  | "veryfast"
-  | "faster"
-  | "fast"
-  | "medium"
-  | "slow"
-  | "slower"
-  | "veryslow";
+  | 'ultrafast'
+  | 'superfast'
+  | 'veryfast'
+  | 'faster'
+  | 'fast'
+  | 'medium'
+  | 'slow'
+  | 'slower'
+  | 'veryslow'
 
 export type TranscodeOptions = {
-  codec?: string;
-  quality: number;
-  format?: string;
-  scale: number;
-  preset: PresetOptions;
-  fps: number;
-  removeAudio: boolean;
-  previewDuration?: number;
-};
+  codec?: string
+  quality: number
+  format?: string
+  scale: number
+  preset: PresetOptions
+  fps: number
+  removeAudio: boolean
+  previewDuration?: number
+}
 
 export type TranscodeOutput = {
-  file: Blob;
-  name: string;
-};
+  file: Blob
+  name: string
+}
 
 export type PreviewOutput = {
-  original: Blob;
-  compressed: Blob;
-  estimatedSize: number;
-};
+  original: Blob
+  compressed: Blob
+  estimatedSize: number
+}
 
 export const IPC_CHANNELS = {
   FFMPEG_CHECK_AVAILABILITY: 'ffmpeg:check-availability',
@@ -39,7 +39,7 @@ export const IPC_CHANNELS = {
   FFMPEG_ERROR: 'ffmpeg:error',
   FFMPEG_COMPLETE: 'ffmpeg:complete',
   FFMPEG_TERMINATE: 'ffmpeg:terminate',
-} as const;
+} as const
 
 export const DEFAULTS = {
   PREVIEW_DURATION: 3,
@@ -48,8 +48,8 @@ export const DEFAULTS = {
   SCALE: 1,
   REMOVE_AUDIO: false,
   FPS: 30,
-  PRESET: 'superfast' as PresetOptions,
-} as const;
+  PRESET: 'fast' as PresetOptions,
+} as const
 
 export interface FFmpegAPI {
   checkAvailability: () => Promise<boolean>
@@ -65,4 +65,4 @@ declare global {
   interface Window {
     ffmpeg: FFmpegAPI
   }
-} 
+}
