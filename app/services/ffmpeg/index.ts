@@ -16,7 +16,11 @@ export class FFmpegService {
       options,
     });
     
-    if (!result) return { file: new Blob(), name: '' };
+    if (!result) {
+      const abortError = new Error('Process was terminated');
+      abortError.name = 'AbortError';
+      throw abortError;
+    }
     return {
       file: new Blob([result.file], { type: 'video/mp4' }),
       name: result.name,
@@ -31,7 +35,11 @@ export class FFmpegService {
       options: { ...options, previewDuration: options.previewDuration ?? DEFAULTS.PREVIEW_DURATION },
     });
     
-    if (!result) return { original: new Blob(), compressed: new Blob(), estimatedSize: 0 };
+    if (!result) {
+      const abortError = new Error('Process was terminated');
+      abortError.name = 'AbortError';
+      throw abortError;
+    }
     return {
       original: new Blob([result.original], { type: 'video/mp4' }),
       compressed: new Blob([result.compressed], { type: 'video/mp4' }),

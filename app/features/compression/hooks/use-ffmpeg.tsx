@@ -19,7 +19,6 @@ export type FFmpegAction =
   | { type: 'TRANSCODE_PROGRESS'; progress: number }
   | { type: 'TRANSCODE_SUCCESS' }
   | { type: 'TRANSCODE_FAILURE'; error: string }
-  | { type: 'ABORT' }
   | { type: 'TERMINATE' }
 
 /**
@@ -44,10 +43,8 @@ function ffmpegReducer(state: FFmpegState, action: FFmpegAction): FFmpegState {
       return { ...state, isTranscoding: false, progress: 1 }
     case 'TRANSCODE_FAILURE':
       return { ...state, isTranscoding: false, error: { type: 'Transcode Error', message: action.error } }
-    case 'ABORT':
-      return { ...state, isTranscoding: false, isGeneratingPreview: false, progress: 0 }
     case 'TERMINATE':
-      return { ...state, isTranscoding: false, isGeneratingPreview: false }
+      return { ...state, isTranscoding: false, isGeneratingPreview: false, progress: 0 }
     default:
       return state
   }
@@ -134,7 +131,6 @@ export const useFfmpeg = () => {
         return await ffmpegServiceRef.current.transcode(file, options)
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          dispatch({ type: 'ABORT' })
           return null
         }
         dispatch({ type: 'TRANSCODE_FAILURE', error: (error as Error).message })
@@ -159,7 +155,6 @@ export const useFfmpeg = () => {
         return await ffmpegServiceRef.current.generatePreview(file, options)
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
-          dispatch({ type: 'ABORT' })
           return null
         }
         dispatch({ type: 'PREVIEW_FAILURE', error: (error as Error).message })
@@ -172,7 +167,6 @@ export const useFfmpeg = () => {
 
   return {
     state,
-    abort: () => dispatch({ type: 'ABORT' }),
     terminate,
     transcode,
     generateVideoPreview,

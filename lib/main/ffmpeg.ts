@@ -9,6 +9,7 @@ import { getCodecPreset } from './ffmpeg-utils'
 import { getQuality } from './ffmpeg-utils'
 
 const activeFFmpegProcesses = new Set<ChildProcess>()
+const terminatedProcesses = new Set<ChildProcess>()
 
 function parseFFmpegProgress(
   output: string,
@@ -180,15 +181,23 @@ class FFmpegRunner {
     return new Promise((resolve, reject) => {
       process.on('error', (error: Error) => {
         activeFFmpegProcesses.delete(process)
+        terminatedProcesses.delete(process)
         if (event) handleFFmpegError(event, error)
         reject(error)
       })
 
       process.on('close', (code: number) => {
+        const wasTerminated = terminatedProcesses.has(process)
         activeFFmpegProcesses.delete(process)
+        terminatedProcesses.delete(process)
 
         if (code === 0) {
           resolve()
+        } else if (wasTerminated) {
+          // Process was manually terminated, create a special abort error
+          const abortError = new Error('Process was terminated')
+          abortError.name = 'AbortError'
+          reject(abortError)
         } else {
           const error = new Error(`FFmpeg failed (code ${code}): ${stderrBuffer}`)
           if (event) handleFFmpegError(event, error)
@@ -249,7 +258,7 @@ async function processVideo(
 async function transcodeVideo(
   event: IpcMainInvokeEvent,
   data: { file: ArrayBuffer; name: string; options: TranscodeOptions }
-): Promise<{ file: ArrayBuffer; name: string }> {
+): Promise<{ file: ArrayBuffer; name: string } | null> {
   const tempFiles = new TempFileManager()
 
   try {
@@ -265,6 +274,11 @@ async function transcodeVideo(
       name: `compressed-${data.name}`,
     }
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      // Process was manually terminated, return null to indicate cancellation
+      return null
+    }
+    // Handle actual errors
     handleFFmpegError(event, error as Error)
     throw error
   } finally {
@@ -275,7 +289,7 @@ async function transcodeVideo(
 async function generatePreview(
   event: IpcMainInvokeEvent,
   data: { file: ArrayBuffer; name: string; options: TranscodeOptions }
-): Promise<{ original: ArrayBuffer; compressed: ArrayBuffer; estimatedSize: number }> {
+): Promise<{ original: ArrayBuffer; compressed: ArrayBuffer; estimatedSize: number } | null> {
   const tempFiles = new TempFileManager()
 
   try {
@@ -307,6 +321,11 @@ async function generatePreview(
       estimatedSize,
     }
   } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') {
+      // Process was manually terminated, return null to indicate cancellation
+      return null
+    }
+    // Handle actual errors
     handleFFmpegError(event, error as Error)
     throw error
   } finally {
@@ -334,6 +353,7 @@ export function setupFFmpegHandlers() {
 
   ipcMain.handle(IPC_CHANNELS.FFMPEG_TERMINATE, () => {
     for (const process of activeFFmpegProcesses) {
+      terminatedProcesses.add(process)
       process.kill()
     }
     activeFFmpegProcesses.clear()

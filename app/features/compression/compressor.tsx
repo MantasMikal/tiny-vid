@@ -5,7 +5,7 @@ import { motion, AnimatePresence } from 'framer-motion'
 
 import { Button } from '@/app/components/ui/button'
 import Dropzone from '@/app/components/ui/dropzone'
-import { ReloadIcon, TrashIcon, ExclamationTriangleIcon } from '@radix-ui/react-icons'
+import { ReloadIcon, TrashIcon, ExclamationTriangleIcon, StopIcon } from '@radix-ui/react-icons'
 import { Progress } from '@/app/components/ui/progress'
 import { Spinner } from '@/app/components/ui/spinner'
 import { Alert, AlertDescription, AlertTitle } from '@/app/components/ui/alert'
@@ -40,13 +40,14 @@ export default function Compressor() {
     tune: undefined,
   })
 
-  console.log('🚀 ~ Render')
-
   const {
     state: { error, isTranscoding, isGeneratingPreview, progress },
     generateVideoPreview,
     transcode,
+    terminate,
   } = useFfmpeg()
+
+
 
   const handleTranscode = async () => {
     const file = files[0]
@@ -83,11 +84,15 @@ export default function Compressor() {
   const handleGeneratePreview = async (file: File, options: CompressionOptions) => {
     try {
       const result = await generateVideoPreview(file, options)
-      if (!result) return
+      if (!result) return // Aborted - preserve existing preview
       const { original, compressed, estimatedSize: size } = result
       setEstimatedSize(size)
       setVideoPreview({ original, compressed })
     } catch (error) {
+      if (error instanceof Error && error.name === 'AbortError') {
+        // Process was aborted - preserve existing preview, don't log as error
+        return
+      }
       console.error('Error estimating output size:', error)
     }
   }
@@ -110,7 +115,8 @@ export default function Compressor() {
     debouncedGeneratePreview(options)
   }
 
-  const isDisabled = isTranscoding
+  const isDisabled = isTranscoding || isGeneratingPreview
+  const isWorking = isTranscoding || isGeneratingPreview
 
   return (
     <div className="grow flex flex-col gap-4 h-full w-full overflow-y-auto md:overflow-hidden">
@@ -215,11 +221,11 @@ export default function Compressor() {
                 <div className="flex w-full justify-evenly flex-wrap gap-2">
                   <Button
                     className="flex-1"
-                    onClick={handleTranscode}
-                    disabled={isDisabled || files.length === 0 || isGeneratingPreview}
+                    onClick={isWorking ? terminate : handleTranscode}
+                    disabled={files.length === 0}
                   >
-                    {isTranscoding && <ReloadIcon className="mr-2 h-4 w-4 animate-spin" />}
-                    {isTranscoding ? 'Compressing' : 'Compress'}
+                    {isWorking && <StopIcon className="mr-2 h-4 w-4" />}
+                    {isWorking ? 'Stop' : 'Compress'}
                   </Button>
                   {!cOptions.generatePreview && (
                     <Button
