@@ -4,4 +4,5 @@ A video compressor
 
 https://handy.tools but as an app using native FFMPEG lib for speed
 
-<img width="1006" alt="Screenshot 2025-06-01 at 17 00 34" src="https://github.com/user-attachments/assets/f3784df6-e911-41e4-9ee0-24b492fc8570" />
+![image](https://github.com/user-attachments/assets/7faa0c2b-320e-45ef-b556-fa35b87142a7)
+
