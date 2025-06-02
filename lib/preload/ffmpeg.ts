@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS } from '@/app/services/ffmpeg/types';
+import { IPC_CHANNELS } from '@/lib/ffmpeg/types';
 
 const createListener = (channel: string, callback: (...args: any[]) => void) => {
   const listener = (_: any, ...args: any[]) => callback(...args);

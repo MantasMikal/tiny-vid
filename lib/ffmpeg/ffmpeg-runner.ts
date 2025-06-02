@@ -2,7 +2,7 @@ import { spawn, ChildProcess } from 'child_process'
 import { IpcMainInvokeEvent } from 'electron'
 import { getFFmpegPath } from '../main/platform'
 import { parseFFmpegProgress } from './ffmpeg-progress'
-import { IPC_CHANNELS } from '@/app/services/ffmpeg/types'
+import { IPC_CHANNELS } from '@/lib/ffmpeg/types'
 
 const activeFFmpegProcesses = new Set<ChildProcess>()
 const terminatedProcesses = new Set<ChildProcess>()

@@ -1,5 +1,5 @@
 import { ipcMain, IpcMainInvokeEvent } from 'electron'
-import { IPC_CHANNELS } from '@/app/services/ffmpeg/types'
+import { IPC_CHANNELS } from '@/lib/ffmpeg/types'
 import { terminateAllFFmpegProcesses } from './ffmpeg-runner'
 import { transcodeVideo, generatePreview } from './ffmpeg-commands'
 

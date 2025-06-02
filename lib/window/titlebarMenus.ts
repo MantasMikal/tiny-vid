@@ -11,53 +11,19 @@ export const menuItems: TitlebarMenu[] = [
     ],
   },
   {
-    name: 'Edit',
-    items: [
-      {
-        name: 'Undo',
-        action: 'web-undo',
-        shortcut: 'Ctrl+Z',
-      },
-      {
-        name: 'Redo',
-        action: 'web-redo',
-        shortcut: 'Ctrl+Y',
-      },
-      {
-        name: '---',
-      },
-      {
-        name: 'Cut',
-        action: 'web-cut',
-        shortcut: 'Ctrl+X',
-      },
-      {
-        name: 'Copy',
-        action: 'web-copy',
-        shortcut: 'Ctrl+C',
-      },
-      {
-        name: 'Paste',
-        action: 'web-paste',
-        shortcut: 'Ctrl+V',
-      },
-      {
-        name: 'Delete',
-        action: 'web-delete',
-      },
-      {
-        name: '---',
-      },
-      {
-        name: 'Select All',
-        action: 'web-select-all',
-        shortcut: 'Ctrl+A',
-      },
-    ],
-  },
-  {
     name: 'View',
     items: [
+      {
+        name: 'Dark Mode',
+        action: 'window-darkmode-toggle',
+        shortcut: 'Toggle',
+        actionCallback: () => {
+          document.documentElement.classList.toggle('dark')
+        },
+      },
+      {
+        name: '---',
+      },
       {
         name: 'Reload',
         action: 'web-reload',
@@ -104,17 +70,6 @@ export const menuItems: TitlebarMenu[] = [
   {
     name: 'Window',
     items: [
-      {
-        name: 'Dark Mode',
-        action: 'window-darkmode-toggle',
-        shortcut: 'Toggle',
-        actionCallback: () => {
-          document.documentElement.classList.toggle('dark')
-        },
-      },
-      {
-        name: '---',
-      },
       {
         name: 'Maximize',
         action: 'window-maximize-toggle',

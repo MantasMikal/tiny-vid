@@ -1,8 +1,7 @@
 'use client'
 
-import { useCallback, useReducer, useRef, useEffect } from 'react'
-import { FFmpegService } from '@/app/services/ffmpeg'
-import { TranscodeOptions, PreviewOutput, TranscodeOutput } from '@/app/services/ffmpeg/types'
+import { useCallback, useReducer, useEffect } from 'react'
+import { TranscodeOptions, TranscodeOutput, PreviewOutput, DEFAULTS } from '@/lib/ffmpeg/types'
 
 export type FFmpegState = {
   isTranscoding: boolean
@@ -61,26 +60,15 @@ const initialState: FFmpegState = {
  * Hook for managing FFmpeg video processing operations
  * @returns Object containing FFmpeg state and methods for video processing
  * - state: Current processing state and progress
- * - abort: Function to cancel current operation
+ * - terminate: Function to cancel current operation
  * - transcode: Function to convert video to different format/quality
  * - generateVideoPreview: Function to create preview version of video
  */
 export const useFfmpeg = () => {
   const [state, dispatch] = useReducer(ffmpegReducer, initialState)
-  const ffmpegServiceRef = useRef<FFmpegService | null>(null)
-
-  // Initialize FFmpeg service
-  useEffect(() => {
-    ffmpegServiceRef.current = new FFmpegService()
-    return () => {
-      ffmpegServiceRef.current?.terminate()
-    }
-  }, [])
 
   // Set up event listeners
   useEffect(() => {
-    if (!ffmpegServiceRef.current) return
-
     const cleanupProgress = window.ffmpeg.onProgress((progress) => {
       dispatch({ type: 'TRANSCODE_PROGRESS', progress })
     })
@@ -109,11 +97,10 @@ export const useFfmpeg = () => {
   }, [state.isTranscoding, state.isGeneratingPreview])
 
   /**
-   * Terminates the FFmpeg service and resets the state
+   * Terminates the FFmpeg process and resets the state
    */
   const terminate = useCallback(() => {
-    if (!ffmpegServiceRef.current) return
-    ffmpegServiceRef.current.terminate()
+    window.ffmpeg.terminate()
     dispatch({ type: 'TERMINATE' })
   }, [])
 
@@ -125,10 +112,25 @@ export const useFfmpeg = () => {
    */
   const transcode = useCallback(
     async (file: File, options: TranscodeOptions): Promise<TranscodeOutput | null> => {
-      if (!ffmpegServiceRef.current) return null
       dispatch({ type: 'TRANSCODE_START' })
       try {
-        return await ffmpegServiceRef.current.transcode(file, options)
+        const buffer = await file.arrayBuffer()
+        const result = await window.ffmpeg.transcode({
+          file: buffer,
+          name: file.name,
+          options,
+        })
+
+        if (!result) {
+          const abortError = new Error('Process was terminated')
+          abortError.name = 'AbortError'
+          throw abortError
+        }
+
+        return {
+          file: new Blob([result.file], { type: 'video/mp4' }),
+          name: result.name,
+        }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           return null
@@ -149,10 +151,26 @@ export const useFfmpeg = () => {
    */
   const generateVideoPreview = useCallback(
     async (file: File, options: TranscodeOptions): Promise<PreviewOutput | null> => {
-      if (!ffmpegServiceRef.current) return null
       dispatch({ type: 'PREVIEW_START' })
       try {
-        return await ffmpegServiceRef.current.generatePreview(file, options)
+        const buffer = await file.arrayBuffer()
+        const result = await window.ffmpeg.generatePreview({
+          file: buffer,
+          name: file.name,
+          options: { ...options, previewDuration: options.previewDuration ?? DEFAULTS.PREVIEW_DURATION },
+        })
+
+        if (!result) {
+          const abortError = new Error('Process was terminated')
+          abortError.name = 'AbortError'
+          throw abortError
+        }
+
+        return {
+          original: new Blob([result.original], { type: 'video/mp4' }),
+          compressed: new Blob([result.compressed], { type: 'video/mp4' }),
+          estimatedSize: result.estimatedSize,
+        }
       } catch (error) {
         if (error instanceof Error && error.name === 'AbortError') {
           return null

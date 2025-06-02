@@ -1,6 +1,6 @@
 import { IpcMainInvokeEvent } from 'electron'
 import { readFile } from 'fs/promises'
-import { TranscodeOptions, DEFAULTS } from '@/app/services/ffmpeg/types'
+import { TranscodeOptions, DEFAULTS } from '@/lib/ffmpeg/types'
 import { getQuality, getCodecPreset } from './ffmpeg-utils'
 import { FFmpegCommandBuilder } from './ffmpeg-builder'
 import { FFmpegRunner } from './ffmpeg-runner'
