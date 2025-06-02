@@ -1,6 +1,6 @@
 'use client'
 
-import { useRef, useState, useEffect } from 'react'
+import { useRef, useState } from 'react'
 import { motion, AnimatePresence } from 'framer-motion'
 
 import { Button } from '@/app/components/ui/button'
@@ -46,8 +46,6 @@ export default function Compressor() {
     transcode,
     terminate,
   } = useFfmpeg()
-
-
 
   const handleTranscode = async () => {
     const file = files[0]

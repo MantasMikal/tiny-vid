@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron';
-import { IPC_CHANNELS, TranscodeOptions } from '@/app/services/ffmpeg/types';
+import { IPC_CHANNELS } from '@/app/services/ffmpeg/types';
 
 const createListener = (channel: string, callback: (...args: any[]) => void) => {
   const listener = (_: any, ...args: any[]) => callback(...args);
@@ -8,22 +8,15 @@ const createListener = (channel: string, callback: (...args: any[]) => void) => 
 };
 
 contextBridge.exposeInMainWorld('ffmpeg', {
-  checkAvailability: () => ipcRenderer.invoke(IPC_CHANNELS.FFMPEG_CHECK_AVAILABILITY),
-  
-  transcode: (data: { file: ArrayBuffer; name: string; options: TranscodeOptions }) => 
+  transcode: (data: { file: ArrayBuffer; name: string; options: any }) =>
     ipcRenderer.invoke(IPC_CHANNELS.FFMPEG_TRANSCODE, data),
-    
-  generatePreview: (data: { file: ArrayBuffer; name: string; options: TranscodeOptions }) => 
+  generatePreview: (data: { file: ArrayBuffer; name: string; options: any }) =>
     ipcRenderer.invoke(IPC_CHANNELS.FFMPEG_PREVIEW, data),
-    
   terminate: () => ipcRenderer.invoke(IPC_CHANNELS.FFMPEG_TERMINATE),
-  
-  onProgress: (callback: (progress: number) => void) => 
+  onProgress: (callback: (progress: number) => void) =>
     createListener(IPC_CHANNELS.FFMPEG_PROGRESS, callback),
-  
-  onError: (callback: (error: string) => void) => 
+  onError: (callback: (error: string) => void) =>
     createListener(IPC_CHANNELS.FFMPEG_ERROR, callback),
-  
-  onComplete: (callback: () => void) => 
+  onComplete: (callback: () => void) =>
     createListener(IPC_CHANNELS.FFMPEG_COMPLETE, callback),
 }); 

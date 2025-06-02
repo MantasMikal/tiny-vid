@@ -1,13 +1,6 @@
 import { TranscodeOptions, TranscodeOutput, PreviewOutput, DEFAULTS } from './types';
 
 export class FFmpegService {
-  async load(): Promise<void> {
-    const isAvailable = await window.ffmpeg.checkAvailability();
-    if (!isAvailable) {
-      throw new Error('FFmpeg is not available');
-    }
-  }
-
   async transcode(file: File, options: TranscodeOptions): Promise<TranscodeOutput> {
     const buffer = await file.arrayBuffer();
     const result = await window.ffmpeg.transcode({

@@ -34,13 +34,12 @@ export type PreviewOutput = {
 }
 
 export const IPC_CHANNELS = {
-  FFMPEG_CHECK_AVAILABILITY: 'ffmpeg:check-availability',
   FFMPEG_TRANSCODE: 'ffmpeg:transcode',
   FFMPEG_PREVIEW: 'ffmpeg:preview',
+  FFMPEG_TERMINATE: 'ffmpeg:terminate',
   FFMPEG_PROGRESS: 'ffmpeg:progress',
   FFMPEG_ERROR: 'ffmpeg:error',
   FFMPEG_COMPLETE: 'ffmpeg:complete',
-  FFMPEG_TERMINATE: 'ffmpeg:terminate',
 } as const
 
 export const DEFAULTS = {
@@ -55,9 +54,8 @@ export const DEFAULTS = {
 } as const
 
 export interface FFmpegAPI {
-  checkAvailability: () => Promise<boolean>
-  transcode: (data: { file: ArrayBuffer; name: string; options: TranscodeOptions }) => Promise<TranscodeOutput>
-  generatePreview: (data: { file: ArrayBuffer; name: string; options: TranscodeOptions }) => Promise<PreviewOutput>
+  transcode: (data: { file: ArrayBuffer; name: string; options: TranscodeOptions }) => Promise<{ file: ArrayBuffer; name: string } | null>
+  generatePreview: (data: { file: ArrayBuffer; name: string; options: TranscodeOptions }) => Promise<{ original: ArrayBuffer; compressed: ArrayBuffer; estimatedSize: number } | null>
   terminate: () => Promise<void>
   onProgress: (callback: (progress: number) => void) => () => void
   onError: (callback: (error: string) => void) => () => void
