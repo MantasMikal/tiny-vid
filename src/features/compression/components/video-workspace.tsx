@@ -61,7 +61,7 @@ export function VideoWorkspace({
           <div
             className={cn(
               `
-                relative flex size-full rounded-md bg-black
+                relative flex size-full rounded-md bg-background
                 md:overflow-hidden
               `
             )}
@@ -114,12 +114,12 @@ export function VideoWorkspace({
                 className={cn(
                   `
                     absolute bottom-1 left-1 z-10 flex items-center gap-2
-                    rounded-md bg-black/50 p-1 px-2 backdrop-blur-sm
+                    rounded-md bg-black/70 p-1 px-2
                   `
                 )}
-                initial={{ opacity: 0, y: 10 }}
-                animate={{ opacity: 1, y: 0 }}
-                exit={{ opacity: 0, y: 10 }}
+                initial={{ opacity: 0, transform: "translateY(10px)" }}
+                animate={{ opacity: 1, transform: "translateY(0)" }}
+                exit={{ opacity: 0, transform: "translateY(10px)" }}
               >
                 <Spinner className={cn("size-4 border-2 border-white")} />
                 <span className={cn("text-sm text-white")}>

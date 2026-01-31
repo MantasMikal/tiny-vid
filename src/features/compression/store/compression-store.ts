@@ -2,18 +2,21 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 
-import type { FfmpegPreviewResult, TranscodeOptions } from "@/types/tauri";
 import type { CompressionOptions } from "@/features/compression/lib/compression-options";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
 import { getVideoMetadataFromPath } from "@/features/compression/lib/get-video-metadata";
 import { type ResultError, tryCatch } from "@/lib/try-catch";
+import type { FfmpegPreviewResult, TranscodeOptions } from "@/types/tauri";
 
 export interface VideoPreview {
   originalSrc: string;
   compressedSrc: string;
 }
 
-function toRustOptions(opts: CompressionOptions): TranscodeOptions {
+function toRustOptions(
+  opts: CompressionOptions,
+  durationSecs?: number
+): TranscodeOptions {
   return {
     codec: opts.codec,
     quality: opts.quality,
@@ -24,6 +27,7 @@ function toRustOptions(opts: CompressionOptions): TranscodeOptions {
     preset: opts.preset,
     tune: opts.tune,
     previewDuration: opts.previewDuration ?? 3,
+    durationSecs,
   };
 }
 
@@ -130,7 +134,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         }
       },
       "Preview Error",
-      { onFinally: () => { set({ videoUploading: false }); } }
+      {
+        onFinally: () => {
+          set({ videoUploading: false });
+        },
+      }
     );
   },
 
@@ -161,7 +169,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   },
 
   transcodeAndSave: async () => {
-    const { inputPath, compressionOptions } = get();
+    const { inputPath, compressionOptions, videoMetadata } = get();
     if (!inputPath) return;
 
     set({ isTranscoding: true, progress: 0, error: null });
@@ -169,7 +177,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       () =>
         invoke<string>("ffmpeg_transcode_to_temp", {
           inputPath,
-          options: toRustOptions(compressionOptions),
+          options: toRustOptions(compressionOptions, videoMetadata?.duration),
         }),
       "Transcode Error"
     );
@@ -221,7 +229,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         }
       },
       "Save Error",
-      { onFinally: () => { set({ isSaving: false }); } }
+      {
+        onFinally: () => {
+          set({ isSaving: false });
+        },
+      }
     );
   },
 
@@ -241,7 +253,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
     set({ isGeneratingPreview: true, error: null });
     const result = await tryCatch(
-        () =>
+      () =>
         invoke<FfmpegPreviewResult>("ffmpeg_preview", {
           inputPath,
           options: toRustOptions(compressionOptions),
@@ -288,10 +300,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   },
 
   terminate: async () => {
-    await tryCatch(
-      () => invoke("ffmpeg_terminate"),
-      "Terminate Error"
-    );
+    await tryCatch(() => invoke("ffmpeg_terminate"), "Terminate Error");
     set({
       isTranscoding: false,
       isGeneratingPreview: false,

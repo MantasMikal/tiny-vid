@@ -62,6 +62,16 @@ pub fn build_ffmpeg_command(
     let crf = get_quality(quality, &codec_lower);
     let codec_preset = get_codec_preset(preset, &codec_lower);
 
+    log::debug!(
+        target: "tiny_vid::ffmpeg::builder",
+        "Building FFmpeg command: codec={}, CRF={}, preset={}, input={} -> output={}",
+        codec_lower,
+        crf,
+        codec_preset,
+        input_path,
+        output_path
+    );
+
     let mut args = vec![
         "-threads".to_string(),
         "0".to_string(),

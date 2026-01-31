@@ -28,4 +28,5 @@ export interface TranscodeOptions {
   preset?: string;
   tune?: string;
   previewDuration?: number;
+  durationSecs?: number;
 }

@@ -26,6 +26,9 @@ tauri-plugin-shell = "2"
 tauri-plugin-dialog = "2"
 tauri-plugin-fs = "2"
 tauri-plugin-os = "2.3.2"
+tauri-plugin-log = { version = "2", features = ["colored"] }
+log = "0.4"
+time = { version = "0.3", features = ["formatting", "macros"] }
 regex = "1.12.2"
 thiserror = "2"
 

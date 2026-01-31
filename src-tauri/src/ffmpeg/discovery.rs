@@ -66,16 +66,30 @@ static FFMPEG_PATH_CACHE: OnceLock<PathBuf> = OnceLock::new();
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
     if let Some(p) = find_in_path() {
         if p.exists() {
+            log::debug!(
+                target: "tiny_vid::ffmpeg::discovery",
+                "FFmpeg found in PATH: {}",
+                p.display()
+            );
             return Ok(p);
         }
     }
 
     for path in common_paths() {
         if path.exists() {
+            log::debug!(
+                target: "tiny_vid::ffmpeg::discovery",
+                "FFmpeg found in common path: {}",
+                path.display()
+            );
             return Ok(path);
         }
     }
 
+    log::error!(
+        target: "tiny_vid::ffmpeg::discovery",
+        "FFmpeg not found in PATH or common locations"
+    );
     Err(AppError::FfmpegNotFound(
         "FFmpeg not found. Please install FFmpeg on your system:\n  - macOS: brew install ffmpeg\n  - Linux: sudo apt install ffmpeg\n  - Windows: Download from https://ffmpeg.org/download.html"
             .to_string(),
@@ -87,11 +101,21 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 /// Falls back to PATH, then common installation paths.
 pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
     if let Some(path) = FFMPEG_PATH_CACHE.get() {
+        log::trace!(
+            target: "tiny_vid::ffmpeg::discovery",
+            "FFmpeg path (cached): {}",
+            path.display()
+        );
         return Ok(path.as_path());
     }
     let path = if let Ok(env_path) = std::env::var("FFMPEG_PATH") {
-        let p = PathBuf::from(env_path);
+        let p = PathBuf::from(&env_path);
         if p.exists() {
+            log::debug!(
+                target: "tiny_vid::ffmpeg::discovery",
+                "FFmpeg path from FFMPEG_PATH env: {}",
+                p.display()
+            );
             p
         } else {
             resolve_ffmpeg_path()?

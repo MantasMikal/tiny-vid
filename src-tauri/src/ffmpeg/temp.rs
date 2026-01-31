@@ -17,6 +17,11 @@ pub fn set_transcode_temp(path: Option<PathBuf>) {
 pub fn cleanup_transcode_temp() {
     let mut guard = TRANSCODE_TEMP_PATH.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(path) = guard.take() {
+        log::debug!(
+            target: "tiny_vid::ffmpeg::temp",
+            "cleanup_transcode_temp: removing {}",
+            path.display()
+        );
         let _ = fs::remove_file(&path);
     }
 }
@@ -24,13 +29,25 @@ pub fn cleanup_transcode_temp() {
 /// Delete temp files from the previous preview. Call at the start of each new preview.
 pub fn cleanup_previous_preview_paths() {
     let mut guard = PREVIOUS_PREVIEW_PATHS.lock().unwrap_or_else(|e| e.into_inner());
-    for path in guard.drain(..) {
-        let _ = fs::remove_file(&path);
+    let paths: Vec<_> = guard.drain(..).collect();
+    for path in &paths {
+        log::trace!(
+            target: "tiny_vid::ffmpeg::temp",
+            "cleanup_previous_preview_paths: removing {}",
+            path.display()
+        );
+        let _ = fs::remove_file(path);
     }
 }
 
 /// Store paths to be cleaned up when the next preview is generated.
 pub fn store_preview_paths_for_cleanup(original: PathBuf, compressed: PathBuf) {
+    log::debug!(
+        target: "tiny_vid::ffmpeg::temp",
+        "store_preview_paths_for_cleanup: original={}, compressed={}",
+        original.display(),
+        compressed.display()
+    );
     if let Ok(mut guard) = PREVIOUS_PREVIEW_PATHS.lock() {
         guard.push(original);
         guard.push(compressed);
@@ -76,6 +93,12 @@ impl TempFileManager {
         if let Some(data) = content {
             fs::write(&path, data)?;
         }
+        log::debug!(
+            target: "tiny_vid::ffmpeg::temp",
+            "TempFileManager::create: suffix={}, path={}",
+            suffix,
+            path.display()
+        );
         Ok(path)
     }
 }

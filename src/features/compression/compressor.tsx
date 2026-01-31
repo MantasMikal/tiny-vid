@@ -32,7 +32,7 @@ export default function Compressor() {
     <div
       className={cn(
         `
-          mx-auto grid size-full grow items-start gap-4
+          mx-auto grid size-full grow items-start gap-4 p-4 pt-2
           md:grid-cols-3 md:overflow-hidden
         `
       )}

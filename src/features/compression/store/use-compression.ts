@@ -87,10 +87,9 @@ export function useCompression() {
       compressionOptions: s.compressionOptions,
       listenersReady: s.listenersReady,
       isDisabled:
-        !s.listenersReady ||
-        s.isTranscoding ||
-        s.isGeneratingPreview ||
-        s.isSaving,
+        !s.inputPath ||
+        s.isSaving ||
+        (!s.listenersReady && !(s.isTranscoding || s.isGeneratingPreview)),
       isWorking: s.isTranscoding || s.isGeneratingPreview,
       selectPath: s.selectPath,
       browseAndSelectFile: s.browseAndSelectFile,

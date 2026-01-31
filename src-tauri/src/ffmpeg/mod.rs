@@ -30,6 +30,7 @@ pub struct TranscodeOptions {
     pub preset: Option<String>,
     pub tune: Option<String>,
     pub preview_duration: Option<u32>,
+    pub duration_secs: Option<f64>,
 }
 
 impl Default for TranscodeOptions {
@@ -44,6 +45,7 @@ impl Default for TranscodeOptions {
             preset: Some("fast".to_string()),
             tune: None,
             preview_duration: Some(3),
+            duration_secs: None,
         }
     }
 }

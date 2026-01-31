@@ -144,9 +144,9 @@ export function VideoSettings({
               key="basic"
               value="basic"
               className={cn("flex flex-col gap-4")}
-              initial={{ opacity: 0, x: 100 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: -100 }}
+              initial={{ opacity: 0, transform: "translateX(100px)" }}
+              animate={{ opacity: 1, transform: "translateX(0)" }}
+              exit={{ opacity: 0, transform: "translateX(-100px)" }}
             >
               <div className={cn("flex flex-col gap-2")}>
                 <h3 className={cn("text-base font-bold")}>Preset</h3>
@@ -214,9 +214,9 @@ export function VideoSettings({
               key="advanced"
               value="advanced"
               className={cn("flex flex-col gap-4")}
-              initial={{ opacity: 0, x: -100 }}
-              animate={{ opacity: 1, x: 0 }}
-              exit={{ opacity: 0, x: 100 }}
+              initial={{ opacity: 0, transform: "translateX(-100px)" }}
+              animate={{ opacity: 1, transform: "translateX(0)" }}
+              exit={{ opacity: 0, transform: "translateX(100px)" }}
             >
               <div className={cn("flex flex-col gap-2")}>
                 <TooltipLabel tooltip="Choose the video compression codec.">

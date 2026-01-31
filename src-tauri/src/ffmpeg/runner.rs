@@ -21,6 +21,7 @@ fn read_stream<R: std::io::Read + Send + 'static>(
     duration: Arc<Mutex<Option<f64>>>,
     app: Option<tauri::AppHandle>,
     window_label: Option<String>,
+    progress_collector: Option<Arc<Mutex<Vec<f64>>>>,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let mut current_duration = *duration.lock().unwrap_or_else(|e| e.into_inner());
@@ -41,19 +42,26 @@ fn read_stream<R: std::io::Read + Send + 'static>(
                     *guard = d;
                 }
             }
-            if let (Some(p), Some(handle)) = (progress, app.as_ref()) {
-                let now = Instant::now();
-                let should_emit = now.duration_since(last_emit) >= PROGRESS_EMIT_INTERVAL
-                    || (p - last_progress).abs() >= 0.01
-                    || p >= 1.0;
-                if should_emit {
-                    last_emit = now;
-                    last_progress = p;
-                    let _ = if let Some(ref lbl) = window_label {
-                        handle.emit_to(lbl, "ffmpeg-progress", p)
-                    } else {
-                        handle.emit("ffmpeg-progress", p)
-                    };
+            if let Some(p) = progress {
+                if let Some(ref collector) = progress_collector {
+                    if let Ok(mut guard) = collector.lock() {
+                        guard.push(p);
+                    }
+                }
+                if let Some(handle) = app.as_ref() {
+                    let now = Instant::now();
+                    let should_emit = now.duration_since(last_emit) >= PROGRESS_EMIT_INTERVAL
+                        || (p - last_progress).abs() >= 0.01
+                        || p >= 1.0;
+                    if should_emit {
+                        last_emit = now;
+                        last_progress = p;
+                        let _ = if let Some(ref lbl) = window_label {
+                            handle.emit_to(lbl, "ffmpeg-progress", p)
+                        } else {
+                            handle.emit("ffmpeg-progress", p)
+                        };
+                    }
                 }
             }
         }
@@ -62,13 +70,28 @@ fn read_stream<R: std::io::Read + Send + 'static>(
 
 /// Run FFmpeg and block until completion. Used when we need to wait (e.g. preview, transcode).
 /// Optionally emit progress events to the frontend via app and window_label.
+/// duration_secs: if provided, initializes the shared duration so progress can be computed
+/// immediately from out_time_ms (avoids race with Duration line on stderr).
+/// progress_collector: when provided (e.g. in tests), collects all progress values for verification.
 pub fn run_ffmpeg_blocking(
     args: Vec<String>,
     app: Option<&tauri::AppHandle>,
     window_label: Option<&str>,
+    duration_secs: Option<f64>,
+    progress_collector: Option<Arc<Mutex<Vec<f64>>>>,
 ) -> Result<(), AppError> {
     let ffmpeg_path = get_ffmpeg_path()?;
     let path_str = ffmpeg_path.to_string_lossy();
+
+    let input_arg = args.iter().position(|a| a == "-i").and_then(|i| args.get(i + 1));
+    let output_arg = args.last();
+    log::debug!(
+        target: "tiny_vid::ffmpeg::runner",
+        "Spawning FFmpeg: path={}, input={:?}, output={:?}",
+        path_str,
+        input_arg,
+        output_arg
+    );
 
     let mut child = Command::new(&*path_str)
         .args(&args)
@@ -85,7 +108,8 @@ pub fn run_ffmpeg_blocking(
         *guard = Some(child);
     }
 
-    let duration: Arc<Mutex<Option<f64>>> = Arc::new(Mutex::new(None));
+    let duration: Arc<Mutex<Option<f64>>> =
+        Arc::new(Mutex::new(duration_secs.filter(|&d| d > 0.0)));
     let stderr_buffer = Arc::new(Mutex::new(String::new()));
     let app_stdout = app.cloned();
     let app_stderr = app.cloned();
@@ -97,6 +121,7 @@ pub fn run_ffmpeg_blocking(
         Arc::clone(&duration),
         app_stdout,
         label.clone(),
+        progress_collector,
     );
     let stderr_handle = read_stream(
         stderr,
@@ -104,6 +129,7 @@ pub fn run_ffmpeg_blocking(
         Arc::clone(&duration),
         app_stderr,
         label,
+        None,
     );
 
     let _ = stdout_handle.join();
@@ -115,7 +141,13 @@ pub fn run_ffmpeg_blocking(
 
     let status = match child {
         Some(mut c) => c.wait().map_err(|e| e.to_string())?,
-        None => return Err(AppError::Aborted),
+        None => {
+            log::warn!(
+                target: "tiny_vid::ffmpeg::runner",
+                "FFmpeg process was aborted (terminated externally)"
+            );
+            return Err(AppError::Aborted);
+        }
     };
 
     let stderr_str = stderr_buffer
@@ -124,9 +156,25 @@ pub fn run_ffmpeg_blocking(
         .clone();
 
     if status.success() {
+        log::info!(
+            target: "tiny_vid::ffmpeg::runner",
+            "FFmpeg completed successfully"
+        );
         Ok(())
     } else {
         let code = status.code().unwrap_or(-1);
+        let err_preview = stderr_str
+            .lines()
+            .rev()
+            .take(3)
+            .collect::<Vec<_>>()
+            .join("; ");
+        log::error!(
+            target: "tiny_vid::ffmpeg::runner",
+            "FFmpeg failed (code={}): {}",
+            code,
+            err_preview
+        );
         Err(AppError::FfmpegFailed {
             code,
             stderr: stderr_str,
@@ -137,6 +185,10 @@ pub fn run_ffmpeg_blocking(
 pub fn terminate_all_ffmpeg() {
     let mut guard = ACTIVE_PROCESSES.lock().unwrap_or_else(|e| e.into_inner());
     if let Some(mut child) = guard.take() {
+        log::info!(
+            target: "tiny_vid::ffmpeg::runner",
+            "Terminating FFmpeg process"
+        );
         let _ = child.kill();
         let _ = child.wait();
     }
