@@ -7,9 +7,11 @@
     "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
     "beforeBuildCommand": "yarn build",
-    "frontendDist": "../dist"
+    "frontendDist": "../dist",
+    "removeUnusedCommands": true
   },
   "app": {
+    "macOSPrivateApi": true,
     "windows": [
       {
         "title": "Tiny Vid",
@@ -41,6 +43,16 @@
   "bundle": {
     "active": true,
     "targets": "all",
+    "category": "Video",
+    "shortDescription": "Compress and optimize video files",
+    "longDescription": "Tiny Vid is a desktop app for compressing and optimizing video files with support for H.264, H.265, and AV1 codecs.",
+    "fileAssociations": [
+      {
+        "ext": ["mp4", "mov", "webm", "mkv", "avi", "mpeg", "3gp", "flv", "ogg"],
+        "name": "Video",
+        "role": "Editor"
+      }
+    ],
     "icon": [
       "icons/32x32.png",
       "icons/128x128.png",
@@ -53,6 +65,11 @@
         "Resources/Assets.car": "icons/Assets.car"
       },
       "infoPlist": "./Info.plist"
+    },
+    "linux": {
+      "appimage": {
+        "bundleMediaFramework": true
+      }
     }
   }
 }

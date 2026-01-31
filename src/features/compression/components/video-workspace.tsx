@@ -3,6 +3,7 @@ import { TrashIcon, TriangleAlert } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
+import { DropZone } from "@/components/ui/drop-zone";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { VideoPreview } from "@/features/compression/components/video-preview";
@@ -18,6 +19,7 @@ export interface VideoWorkspaceProps {
   progress: number;
   onBrowse: () => void;
   onClear: () => void;
+  onDrop?: (path: string) => void;
 }
 
 export function VideoWorkspace({
@@ -30,6 +32,7 @@ export function VideoWorkspace({
   progress,
   onBrowse,
   onClear,
+  onDrop,
 }: VideoWorkspaceProps) {
   return (
     <div
@@ -43,21 +46,17 @@ export function VideoWorkspace({
     >
       <div className={cn("relative flex h-full items-center justify-center")}>
         {!inputPath ? (
-          <div
-            className={cn(
-              `
-                flex size-full cursor-pointer flex-col items-center
-                justify-center gap-4 rounded-md border-2 border-dashed
-                border-muted-foreground/25 transition-colors
-                hover:border-primary/50
-              `
-            )}
-            onClick={() => { onBrowse(); }}
+          <DropZone
+            onDrop={(paths) => {
+              const path = paths[0];
+              if (typeof path === "string") onDrop?.(path);
+            }}
+            onClick={onBrowse}
           >
             <p className={cn("text-muted-foreground")}>
               Drop video or click to browse
             </p>
-          </div>
+          </DropZone>
         ) : (
           <div
             className={cn(

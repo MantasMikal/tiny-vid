@@ -1,6 +1,3 @@
-import { getCurrentWindow } from "@tauri-apps/api/window";
-import { useEffect } from "react";
-
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CompressionDetailsCard } from "@/features/compression/components/compression-details-card";
 import { VideoSettings } from "@/features/compression/components/video-settings";
@@ -31,23 +28,6 @@ export default function Compressor() {
     generatePreview,
   } = useCompression();
 
-  useEffect(() => {
-    const unlistenPromise = getCurrentWindow().onDragDropEvent((event) => {
-      if (event.payload.type === "drop" && event.payload.paths.length > 0) {
-        const path = event.payload.paths[0];
-        if (typeof path === "string") {
-          void useCompressionStore.getState().selectPath(path);
-        }
-      }
-    });
-    void unlistenPromise;
-    return () => {
-      void unlistenPromise.then((unlistener) => {
-        unlistener();
-      });
-    };
-  }, []);
-
   return (
     <div
       className={cn(
@@ -67,6 +47,9 @@ export default function Compressor() {
         progress={progress}
         onBrowse={() => void browseAndSelectFile()}
         onClear={clear}
+        onDrop={(path: string) =>
+          void useCompressionStore.getState().selectPath(path)
+        }
       />
       <aside
         className={cn(

@@ -3,11 +3,7 @@ import { useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import { useCompressionStore } from "@/features/compression/store/compression-store";
-
-interface FfmpegErrorPayload {
-  summary: string;
-  detail: string;
-}
+import type { FfmpegErrorPayload } from "@/types/tauri";
 
 export function useCompressionStoreInit() {
   useEffect(() => {

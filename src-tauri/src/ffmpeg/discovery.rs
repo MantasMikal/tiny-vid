@@ -1,5 +1,5 @@
 use crate::error::AppError;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
 
@@ -85,17 +85,23 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 /// Get FFmpeg path. Cached for process lifetime.
 /// Env override: FFMPEG_PATH takes precedence (for tests/CI or bundled binaries).
 /// Falls back to PATH, then common installation paths.
-pub fn get_ffmpeg_path() -> Result<PathBuf, AppError> {
-    if let Ok(path) = std::env::var("FFMPEG_PATH") {
-        let p = PathBuf::from(path);
-        if p.exists() {
-            return Ok(p);
-        }
-    }
+pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
     if let Some(path) = FFMPEG_PATH_CACHE.get() {
-        return Ok(path.clone());
+        return Ok(path.as_path());
     }
-    let path = resolve_ffmpeg_path()?;
-    _ = FFMPEG_PATH_CACHE.set(path.clone());
-    Ok(path)
+    let path = if let Ok(env_path) = std::env::var("FFMPEG_PATH") {
+        let p = PathBuf::from(env_path);
+        if p.exists() {
+            p
+        } else {
+            resolve_ffmpeg_path()?
+        }
+    } else {
+        resolve_ffmpeg_path()?
+    };
+    match FFMPEG_PATH_CACHE.set(path) {
+        Ok(()) => {}
+        Err(_) => {} // Another thread initialized first
+    }
+    Ok(FFMPEG_PATH_CACHE.get().unwrap().as_path())
 }

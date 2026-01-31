@@ -79,3 +79,45 @@ impl TempFileManager {
         Ok(path)
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn create_returns_path_under_temp_dir_with_suffix() {
+        let manager = TempFileManager::default();
+        let path = manager.create("suffix.mp4", None).unwrap();
+        let tmp = std::env::temp_dir();
+        assert!(
+            path.starts_with(&tmp),
+            "path {:?} should be under temp_dir {:?}",
+            path,
+            tmp
+        );
+        assert!(
+            path.file_name().unwrap().to_string_lossy().ends_with("suffix.mp4"),
+            "file name should end with suffix: {:?}",
+            path.file_name()
+        );
+        assert!(!path.exists(), "create(_, None) should not create a file");
+    }
+
+    #[test]
+    fn create_with_content_writes_file() {
+        let manager = TempFileManager::default();
+        let data = b"video data";
+        let path = manager.create("test.mp4", Some(data)).unwrap();
+        assert!(path.exists());
+        assert_eq!(fs::read(&path).unwrap(), data);
+        let _ = fs::remove_file(&path);
+    }
+
+    #[test]
+    fn create_yields_different_paths() {
+        let manager = TempFileManager::default();
+        let path1 = manager.create("x", None).unwrap();
+        let path2 = manager.create("x", None).unwrap();
+        assert_ne!(path1, path2, "two create calls should yield different paths");
+    }
+}

@@ -2,6 +2,7 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 
+import type { FfmpegPreviewResult, TranscodeOptions } from "@/types/tauri";
 import type { CompressionOptions } from "@/features/compression/lib/compression-options";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
 import { getVideoMetadataFromPath } from "@/features/compression/lib/get-video-metadata";
@@ -12,7 +13,7 @@ export interface VideoPreview {
   compressedSrc: string;
 }
 
-function toRustOptions(opts: CompressionOptions) {
+function toRustOptions(opts: CompressionOptions): TranscodeOptions {
   return {
     codec: opts.codec,
     quality: opts.quality,
@@ -104,11 +105,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           set({ isGeneratingPreview: true, error: null });
           const result = await tryCatch(
             () =>
-              invoke<{
-                original_path: string;
-                compressed_path: string;
-                estimated_size: number;
-              }>("ffmpeg_preview", {
+              invoke<FfmpegPreviewResult>("ffmpeg_preview", {
                 inputPath: path,
                 options: toRustOptions(compressionOptions),
               }),
@@ -116,10 +113,10 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           );
           if (result.ok) {
             set({
-              estimatedSize: result.value.estimated_size,
+              estimatedSize: result.value.estimatedSize,
               videoPreview: {
-                originalSrc: convertFileSrc(result.value.original_path),
-                compressedSrc: convertFileSrc(result.value.compressed_path),
+                originalSrc: convertFileSrc(result.value.originalPath),
+                compressedSrc: convertFileSrc(result.value.compressedPath),
               },
               isGeneratingPreview: false,
             });
@@ -244,12 +241,8 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
     set({ isGeneratingPreview: true, error: null });
     const result = await tryCatch(
-      () =>
-        invoke<{
-          original_path: string;
-          compressed_path: string;
-          estimated_size: number;
-        }>("ffmpeg_preview", {
+        () =>
+        invoke<FfmpegPreviewResult>("ffmpeg_preview", {
           inputPath,
           options: toRustOptions(compressionOptions),
         }),
@@ -257,10 +250,10 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     );
     if (result.ok) {
       set({
-        estimatedSize: result.value.estimated_size,
+        estimatedSize: result.value.estimatedSize,
         videoPreview: {
-          originalSrc: convertFileSrc(result.value.original_path),
-          compressedSrc: convertFileSrc(result.value.compressed_path),
+          originalSrc: convertFileSrc(result.value.originalPath),
+          compressedSrc: convertFileSrc(result.value.compressedPath),
         },
         isGeneratingPreview: false,
       });
