@@ -55,9 +55,9 @@ export function convertQualityForCodecSwitch(
 }
 
 export const codecs = [
-  { name: "H.264 (Best compatibility)", value: "libx264" },
-  { name: "H.265 (Better compression)", value: "libx265" },
-  { name: "AV1 (Best, faster)", value: "libsvtav1" },
+  { name: "H.264 (Widest support)", value: "libx264" },
+  { name: "H.265 (Smaller files)", value: "libx265" },
+  { name: "AV1 (Smallest files)", value: "libsvtav1" },
 ];
 
 export const tuneOptions = [
