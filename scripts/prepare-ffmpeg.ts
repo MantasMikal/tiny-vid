@@ -3,11 +3,10 @@
  *
  * - Linux / bare: No-op (platform overrides set externalBin to [])
  * - Windows: Downloads BtbN win64-gpl, extracts to src-tauri/binaries/
- * - macOS Direct: Downloads BtbN macos64/macosarm64-gpl
+ * - macOS full: Expects output from build-ffmpeg-full-macos.sh; fails if missing
  * - macOS lgpl-macos: Expects output from build-ffmpeg-lgpl-macos.sh; fails if missing
  *
- * Caches BtbN downloads in ~/.cache/tiny-vid/ffmpeg (or TINY_VID_FFMPEG_CACHE).
- * Verifies checksums when BtbN provides checksums.sha256; fails if mismatch.
+ * Caches BtbN downloads in ~/.cache/tiny-vid/ffmpeg (or TINY_VID_FFMPEG_CACHE). Verifies checksums when BtbN provides checksums.sha256.
  *
  * Env: TARGET, CARGO_BUILD_TARGET (target triple); TINY_VID_LGPL_MACOS (truthy = lgpl-macos)
  *       TINY_VID_FFMPEG_CACHE (optional) cache directory for downloads
@@ -80,22 +79,6 @@ function isMacOs(target: string): boolean {
 }
 
 function getBtbNAsset(target: string): BtbNAsset | null {
-  if (target.includes("aarch64") && target.includes("darwin")) {
-    const filename = "ffmpeg-master-latest-macosarm64-gpl.tar.xz";
-    return {
-      url: `${BtbN_BASE}/${filename}`,
-      filename,
-      ext: "tar.xz",
-    };
-  }
-  if (target.includes("x86_64") && target.includes("darwin")) {
-    const filename = "ffmpeg-master-latest-macos64-gpl.tar.xz";
-    return {
-      url: `${BtbN_BASE}/${filename}`,
-      filename,
-      ext: "tar.xz",
-    };
-  }
   if (target.includes("x86_64") && target.includes("windows")) {
     const filename = "ffmpeg-master-latest-win64-gpl.zip";
     return {
@@ -198,6 +181,11 @@ function extractZip(archivePath: string, outDir: string): void {
 }
 
 function findFfmpegInExtracted(extractDir: string): string | null {
+  return findBinaryInExtracted(extractDir, "ffmpeg");
+}
+
+function findBinaryInExtracted(extractDir: string, baseName: string): string | null {
+  const exe = process.platform === "win32" ? ".exe" : "";
   const find = (dir: string): string | null => {
     const entries = readdirSync(dir, { withFileTypes: true });
     for (const e of entries) {
@@ -205,7 +193,7 @@ function findFfmpegInExtracted(extractDir: string): string | null {
       if (e.isDirectory()) {
         const found = find(p);
         if (found) return found;
-      } else if (e.name === "ffmpeg" || e.name === "ffmpeg.exe") {
+      } else if (e.name === baseName || e.name === `${baseName}${exe}`) {
         return p;
       }
     }
@@ -281,6 +269,21 @@ async function prepareBtbN(target: string): Promise<void> {
   console.log(`Prepared ffmpeg and ffprobe for ${target}`);
 }
 
+/** macOS full: expects binaries from build-ffmpeg-full-macos.sh. */
+function prepareFullMacOs(target: string): void {
+  const suffix = getSidecarSuffix(target);
+  const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
+  const ffprobeDest = join(BINARIES_DIR, `ffprobe-${suffix}`);
+
+  if (!existsSync(ffmpegDest) || !existsSync(ffprobeDest)) {
+    throw new Error(
+      `macOS full build requires FFmpeg built from source. Run yarn build-ffmpeg-full-macos first. ` +
+        `Expected: ${ffmpegDest}, ${ffprobeDest}`
+    );
+  }
+  console.log(`Using existing full FFmpeg binaries for ${target}`);
+}
+
 function prepareLgplMacOs(target: string): void {
   const suffix = getSidecarSuffix(target);
   const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
@@ -341,7 +344,7 @@ async function main(): Promise<void> {
     if (isLgplMacosBuild()) {
       prepareLgplMacOs(target);
     } else {
-      await prepareBtbN(target);
+      prepareFullMacOs(target);
     }
     return;
   }

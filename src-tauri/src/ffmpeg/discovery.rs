@@ -62,10 +62,19 @@ fn common_paths() -> Vec<PathBuf> {
     }
 }
 
+#[cfg_attr(feature = "discovery-test-helpers", allow(dead_code))]
 static FFMPEG_PATH_CACHE: OnceLock<PathBuf> = OnceLock::new();
 
-/// Resolve path to bundled sidecar binary (next to executable). macOS/Windows only.
-/// Returns the path if the binary exists, None otherwise.
+/// Test-only: resettable cache so discovery tests can run in any order without reusing a previous test's path.
+#[cfg(feature = "discovery-test-helpers")]
+static TEST_FFMPEG_CACHE: std::sync::Mutex<Option<&'static Path>> = std::sync::Mutex::new(None);
+
+#[cfg(feature = "discovery-test-helpers")]
+pub fn __test_reset_ffmpeg_path_cache() {
+    *TEST_FFMPEG_CACHE.lock().unwrap() = None;
+}
+
+/// Resolve path to bundled sidecar (next to executable). macOS/Windows only.
 pub fn resolve_sidecar_path(base_name: &str) -> Option<PathBuf> {
     #[cfg(not(any(target_os = "macos", target_os = "windows")))]
     {
@@ -106,7 +115,26 @@ pub fn resolve_sidecar_path(base_name: &str) -> Option<PathBuf> {
     }
 }
 
+/// Base names for bundled sidecar (suffixed first, then plain).
+#[cfg(all(
+    any(target_os = "macos", target_os = "windows"),
+    not(feature = "lgpl-macos")
+))]
+fn bundled_sidecar_base_names() -> [&'static str; 2] {
+    [concat!("ffmpeg-", env!("TARGET")), "ffmpeg"]
+}
+
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
+    #[cfg(all(
+        any(target_os = "macos", target_os = "windows"),
+        not(feature = "lgpl-macos")
+    ))]
+    for base_name in bundled_sidecar_base_names() {
+        if let Some(p) = resolve_sidecar_path(base_name) {
+            return Ok(p);
+        }
+    }
+
     for path in common_paths() {
         if path.exists() {
             log::debug!(
@@ -117,7 +145,6 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
             return Ok(path);
         }
     }
-
     if let Some(p) = find_in_path() {
         if p.exists() {
             log::debug!(
@@ -129,6 +156,7 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
         }
     }
 
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
     if let Some(p) = resolve_sidecar_path("ffmpeg") {
         return Ok(p);
     }
@@ -145,10 +173,20 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 
 /// Get FFmpeg path. Cached for process lifetime.
 /// 1. FFMPEG_PATH env (when set and path exists) – for tests/CI or bundled binaries.
-/// 2. Common installation paths (Homebrew, /usr/bin, etc.).
-/// 3. PATH (via which/where).
-/// 4. Bundled sidecar next to executable (macOS/Windows only).
+/// 2. When not lgpl-macos on macOS/Windows: bundled sidecar first (ffmpeg-{TARGET} then ffmpeg).
+/// 3. Common installation paths (Homebrew, /usr/bin, etc.).
+/// 4. PATH (via which/where).
+/// 5. Bundled sidecar fallback (macOS/Windows only; used for lgpl when nothing in path).
 pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
+    #[cfg(feature = "discovery-test-helpers")]
+    {
+        if let Ok(guard) = TEST_FFMPEG_CACHE.lock() {
+            if let Some(p) = *guard {
+                return Ok(p);
+            }
+        }
+    }
+    #[cfg(not(feature = "discovery-test-helpers"))]
     if let Some(path) = FFMPEG_PATH_CACHE.get() {
         log::trace!(
             target: "tiny_vid::ffmpeg::discovery",
@@ -172,12 +210,20 @@ pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
     } else {
         resolve_ffmpeg_path()?
     };
-    let _ = FFMPEG_PATH_CACHE.set(path);
-    Ok(FFMPEG_PATH_CACHE.get().unwrap().as_path())
+    #[cfg(feature = "discovery-test-helpers")]
+    {
+        let leaked: &'static Path = Box::leak(path.into_boxed_path());
+        *TEST_FFMPEG_CACHE.lock().unwrap() = Some(leaked);
+        return Ok(leaked);
+    }
+    #[cfg(not(feature = "discovery-test-helpers"))]
+    {
+        let _ = FFMPEG_PATH_CACHE.set(path);
+        Ok(FFMPEG_PATH_CACHE.get().unwrap().as_path())
+    }
 }
 
 /// Paths to try for ffprobe given an ffmpeg binary path (suffixed first, then plain).
-/// Used so we can unit-test the derivation logic.
 pub fn ffprobe_candidates(ffmpeg_path: &Path) -> Vec<PathBuf> {
     let parent = match ffmpeg_path.parent() {
         Some(p) => p,

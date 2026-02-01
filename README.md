@@ -2,17 +2,21 @@
 
 Video compressor app using native FFmpeg. [Web version (WASM)](https://handy.tools)
 
+
+
 ![image](https://github.com/user-attachments/assets/7faa0c2b-320e-45ef-b556-fa35b87142a7)
 
 ## Build variants (FFmpeg bundling)
 
 | Variant    | Platform       | FFmpeg source  |
 | ---------- | -------------- | -------------- |
-| full       | macOS, Windows | BtbN GPL       |
+| full       | macOS          | Self-built from source (GPL) |
+| full       | Windows        | BtbN GPL       |
 | lgpl-macos | macOS only     | Custom LGPL+VT |
 | bare       | Any            | System         |
 
-- **Full (macOS / Windows)** – Bundles BtbN GPL FFmpeg (libx264, libx265, libsvtav1).
+- **Full (macOS)** – Bundles GPL FFmpeg (libx264, libx265, etc.). Build from source: run `yarn build-ffmpeg-full-macos` once, then `yarn build:full`.
+- **Full (Windows)** – Bundles BtbN GPL FFmpeg (libx264, libx265, libsvtav1).
 - **lgpl-macos (macOS App Store)** – Custom LGPL FFmpeg with VideoToolbox only (H.264/HEVC, MP4). Requires building FFmpeg first.
 - **Bare** – No FFmpeg in the bundle; app uses system FFmpeg (e.g. `apt install ffmpeg` on Linux).
 
@@ -23,12 +27,12 @@ From the repo root, run the script for the variant you want. Installers go to **
 | Script | Description |
 | ------ | ----------- |
 | `yarn build:bare` | No bundled FFmpeg; uses system FFmpeg. Works on macOS, Windows, Linux (Linux requires Docker). |
-| `yarn build:full` | Bundles BtbN FFmpeg. macOS and Windows only. |
+| `yarn build:full` | Bundles FFmpeg. macOS: build from source first (`yarn build-ffmpeg-full-macos`); Windows: BtbN download. |
 | `yarn build:lgpl-macos` | macOS App Store build (custom LGPL FFmpeg). Run `yarn build-ffmpeg-lgpl-macos` once first. |
 
 To build by platform script instead: `./scripts/build-macos.sh [full|bare|lgpl]`, `./scripts/build-linux.sh`, or `./scripts/build-windows.sh [full|bare]`.
 
-BtbN downloads are cached in `~/.cache/tiny-vid/ffmpeg` (or `TINY_VID_FFMPEG_CACHE`). Checksums are verified when BtbN provides `checksums.sha256`. Binaries go to `src-tauri/binaries/` (gitignored). lgpl-macos build expects custom FFmpeg there from `yarn build-ffmpeg-lgpl-macos`.
+macOS full requires building FFmpeg from source first: `yarn build-ffmpeg-full-macos` (requires `brew install x264 x265 libvpx opus pkg-config`). Windows full downloads BtbN FFmpeg (cached in `~/.cache/tiny-vid/ffmpeg`; checksums verified). Binaries go to `src-tauri/binaries/` (gitignored). lgpl-macos expects custom FFmpeg from `yarn build-ffmpeg-lgpl-macos`.
 
 ### Dev commands
 
@@ -46,11 +50,13 @@ Run from project root:
 - **Default (full)**  
   - `yarn test` — unit and command tests; integration tests are `#[ignore]`.  
   - `yarn test:integration` — integration tests (needs FFmpeg with libx264, libx265, libsvtav1).  
-  - `yarn test:discovery` — discovery tests (env/cache isolation).  
-  - `yarn test:bundled-smoke` — smoke test for bundled ffmpeg (run after `yarn build:full`).
+  - `yarn test:discovery` — discovery tests (env/cache isolation).
 - **lgpl-macos**  
-  - `yarn test:lgpl-macos` — unit and command tests (including get_build_variant and VideoToolbox builder tests).  
-  - `yarn test:lgpl-macos:integration` — integration tests with VideoToolbox (requires `yarn build-ffmpeg-lgpl-macos` first; macOS only, VideoToolbox may fail in headless/CI).
+  - `yarn test:lgpl-macos` (alias: `yarn test:lgpl`) — unit and command tests (including get_build_variant and VideoToolbox builder tests).  
+  - `yarn test:lgpl-macos:integration` (alias: `yarn test:lgpl:ffmpeg`) — integration tests with VideoToolbox (requires `yarn build-ffmpeg-lgpl-macos` first; macOS only, VideoToolbox may fail in headless/CI).
 
 Unit tests live in each module (e.g. `error`, `ffmpeg/builder`); Tauri command tests are in `commands_tests.rs`; the FFmpeg integration test is in `integration_tests.rs` and is ignored by default.
 
+## License
+
+Tiny Vid is MIT licensed. See [LICENSE](LICENSE). Some build variants bundle FFmpeg under GPL or LGPL—see [THIRD_PARTY.md](THIRD_PARTY.md) for details.

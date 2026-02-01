@@ -4,6 +4,8 @@
 use std::env;
 use std::fs;
 use tiny_vid_tauri_lib::ffmpeg::discovery::{get_ffmpeg_path, get_ffprobe_path, resolve_sidecar_path};
+#[cfg(feature = "discovery-test-helpers")]
+use tiny_vid_tauri_lib::ffmpeg::discovery::__test_reset_ffmpeg_path_cache;
 
 /// Derive bundled suffix from target at compile time.
 fn bundled_suffix() -> String {
@@ -23,9 +25,7 @@ fn bundled_suffix() -> String {
     }
 }
 
-/// Tests that FFMPEG_PATH env var override works with suffixed binary names.
-/// Verifies that when FFMPEG_PATH points to a suffixed binary (e.g. ffmpeg-aarch64-apple-darwin),
-/// get_ffprobe_path() correctly derives the matching suffixed ffprobe name.
+/// FFMPEG_PATH override with suffixed binary; get_ffprobe_path derives matching ffprobe.
 #[test]
 fn env_var_override_with_suffixed_binaries() {
     let dir = env::temp_dir().join("tiny_vid_discovery_test").join(
@@ -73,15 +73,71 @@ fn env_var_override_with_suffixed_binaries() {
     let _ = fs::remove_dir(dir.parent().unwrap().parent().unwrap());
 }
 
-/// Tests that resolve_sidecar_path finds binaries next to the current executable.
-/// This tests the actual sidecar discovery mechanism used for bundled ffmpeg binaries.
+/// Prefer bundled sidecar when not lgpl-macos. Run: cargo test --test discovery_bundled --features discovery-test-helpers
+#[test]
+#[cfg(all(
+    any(target_os = "macos", target_os = "windows"),
+    not(feature = "lgpl-macos"),
+    feature = "discovery-test-helpers"
+))]
+fn prefer_bundled_sidecar_when_not_lgpl() {
+    __test_reset_ffmpeg_path_cache();
+    let exe_path = env::current_exe().expect("get current exe path");
+    let exe_dir = exe_path.parent().expect("exe parent dir");
+
+    let target = env!("TARGET");
+    #[cfg(windows)]
+    let (ffmpeg_name, ffprobe_name) = (
+        format!("ffmpeg-{}.exe", target),
+        format!("ffprobe-{}.exe", target),
+    );
+    #[cfg(not(windows))]
+    let (ffmpeg_name, ffprobe_name) = (
+        format!("ffmpeg-{}", target),
+        format!("ffprobe-{}", target),
+    );
+
+    let mock_ffmpeg = exe_dir.join(&ffmpeg_name);
+    let mock_ffprobe = exe_dir.join(&ffprobe_name);
+
+    let _ = fs::remove_file(&mock_ffmpeg);
+    let _ = fs::remove_file(&mock_ffprobe);
+
+    fs::File::create(&mock_ffmpeg).expect("create mock ffmpeg sidecar");
+    fs::File::create(&mock_ffprobe).expect("create mock ffprobe sidecar");
+
+    let previous = env::var("FFMPEG_PATH").ok();
+    unsafe { env::remove_var("FFMPEG_PATH") };
+    let _guard = RestoreEnv {
+        key: "FFMPEG_PATH".to_string(),
+        previous,
+    };
+
+    let got_ffmpeg = get_ffmpeg_path().expect("get_ffmpeg_path should succeed");
+    let got_ffprobe = get_ffprobe_path().expect("get_ffprobe_path should succeed");
+
+    let _ = fs::remove_file(&mock_ffmpeg);
+    let _ = fs::remove_file(&mock_ffprobe);
+
+    assert_eq!(
+        got_ffmpeg,
+        mock_ffmpeg.as_path(),
+        "get_ffmpeg_path should return the suffixed bundled sidecar when not lgpl-macos"
+    );
+    assert_eq!(
+        got_ffprobe,
+        mock_ffprobe,
+        "get_ffprobe_path should return the suffixed bundled ffprobe"
+    );
+}
+
+/// resolve_sidecar_path finds binaries next to the current executable.
 #[test]
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn discovers_sidecar_binaries() {
     let exe_path = env::current_exe().expect("get current exe path");
     let exe_dir = exe_path.parent().expect("get exe parent dir");
 
-    // Create mock ffmpeg binary next to the test executable
     #[cfg(windows)]
     let ffmpeg_name = "ffmpeg.exe";
     #[cfg(not(windows))]
@@ -89,16 +145,10 @@ fn discovers_sidecar_binaries() {
 
     let mock_ffmpeg = exe_dir.join(ffmpeg_name);
 
-    // Clean up any existing mock file first
     let _ = fs::remove_file(&mock_ffmpeg);
-
-    // Create the mock file
     fs::File::create(&mock_ffmpeg).expect("create mock ffmpeg next to test binary");
 
-    // Test that resolve_sidecar_path finds it
     let result = resolve_sidecar_path("ffmpeg");
-
-    // Clean up before asserting (so cleanup happens even if assertion fails)
     let _ = fs::remove_file(&mock_ffmpeg);
 
     assert!(
@@ -112,11 +162,10 @@ fn discovers_sidecar_binaries() {
     );
 }
 
-/// Tests that resolve_sidecar_path returns None when binary doesn't exist.
+/// resolve_sidecar_path returns None when binary doesn't exist.
 #[test]
 #[cfg(any(target_os = "macos", target_os = "windows"))]
 fn sidecar_returns_none_when_missing() {
-    // Use a name that definitely won't exist
     let result = resolve_sidecar_path("ffmpeg_nonexistent_test_binary_12345");
     assert!(
         result.is_none(),
@@ -124,7 +173,7 @@ fn sidecar_returns_none_when_missing() {
     );
 }
 
-/// On Linux, resolve_sidecar_path must return None (no sidecar bundling).
+/// resolve_sidecar_path returns None on Linux (no sidecar bundling).
 #[test]
 #[cfg(target_os = "linux")]
 fn sidecar_returns_none_on_linux() {

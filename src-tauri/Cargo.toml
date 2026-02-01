@@ -1,13 +1,15 @@
 [package]
-name = "tiny-vid-tauri"
-version = "0.1.0"
-description = "A Tauri App"
-authors = ["you"]
+name = "tiny-vid"
+version = "1.0.0"
+description = "Desktop app for compressing and optimizing video files with support for H.264, H.265, VP9, and AV1 codecs"
+authors = ["Mantas Mikalauskis"]
 edition = "2024"
 
 [features]
 default = []
 lgpl-macos = []
+# Enables resettable FFmpeg path cache so discovery_bundled tests can run in any order.
+discovery-test-helpers = []
 
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 

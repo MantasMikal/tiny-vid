@@ -31,9 +31,10 @@ if [[ "$VERSION" == "" || "$VERSION" == "null" ]]; then
   exit 1
 fi
 
-OVERRIDE_CONFIG="$SRC_TAURI/overrides/macos-${VARIANT}.json"
-
 echo "Building macOS ($VARIANT) — version $VERSION"
+
+# Avoid tauri receiving CI=1 (invalid --ci 1); use unset so local/CI both work
+unset CI
 
 yarn clean:bundle
 
@@ -41,14 +42,14 @@ BUILD_EXIT=0
 case "$VARIANT" in
   full)
     yarn prepare-ffmpeg
-    yarn tauri build --config "$OVERRIDE_CONFIG" || BUILD_EXIT=$?
+    yarn tauri build --config "$SRC_TAURI/overrides/macos-full.json" || BUILD_EXIT=$?
     ;;
   bare)
-    yarn tauri build --config "$OVERRIDE_CONFIG" || BUILD_EXIT=$?
+    yarn tauri build || BUILD_EXIT=$?
     ;;
   lgpl)
     TINY_VID_LGPL_MACOS=1 yarn prepare-ffmpeg
-    yarn tauri build --config "$OVERRIDE_CONFIG" --features lgpl-macos || BUILD_EXIT=$?
+    yarn tauri build --config "$SRC_TAURI/overrides/macos-lgpl.json" --features lgpl-macos || BUILD_EXIT=$?
     ;;
 esac
 

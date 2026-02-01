@@ -30,7 +30,7 @@ docker run --rm \
   -v "$REPO_ROOT:/app" \
   -w /app \
   "$IMAGE_NAME" \
-  bash -c "yarn install && rm -rf src-tauri/target && yarn clean:bundle && yarn tauri build --no-bundle --config src-tauri/overrides/linux-bare.json && yarn tauri bundle --bundles deb"
+  bash -c "yarn install && rm -rf src-tauri/target && yarn clean:bundle && yarn tauri build --no-bundle && yarn tauri bundle --bundles deb"
 
 BUNDLE_DEB_DIR="src-tauri/target/release/bundle/deb"
 if [[ ! -d "$BUNDLE_DEB_DIR" ]]; then

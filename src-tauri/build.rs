@@ -1,4 +1,7 @@
 fn main() {
+    if let Ok(t) = std::env::var("TARGET") {
+        println!("cargo:rustc-env=TARGET={}", t);
+    }
     tauri_build::try_build(
         tauri_build::Attributes::new().app_manifest(
             tauri_build::AppManifest::new().commands(&[

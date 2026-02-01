@@ -189,7 +189,7 @@ export function VideoSettings({
       )}
       <Tabs
         value={activeTab}
-        className={cn("w-full min-w-0 ")}
+        className={cn("w-full min-w-0")}
         onValueChange={handleTabChange}
       >
         <TabsList className={cn("mb-4 grid w-full grid-cols-2")}>
@@ -500,7 +500,7 @@ export function VideoSettings({
                     <ScrollArea
                       className={cn(
                         "rounded-md border bg-muted/50 p-3 font-mono text-xs",
-                        "max-h-64 w-full overflow-auto break-all select-text"
+                        "max-h-64 w-full break-all select-text"
                       )}
                     >
                       {ffmpegCommandPreviewLoading ? (

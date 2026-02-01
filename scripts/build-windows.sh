@@ -33,16 +33,20 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-OVERRIDE_CONFIG="src-tauri/overrides/windows-${VARIANT}.json"
 SUFFIX="windows-${VARIANT}"
 
 echo "Building Windows installers ($VARIANT) — version $VERSION"
 
+# Avoid tauri receiving CI=1 (invalid --ci 1); use unset so local/CI both work
+unset CI
+
 yarn clean:bundle
 if [[ "$VARIANT" == "full" ]]; then
   yarn prepare-ffmpeg
+  yarn tauri build --config src-tauri/overrides/windows-full.json
+else
+  yarn tauri build
 fi
-yarn tauri build --config "$OVERRIDE_CONFIG"
 
 BUNDLE_DIR="src-tauri/target/release/bundle"
 MSI_DIR="$BUNDLE_DIR/msi"

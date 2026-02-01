@@ -163,3 +163,14 @@
 .window-content::-webkit-scrollbar-thumb:hover {
   background-color: var(--window-c-scrollbar-thumb-hover);
 }
+
+/* Hide native scrollbar on Radix ScrollArea viewport so only custom scrollbar shows (fixes double scrollbar on macOS prod; Radix injects this too but it can be blocked/ignored in prod) */
+[data-radix-scroll-area-viewport],
+[data-slot="scroll-area-viewport"] {
+  scrollbar-width: none !important;
+  -ms-overflow-style: none !important;
+}
+[data-radix-scroll-area-viewport]::-webkit-scrollbar,
+[data-slot="scroll-area-viewport"]::-webkit-scrollbar {
+  display: none !important;
+}

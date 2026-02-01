@@ -13,6 +13,7 @@ src-tauri/binaries
 .ffmpeg-lgpl-macos-build
 dist-ssr
 *.local
+releases/
 
 # Editor directories and files
 .vscode/*

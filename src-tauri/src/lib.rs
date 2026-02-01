@@ -533,6 +533,51 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .setup(|app| {
+            use tauri::menu::{AboutMetadata, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
+            let pkg = app.package_info();
+
+            let about = PredefinedMenuItem::about(
+                app,
+                None,
+                Some(AboutMetadata {
+                    name: Some(pkg.name.clone()),
+                    version: Some(pkg.version.to_string()),
+                    copyright: Some("Copyright © 2025 Mantas Mikalauskis".into()),
+                    credits: Some("Compress and optimize video files with H.264, H.265, and AV1.".into()),
+                    ..Default::default()
+                }),
+            )?;
+            let quit = PredefinedMenuItem::quit(app, None)?;
+            let app_menu = SubmenuBuilder::new(app, &pkg.name)
+                .item(&about)
+                .separator()
+                .item(&quit)
+                .build()?;
+
+            let fullscreen = PredefinedMenuItem::fullscreen(app, None)?;
+            let view_menu = SubmenuBuilder::new(app, "View")
+                .item(&fullscreen)
+                .build()?;
+
+            let minimize = PredefinedMenuItem::minimize(app, None)?;
+            let maximize = PredefinedMenuItem::maximize(app, None)?;
+            let close_window = PredefinedMenuItem::close_window(app, None)?;
+            let show_all = PredefinedMenuItem::show_all(app, None)?;
+            let window_menu = SubmenuBuilder::new(app, "Window")
+                .item(&minimize)
+                .item(&maximize)
+                .item(&close_window)
+                .separator()
+                .item(&show_all)
+                .build()?;
+
+            let menu = MenuBuilder::new(app)
+                .items(&[&app_menu, &view_menu, &window_menu])
+                .build()?;
+            app.set_menu(menu)?;
+            Ok(())
+        })
         .invoke_handler(tauri::generate_handler![
             ffmpeg_transcode_to_temp,
             ffmpeg_preview,

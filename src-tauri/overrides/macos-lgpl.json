@@ -1,6 +1,7 @@
 {
   "identifier": "tiny-vid-lgpl",
   "bundle": {
+    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
     "longDescription": "Tiny Vid is a desktop app for compressing and optimizing video files with support for H.264 and H.265.",
     "fileAssociations": [
       {
