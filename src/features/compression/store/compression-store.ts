@@ -8,6 +8,12 @@ import { getVideoMetadataFromPath } from "@/features/compression/lib/get-video-m
 import { type ResultError, tryCatch } from "@/lib/try-catch";
 import type { FfmpegPreviewResult, TranscodeOptions } from "@/types/tauri";
 
+export enum WorkerState {
+  Idle = "idle",
+  GeneratingPreview = "generating-preview",
+  Transcoding = "transcoding",
+}
+
 export interface VideoPreview {
   originalSrc: string;
   compressedSrc: string;
@@ -44,6 +50,7 @@ const DEFAULT_COMPRESSION_OPTIONS: CompressionOptions = {
 };
 
 let debouncePreviewTimer: ReturnType<typeof setTimeout> | null = null;
+let previewRequestId = 0;
 
 interface CompressionState {
   inputPath: string | null;
@@ -54,8 +61,7 @@ interface CompressionState {
   isSaving: boolean;
   compressionOptions: CompressionOptions;
   error: ResultError | null;
-  isTranscoding: boolean;
-  isGeneratingPreview: boolean;
+  workerState: WorkerState;
   progress: number;
   /** True after FFmpeg event listeners are registered; avoid starting transcode before this. */
   listenersReady: boolean;
@@ -64,7 +70,7 @@ interface CompressionState {
   browseAndSelectFile: () => Promise<void>;
   transcodeAndSave: () => Promise<void>;
   clear: () => void;
-  generatePreview: () => Promise<void>;
+  generatePreview: (requestId?: number) => Promise<void>;
   setCompressionOptions: (options: CompressionOptions) => void;
   terminate: () => Promise<void>;
 }
@@ -78,12 +84,16 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   isSaving: false,
   compressionOptions: DEFAULT_COMPRESSION_OPTIONS,
   error: null,
-  isTranscoding: false,
-  isGeneratingPreview: false,
+  workerState: WorkerState.Idle,
   progress: 0,
   listenersReady: false,
 
   selectPath: async (path: string) => {
+    const { workerState } = get();
+    if (workerState === WorkerState.GeneratingPreview) {
+      await get().terminate();
+    }
+
     set({
       inputPath: path,
       videoUploading: true,
@@ -106,7 +116,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       async () => {
         const { compressionOptions } = get();
         if (compressionOptions.generatePreview) {
-          set({ isGeneratingPreview: true, error: null });
+          set({ workerState: WorkerState.GeneratingPreview, error: null });
           const result = await tryCatch(
             () =>
               invoke<FfmpegPreviewResult>("ffmpeg_preview", {
@@ -115,6 +125,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
               }),
             "Preview Error"
           );
+
           if (result.ok) {
             set({
               estimatedSize: result.value.estimatedSize,
@@ -122,11 +133,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
                 originalSrc: convertFileSrc(result.value.originalPath),
                 compressedSrc: convertFileSrc(result.value.compressedPath),
               },
-              isGeneratingPreview: false,
+              workerState: WorkerState.Idle,
             });
           } else if (!result.aborted) {
             set({
-              isGeneratingPreview: false,
+              workerState: WorkerState.Idle,
               error: result.error,
             });
             void get().terminate();
@@ -136,7 +147,9 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       "Preview Error",
       {
         onFinally: () => {
-          set({ videoUploading: false });
+          if (get().inputPath === path) {
+            set({ videoUploading: false });
+          }
         },
       }
     );
@@ -172,7 +185,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     const { inputPath, compressionOptions, videoMetadata } = get();
     if (!inputPath) return;
 
-    set({ isTranscoding: true, progress: 0, error: null });
+    set({ workerState: WorkerState.Transcoding, progress: 0, error: null });
     const transcodeResult = await tryCatch(
       () =>
         invoke<string>("ffmpeg_transcode_to_temp", {
@@ -184,7 +197,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (!transcodeResult.ok) {
       if (!transcodeResult.aborted) {
         set({
-          isTranscoding: false,
+          workerState: WorkerState.Idle,
           error: transcodeResult.error,
         });
       }
@@ -192,7 +205,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       return;
     }
     const tempPath = transcodeResult.value;
-    set({ isTranscoding: false, progress: 1 });
+    set({ workerState: WorkerState.Idle, progress: 1 });
 
     set({ isSaving: true });
     await tryCatch(
@@ -247,11 +260,16 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     });
   },
 
-  generatePreview: async () => {
-    const { inputPath, compressionOptions } = get();
+  generatePreview: async (requestId?: number) => {
+    const { inputPath, compressionOptions, workerState } = get();
     if (!inputPath) return;
 
-    set({ isGeneratingPreview: true, error: null });
+    if (workerState === WorkerState.GeneratingPreview) {
+      await get().terminate();
+    }
+
+    set({ workerState: WorkerState.GeneratingPreview, error: null });
+
     const result = await tryCatch(
       () =>
         invoke<FfmpegPreviewResult>("ffmpeg_preview", {
@@ -260,6 +278,12 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         }),
       "Preview Error"
     );
+
+    // If requestId was provided (debounced call), check if this request is still current
+    if (requestId !== undefined && requestId !== previewRequestId) {
+      return; // Stale result, discard
+    }
+
     if (result.ok) {
       set({
         estimatedSize: result.value.estimatedSize,
@@ -267,11 +291,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           originalSrc: convertFileSrc(result.value.originalPath),
           compressedSrc: convertFileSrc(result.value.compressedPath),
         },
-        isGeneratingPreview: false,
+        workerState: WorkerState.Idle,
       });
     } else if (!result.aborted) {
       set({
-        isGeneratingPreview: false,
+        workerState: WorkerState.Idle,
         error: result.error,
       });
       await get().terminate();
@@ -295,15 +319,15 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
     debouncePreviewTimer = setTimeout(() => {
       debouncePreviewTimer = null;
-      void get().generatePreview();
+      previewRequestId++;
+      void get().generatePreview(previewRequestId);
     }, 300);
   },
 
   terminate: async () => {
     await tryCatch(() => invoke("ffmpeg_terminate"), "Terminate Error");
     set({
-      isTranscoding: false,
-      isGeneratingPreview: false,
+      workerState: WorkerState.Idle,
       progress: 0,
     });
   },

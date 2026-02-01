@@ -7,6 +7,7 @@ import { DropZone } from "@/components/ui/drop-zone";
 import { Progress } from "@/components/ui/progress";
 import { Spinner } from "@/components/ui/spinner";
 import { VideoPreview } from "@/features/compression/components/video-preview";
+import { WorkerState } from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
 
 export interface VideoWorkspaceProps {
@@ -14,8 +15,7 @@ export interface VideoWorkspaceProps {
   videoPreview: { originalSrc: string; compressedSrc: string } | null;
   videoUploading: boolean;
   error: { type: string; message: string; detail?: string } | null;
-  isGeneratingPreview: boolean;
-  isTranscoding: boolean;
+  workerState: WorkerState;
   progress: number;
   onBrowse: () => void;
   onClear: () => void;
@@ -27,8 +27,7 @@ export function VideoWorkspace({
   videoPreview,
   videoUploading,
   error,
-  isGeneratingPreview,
-  isTranscoding,
+  workerState,
   progress,
   onBrowse,
   onClear,
@@ -109,7 +108,7 @@ export function VideoWorkspace({
                 </Button>
               </div>
             )}
-            {isGeneratingPreview && videoPreview && (
+            {workerState === WorkerState.GeneratingPreview && videoPreview && (
               <motion.div
                 className={cn(
                   `
@@ -127,7 +126,7 @@ export function VideoWorkspace({
                 </span>
               </motion.div>
             )}
-            {isTranscoding && (
+            {workerState === WorkerState.Transcoding && (
               <Progress
                 className={cn("absolute bottom-0 z-10 w-full")}
                 value={progress * 100}

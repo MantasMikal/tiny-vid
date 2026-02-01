@@ -2,7 +2,10 @@ import { listen } from "@tauri-apps/api/event";
 import { useEffect } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import { useCompressionStore } from "@/features/compression/store/compression-store";
+import {
+  useCompressionStore,
+  WorkerState,
+} from "@/features/compression/store/compression-store";
 import type { FfmpegErrorPayload } from "@/types/tauri";
 
 export function useCompressionStoreInit() {
@@ -17,19 +20,20 @@ export function useCompressionStoreInit() {
         }),
         listen<FfmpegErrorPayload>("ffmpeg-error", (e) => {
           const { summary, detail } = e.payload;
+          if (summary === "Aborted") return;
           const s = useCompressionStore.getState();
-          if (s.isTranscoding) {
+          if (s.workerState === WorkerState.Transcoding) {
             useCompressionStore.setState({
-              isTranscoding: false,
+              workerState: WorkerState.Idle,
               error: {
                 type: "Transcode Error",
                 message: summary,
                 detail,
               },
             });
-          } else if (s.isGeneratingPreview) {
+          } else if (s.workerState === WorkerState.GeneratingPreview) {
             useCompressionStore.setState({
-              isGeneratingPreview: false,
+              workerState: WorkerState.Idle,
               error: {
                 type: "Preview Error",
                 message: summary,
@@ -40,13 +44,13 @@ export function useCompressionStoreInit() {
         }),
         listen("ffmpeg-complete", () => {
           const s = useCompressionStore.getState();
-          if (s.isTranscoding) {
+          if (s.workerState === WorkerState.Transcoding) {
             useCompressionStore.setState({
-              isTranscoding: false,
+              workerState: WorkerState.Idle,
               progress: 1,
             });
-          } else if (s.isGeneratingPreview) {
-            useCompressionStore.setState({ isGeneratingPreview: false });
+          } else if (s.workerState === WorkerState.GeneratingPreview) {
+            useCompressionStore.setState({ workerState: WorkerState.Idle });
           }
         }),
       ]);
@@ -79,8 +83,7 @@ export function useCompression() {
       videoPreview: s.videoPreview,
       videoUploading: s.videoUploading,
       error: s.error,
-      isTranscoding: s.isTranscoding,
-      isGeneratingPreview: s.isGeneratingPreview,
+      workerState: s.workerState,
       progress: s.progress,
       videoMetadata: s.videoMetadata,
       estimatedSize: s.estimatedSize,
@@ -89,8 +92,9 @@ export function useCompression() {
       isDisabled:
         !s.inputPath ||
         s.isSaving ||
-        (!s.listenersReady && !(s.isTranscoding || s.isGeneratingPreview)),
-      isWorking: s.isTranscoding || s.isGeneratingPreview,
+        s.workerState === WorkerState.Transcoding ||
+        (!s.listenersReady && s.workerState === WorkerState.Idle),
+      isWorking: s.workerState !== WorkerState.Idle,
       selectPath: s.selectPath,
       browseAndSelectFile: s.browseAndSelectFile,
       transcodeAndSave: s.transcodeAndSave,

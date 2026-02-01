@@ -10,8 +10,8 @@ pub use builder::build_ffmpeg_command;
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
 pub use runner::{run_ffmpeg_blocking, terminate_all_ffmpeg};
 pub use temp::{
-    cleanup_previous_preview_paths, cleanup_transcode_temp, set_transcode_temp,
-    store_preview_paths_for_cleanup, TempFileManager,
+    cleanup_previous_preview_paths, cleanup_transcode_temp, get_cached_extract, set_cached_extract,
+    set_transcode_temp, store_preview_paths_for_cleanup, TempFileManager,
 };
 #[cfg(test)]
 pub use verify::verify_video;

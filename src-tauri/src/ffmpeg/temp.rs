@@ -6,6 +6,15 @@ use std::sync::Mutex;
 static PREVIOUS_PREVIEW_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static TRANSCODE_TEMP_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
+/// Cache for extracted preview original: (input_path, preview_duration) -> original_path.
+/// Reused when only transcode options change, avoiding slow re-extraction from large files.
+struct CachedExtract {
+    input_path: String,
+    preview_duration: u32,
+    original_path: PathBuf,
+}
+static EXTRACT_CACHE: Mutex<Option<CachedExtract>> = Mutex::new(None);
+
 /// Set the current transcode temp path (for cleanup on exit or cancel).
 pub fn set_transcode_temp(path: Option<PathBuf>) {
     if let Ok(mut guard) = TRANSCODE_TEMP_PATH.lock() {
@@ -27,10 +36,34 @@ pub fn cleanup_transcode_temp() {
 }
 
 /// Delete temp files from the previous preview. Call at the start of each new preview.
-pub fn cleanup_previous_preview_paths() {
+/// Preserves the cached original when it matches the new request (cache hit).
+pub fn cleanup_previous_preview_paths(
+    new_input_path: &str,
+    new_preview_duration: u32,
+) {
     let mut guard = PREVIOUS_PREVIEW_PATHS.lock().unwrap_or_else(|e| e.into_inner());
     let paths: Vec<_> = guard.drain(..).collect();
+    let cache_guard = EXTRACT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    let cache_path = cache_guard.as_ref().and_then(|c| {
+        if c.input_path == new_input_path && c.preview_duration == new_preview_duration {
+            Some(c.original_path.clone())
+        } else {
+            None
+        }
+    });
+    drop(cache_guard);
+
     for path in &paths {
+        if let Some(ref keep) = cache_path {
+            if path == keep {
+                log::trace!(
+                    target: "tiny_vid::ffmpeg::temp",
+                    "cleanup_previous_preview_paths: keeping cached original {}",
+                    path.display()
+                );
+                continue;
+            }
+        }
         log::trace!(
             target: "tiny_vid::ffmpeg::temp",
             "cleanup_previous_preview_paths: removing {}",
@@ -38,6 +71,48 @@ pub fn cleanup_previous_preview_paths() {
         );
         let _ = fs::remove_file(path);
     }
+}
+
+/// Get cached original path if it matches and the file exists.
+pub fn get_cached_extract(input_path: &str, preview_duration: u32) -> Option<PathBuf> {
+    let guard = EXTRACT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    guard.as_ref().and_then(|c| {
+        if c.input_path == input_path
+            && c.preview_duration == preview_duration
+            && c.original_path.exists()
+        {
+            Some(c.original_path.clone())
+        } else {
+            None
+        }
+    })
+}
+
+/// Store or update the extract cache. Removes old cached file if the key changed.
+pub fn set_cached_extract(input_path: String, preview_duration: u32, original_path: PathBuf) {
+    let mut guard = EXTRACT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
+    if let Some(old) = guard.take() {
+        if old.input_path != input_path || old.preview_duration != preview_duration {
+            log::trace!(
+                target: "tiny_vid::ffmpeg::temp",
+                "set_cached_extract: removing old cache {}",
+                old.original_path.display()
+            );
+            let _ = fs::remove_file(&old.original_path);
+        }
+    }
+    log::debug!(
+        target: "tiny_vid::ffmpeg::temp",
+        "set_cached_extract: caching {} for input={}, duration={}",
+        original_path.display(),
+        input_path,
+        preview_duration
+    );
+    *guard = Some(CachedExtract {
+        input_path,
+        preview_duration,
+        original_path,
+    });
 }
 
 /// Store paths to be cleaned up when the next preview is generated.

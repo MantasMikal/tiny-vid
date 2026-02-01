@@ -12,14 +12,12 @@ export default function Compressor() {
     videoPreview,
     videoUploading,
     error,
-    isGeneratingPreview,
-    isTranscoding,
+    workerState,
     progress,
     videoMetadata,
     estimatedSize,
     compressionOptions,
     isDisabled,
-    isWorking,
     browseAndSelectFile,
     clear,
     setCompressionOptions,
@@ -42,8 +40,7 @@ export default function Compressor() {
         videoPreview={videoPreview}
         videoUploading={videoUploading}
         error={error}
-        isGeneratingPreview={isGeneratingPreview}
-        isTranscoding={isTranscoding}
+        workerState={workerState}
         progress={progress}
         onBrowse={() => void browseAndSelectFile()}
         onClear={clear}
@@ -84,8 +81,7 @@ export default function Compressor() {
           cOptions={compressionOptions}
           estimatedSize={estimatedSize}
           isDisabled={isDisabled}
-          isWorking={isWorking}
-          isGeneratingPreview={isGeneratingPreview}
+          workerState={workerState}
           onTranscode={() => void transcodeAndSave()}
           onTerminate={() => void terminate()}
           onGeneratePreview={() => void generatePreview()}

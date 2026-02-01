@@ -4,9 +4,9 @@ mod ffmpeg;
 use error::AppError;
 use tauri::Emitter;
 use ffmpeg::{
-    build_ffmpeg_command, cleanup_previous_preview_paths, cleanup_transcode_temp, parse_ffmpeg_error,
-    run_ffmpeg_blocking, set_transcode_temp, store_preview_paths_for_cleanup, terminate_all_ffmpeg,
-    TempFileManager, TranscodeOptions,
+    build_ffmpeg_command, cleanup_previous_preview_paths, cleanup_transcode_temp, get_cached_extract,
+    parse_ffmpeg_error, run_ffmpeg_blocking, set_cached_extract, set_transcode_temp,
+    store_preview_paths_for_cleanup, terminate_all_ffmpeg, TempFileManager, TranscodeOptions,
 };
 use ffmpeg::FfmpegErrorPayload;
 
@@ -162,33 +162,50 @@ async fn ffmpeg_preview(
     app: tauri::AppHandle,
     window: tauri::Window,
 ) -> Result<PreviewResult, AppError> {
+    let input_str = input_path.to_string_lossy().to_string();
+    let preview_duration_u32 = options.preview_duration.unwrap_or(3);
+    let preview_duration = preview_duration_u32 as f64;
+
     log::info!(
         target: "tiny_vid::commands",
         "ffmpeg_preview: input={}",
         input_path.display()
     );
-    cleanup_previous_preview_paths();
+    cleanup_previous_preview_paths(&input_str, preview_duration_u32);
 
     let temp = TempFileManager::default();
-    let preview_duration = options.preview_duration.unwrap_or(3) as f64;
-    let original_path = temp.create("preview-original.mp4", None).map_err(AppError::from)?;
     let output_path = temp.create("preview-output.mp4", None).map_err(AppError::from)?;
 
-    let extract_args = vec![
-        "-threads".to_string(),
-        "0".to_string(),
-        "-ss".to_string(),
-        "0".to_string(),
-        "-t".to_string(),
-        preview_duration.to_string(),
-        "-i".to_string(),
-        input_path.to_string_lossy().to_string(),
-        "-c".to_string(),
-        "copy".to_string(),
-        original_path.to_string_lossy().to_string(),
-    ];
+    let original_path = match get_cached_extract(&input_str, preview_duration_u32) {
+        Some(cached) => {
+            log::info!(
+                target: "tiny_vid::commands",
+                "ffmpeg_preview: cache hit, reusing extracted segment"
+            );
+            cached
+        }
+        None => {
+            let path = temp.create("preview-original.mp4", None).map_err(AppError::from)?;
 
-    run_ffmpeg_step(extract_args, &app, window.label(), None).await?;
+            let extract_args = vec![
+                "-threads".to_string(),
+                "0".to_string(),
+                "-ss".to_string(),
+                "0".to_string(),
+                "-t".to_string(),
+                preview_duration.to_string(),
+                "-i".to_string(),
+                input_str.clone(),
+                "-c".to_string(),
+                "copy".to_string(),
+                path.to_string_lossy().to_string(),
+            ];
+
+            run_ffmpeg_step(extract_args, &app, window.label(), None).await?;
+            set_cached_extract(input_str.clone(), preview_duration_u32, path.clone());
+            path
+        }
+    };
 
     let transcode_args = build_ffmpeg_command(
         &original_path.to_string_lossy(),

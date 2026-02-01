@@ -5,6 +5,7 @@ import { Button } from "@/components/ui/button";
 import { VideoMetadataDisplay } from "@/features/compression/components/video-metadata-display";
 import type { CompressionOptions } from "@/features/compression/lib/compression-options";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
+import { WorkerState } from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
 
 export interface CompressionDetailsCardProps {
@@ -13,8 +14,7 @@ export interface CompressionDetailsCardProps {
   cOptions: CompressionOptions;
   estimatedSize: number | null;
   isDisabled: boolean;
-  isWorking: boolean;
-  isGeneratingPreview: boolean;
+  workerState: WorkerState;
   onTranscode: () => void;
   onTerminate: () => void;
   onGeneratePreview: () => void;
@@ -26,12 +26,14 @@ export function CompressionDetailsCard({
   cOptions,
   estimatedSize,
   isDisabled,
-  isWorking,
-  isGeneratingPreview,
+  workerState,
   onTranscode,
   onTerminate,
   onGeneratePreview,
 }: CompressionDetailsCardProps) {
+  const isWorking = workerState !== WorkerState.Idle;
+  const isTranscoding = workerState === WorkerState.Transcoding;
+  const isGeneratingPreview = workerState === WorkerState.GeneratingPreview;
   return (
     <AnimatePresence>
       {inputPath && (
@@ -58,8 +60,8 @@ export function CompressionDetailsCard({
           >
             <Button
               className={cn("flex-1")}
-              onClick={() => { isWorking ? onTerminate() : onTranscode(); }}
-              disabled={!inputPath || isDisabled}
+              onClick={() => { if (isWorking) { onTerminate(); } else { onTranscode(); } }}
+              disabled={!inputPath || (isDisabled && !isTranscoding)}
             >
               {isWorking && <SquareStop className={cn("mr-2 size-4")} />}
               {isWorking ? "Stop" : "Compress"}
