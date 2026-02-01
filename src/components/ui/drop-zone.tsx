@@ -61,7 +61,7 @@ export function DropZone({
         }
       })
       .catch(() => {
-        /* ignore setup errors */
+        console.error("Failed to setup drag drop event listener");
       });
 
     return () => {
@@ -93,8 +93,10 @@ export function DropZone({
         `
           flex size-full cursor-pointer flex-col items-center justify-center
           gap-4 rounded-md border-2 border-dashed border-muted-foreground/25
-          transition-colors
+          ring-offset-background transition-colors
           hover:border-primary/50
+          focus-visible:ring-2 focus-visible:ring-ring
+          focus-visible:ring-offset-2 focus-visible:outline-none
         `,
         disabled && "pointer-events-none opacity-50",
         className

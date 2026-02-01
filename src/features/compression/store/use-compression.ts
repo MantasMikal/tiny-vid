@@ -1,5 +1,5 @@
-import { listen } from "@tauri-apps/api/event";
-import { useEffect } from "react";
+import { getCurrentWindow } from "@tauri-apps/api/window";
+import { useEffect, useRef } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import {
@@ -9,17 +9,21 @@ import {
 import type { FfmpegErrorPayload } from "@/types/tauri";
 
 export function useCompressionStoreInit() {
+  const effectIdRef = useRef(0);
+
   useEffect(() => {
+    const effectId = ++effectIdRef.current;
     let cancelled = false;
     const unlisteners: (() => void)[] = [];
+    const win = getCurrentWindow();
 
     const setup = async () => {
       await useCompressionStore.getState().initBuildVariant();
       const [unProgress, unError, unComplete] = await Promise.all([
-        listen<number>("ffmpeg-progress", (e) => {
+        win.listen<number>("ffmpeg-progress", (e) => {
           useCompressionStore.setState({ progress: e.payload });
         }),
-        listen<FfmpegErrorPayload>("ffmpeg-error", (e) => {
+        win.listen<FfmpegErrorPayload>("ffmpeg-error", (e) => {
           const { summary, detail } = e.payload;
           if (summary === "Aborted") return;
           const s = useCompressionStore.getState();
@@ -43,7 +47,7 @@ export function useCompressionStoreInit() {
             });
           }
         }),
-        listen("ffmpeg-complete", () => {
+        win.listen("ffmpeg-complete", () => {
           const s = useCompressionStore.getState();
           if (s.workerState === WorkerState.Transcoding) {
             useCompressionStore.setState({
@@ -55,7 +59,7 @@ export function useCompressionStoreInit() {
           }
         }),
       ]);
-      if (cancelled) {
+      if (cancelled || effectId !== effectIdRef.current) {
         unProgress();
         unError();
         unComplete();
@@ -79,35 +83,41 @@ export function useCompressionStoreInit() {
 
 export function useCompression() {
   return useCompressionStore(
-    useShallow((s) => ({
-      inputPath: s.inputPath,
-      videoPreview: s.videoPreview,
-      videoUploading: s.videoUploading,
-      error: s.error,
-      workerState: s.workerState,
-      progress: s.progress,
-      videoMetadata: s.videoMetadata,
-      estimatedSize: s.estimatedSize,
-      compressionOptions: s.compressionOptions,
-      buildVariant: s.buildVariant,
-      listenersReady: s.listenersReady,
-      ffmpegCommandPreview: s.ffmpegCommandPreview,
-      ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,
-      isDisabled:
-        !s.inputPath ||
-        s.isSaving ||
-        s.workerState === WorkerState.Transcoding ||
-        (!s.listenersReady && s.workerState === WorkerState.Idle),
-      isWorking: s.workerState !== WorkerState.Idle,
-      selectPath: s.selectPath,
-      browseAndSelectFile: s.browseAndSelectFile,
-      transcodeAndSave: s.transcodeAndSave,
-      clear: s.clear,
-      dismissError: s.dismissError,
-      generatePreview: s.generatePreview,
-      setCompressionOptions: s.setCompressionOptions,
-      refreshFfmpegCommandPreview: s.refreshFfmpegCommandPreview,
-      terminate: s.terminate,
-    }))
+    useShallow((s) => {
+      const isInitialized = s.availableCodecs.length > 0 && s.listenersReady;
+      return {
+        inputPath: s.inputPath,
+        videoPreview: s.videoPreview,
+        videoUploading: s.videoUploading,
+        error: s.error,
+        workerState: s.workerState,
+        progress: s.progress,
+        videoMetadata: s.videoMetadata,
+        estimatedSize: s.estimatedSize,
+        compressionOptions: s.compressionOptions,
+        availableCodecs: s.availableCodecs,
+        initError: s.initError,
+        listenersReady: s.listenersReady,
+        ffmpegCommandPreview: s.ffmpegCommandPreview,
+        ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,
+        isInitialized,
+        isDisabled:
+          !isInitialized ||
+          s.compressionOptions == null ||
+          !s.inputPath ||
+          s.isSaving ||
+          s.workerState === WorkerState.Transcoding,
+        isWorking: s.workerState !== WorkerState.Idle,
+        selectPath: s.selectPath,
+        browseAndSelectFile: s.browseAndSelectFile,
+        transcodeAndSave: s.transcodeAndSave,
+        clear: s.clear,
+        dismissError: s.dismissError,
+        generatePreview: s.generatePreview,
+        setCompressionOptions: s.setCompressionOptions,
+        refreshFfmpegCommandPreview: s.refreshFfmpegCommandPreview,
+        terminate: s.terminate,
+      };
+    })
   );
 }

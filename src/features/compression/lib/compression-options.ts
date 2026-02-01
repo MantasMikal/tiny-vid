@@ -1,53 +1,52 @@
-/** License profile: "full" = all codecs, "lgpl-macos" = App Store safe (VideoToolbox). */
+import type { CodecInfo } from "@/types/tauri";
+
 export type LicenseProfile = "full" | "lgpl-macos";
 
-/** Codec registry: single source of truth. Types flow from keys. */
 const CODEC_REGISTRY = {
   libx264: {
     name: "H.264 (Widest support)",
     supportsTune: true,
     presetType: "x264",
     formats: ["mp4"],
-    appStoreSafe: false,
+    lgplMacos: false,
   },
   libx265: {
     name: "H.265 (Smaller files)",
     supportsTune: false,
     presetType: "x265",
     formats: ["mp4"],
-    appStoreSafe: false,
+    lgplMacos: false,
   },
   libsvtav1: {
     name: "AV1 (Smallest files)",
     supportsTune: false,
     presetType: "av1",
     formats: ["mp4", "webm"],
-    appStoreSafe: false,
+    lgplMacos: false,
   },
   "libvpx-vp9": {
     name: "VP9 (Browser-friendly WebM)",
     supportsTune: false,
     presetType: "vp9",
     formats: ["webm"],
-    appStoreSafe: false,
+    lgplMacos: false,
   },
   h264_videotoolbox: {
     name: "H.264 (VideoToolbox)",
     supportsTune: false,
     presetType: "vt",
     formats: ["mp4"],
-    appStoreSafe: true,
+    lgplMacos: true,
   },
   hevc_videotoolbox: {
     name: "H.265 (VideoToolbox)",
     supportsTune: false,
     presetType: "vt",
     formats: ["mp4"],
-    appStoreSafe: true,
+    lgplMacos: true,
   },
 } as const;
 
-/** Format registry: single source of truth. Types flow from keys. */
 const FORMAT_REGISTRY = {
   mp4: {
     name: "MP4",
@@ -72,23 +71,28 @@ const FORMAT_REGISTRY = {
 export type Codec = keyof typeof CODEC_REGISTRY;
 export type Format = keyof typeof FORMAT_REGISTRY;
 
+const CODECS: Codec[] = [
+  "libx264",
+  "libx265",
+  "libsvtav1",
+  "libvpx-vp9",
+  "h264_videotoolbox",
+  "hevc_videotoolbox",
+];
+
+const FORMATS: Format[] = ["mp4", "webm"];
+
+export function isCodec(s: string): s is Codec {
+  return (CODECS as readonly string[]).includes(s);
+}
+
+export function isFormat(s: string): s is Format {
+  return (FORMATS as readonly string[]).includes(s);
+}
+
 export const codecs = (
   Object.entries(CODEC_REGISTRY) as [Codec, (typeof CODEC_REGISTRY)[Codec]][]
 ).map(([value, def]) => ({ name: def.name, value }));
-
-/** Codecs filtered by license profile. lgpl-macos = App Store safe (VideoToolbox). */
-export function getCodecsForProfile(profile: LicenseProfile) {
-  const entries = Object.entries(CODEC_REGISTRY) as [
-    Codec,
-    (typeof CODEC_REGISTRY)[Codec],
-  ][];
-  if (profile === "lgpl-macos") {
-    return entries
-      .filter(([, def]) => def.appStoreSafe)
-      .map(([value, def]) => ({ name: def.name, value }));
-  }
-  return entries.map(([value, def]) => ({ name: def.name, value }));
-}
 
 export const outputFormats = (
   Object.entries(FORMAT_REGISTRY) as [
@@ -103,25 +107,6 @@ export function getCodecCapabilities(codec: Codec) {
 
 export function getFormatCapabilities(format: Format) {
   return FORMAT_REGISTRY[format];
-}
-
-export function getCompatibleCodecs(
-  format: Format,
-  profile?: LicenseProfile
-): Codec[] {
-  const codecs = [...FORMAT_REGISTRY[format].codecs] as Codec[];
-  if (profile === "lgpl-macos") {
-    return codecs.filter((c) => CODEC_REGISTRY[c].appStoreSafe);
-  }
-  return codecs;
-}
-
-/** Output formats for profile. lgpl-macos = MP4 only. */
-export function getOutputFormatsForProfile(profile: LicenseProfile) {
-  if (profile === "lgpl-macos") {
-    return outputFormats.filter((f) => f.value === "mp4");
-  }
-  return outputFormats;
 }
 
 export function getCompatibleFormats(codec: Codec): Format[] {
@@ -148,6 +133,12 @@ export const presets = [
   { name: "Medium", value: "medium" },
   { name: "Slow", value: "slow" },
 ] as const;
+
+export type PresetValue = (typeof presets)[number]["value"];
+
+export function isPresetValue(s: string): s is PresetValue {
+  return presets.some((p) => p.value === s);
+}
 
 export const tuneOptions = [
   { name: "None (Default)", value: "none" },
@@ -177,19 +168,6 @@ export const maxBitratePresets = [
   { name: "Custom", value: "custom" },
 ] as const;
 
-const DEFAULT_OPTIONS: CompressionOptions = {
-  quality: 75,
-  preset: "fast",
-  fps: 30,
-  scale: 1,
-  removeAudio: false,
-  codec: "libx264",
-  outputFormat: "mp4",
-  generatePreview: true,
-  previewDuration: 3,
-  tune: undefined,
-} as const;
-
 export interface CompressionOptions {
   quality: number;
   maxBitrate?: number;
@@ -204,80 +182,31 @@ export interface CompressionOptions {
   tune?: string;
 }
 
-/** Resolves partial options into valid CompressionOptions. Handles codec/format conflicts. profile filters to App Store safe when "lgpl-macos". */
-export function resolveOptions(
-  partial: Partial<CompressionOptions>,
-  profile?: LicenseProfile
-): CompressionOptions {
-  let format: Format = partial.outputFormat ?? "mp4";
-  if (profile === "lgpl-macos" && format !== "mp4") {
-    format = "mp4";
-  }
-  const formatDef = FORMAT_REGISTRY[format];
-  let codec = partial.codec ?? undefined;
-  const oldCodec = codec;
-  const allowedCodecs = getCompatibleCodecs(format, profile);
-  if (!codec || !allowedCodecs.includes(codec)) {
-    codec =
-      profile === "lgpl-macos"
-        ? (allowedCodecs[0] ?? "h264_videotoolbox")
-        : formatDef.defaultCodec;
-  }
-  const codecDef = CODEC_REGISTRY[codec];
-  const tune = codecDef.supportsTune ? (partial.tune ?? undefined) : undefined;
-
-  const quality =
-    oldCodec && oldCodec !== codec
-      ? convertQualityForCodecSwitch(
-          partial.quality ?? DEFAULT_OPTIONS.quality,
-          oldCodec,
-          codec
-        )
-      : (partial.quality ?? DEFAULT_OPTIONS.quality);
-
-  return {
-    ...DEFAULT_OPTIONS,
-    ...partial,
-    codec,
-    outputFormat: format,
-    tune,
-    quality,
-  };
-}
-
-/** CRF ranges per codec - must match src-tauri/src/ffmpeg/builder.rs. VideoToolbox uses -q:v 0-100. */
 function getCrfRange(codec: string): { low: number; high: number } {
   const c = codec.toLowerCase();
-  if (c.includes("videotoolbox")) return { low: 0, high: 100 }; // -q:v scale
+  if (c.includes("videotoolbox")) return { low: 0, high: 100 };
   if (c.includes("x265") || c.includes("hevc")) return { low: 28, high: 51 };
   if (c.includes("svtav1")) return { low: 24, high: 63 };
   if (c.includes("vp9") || c.includes("vpx")) return { low: 20, high: 63 };
   return { low: 23, high: 51 };
 }
 
-/** Linear map quality 0-100 to CRF for the given codec. Mirrors Rust get_quality. VideoToolbox: quality 100 -> -q:v 0 (best). */
 export function qualityToCrf(quality: number, codec: string): number {
   const c = codec.toLowerCase();
-  if (c.includes("videotoolbox")) {
-    return Math.round(100 - Math.min(quality, 100));
-  }
+  if (c.includes("videotoolbox")) return Math.round(Math.min(quality, 100));
   const q = Math.min(quality, 100) / 100;
   const { low, high } = getCrfRange(codec);
   return Math.round(high - q * (high - low));
 }
 
-/** Inverse: CRF to quality 0-100 for the given codec. */
 function crfToQuality(crf: number, codec: string): number {
   const c = codec.toLowerCase();
-  if (c.includes("videotoolbox")) {
-    return Math.round(Math.max(0, Math.min(100, 100 - crf)));
-  }
+  if (c.includes("videotoolbox")) return Math.round(Math.max(0, Math.min(100, crf)));
   const { low, high } = getCrfRange(codec);
   const q = (high - crf) / (high - low);
   return Math.round(Math.max(0, Math.min(100, q * 100)));
 }
 
-/** Perceptual offset vs H.264 (used only when switching codec to preserve perceived quality). */
 function getPerceptualOffset(codec: string): number {
   const c = codec.toLowerCase();
   if (c.includes("videotoolbox")) return 0;
@@ -287,7 +216,6 @@ function getPerceptualOffset(codec: string): number {
   return 0;
 }
 
-/** When switching codec, convert quality so perceived result stays similar. Uses getCrfRange per codec (VP9: 20–63, etc.). */
 export function convertQualityForCodecSwitch(
   oldQuality: number,
   oldCodec: string,
@@ -298,4 +226,23 @@ export function convertQualityForCodecSwitch(
   const perceptualRef = effectiveCrfOld - getPerceptualOffset(oldCodec);
   const effectiveCrfNew = perceptualRef + getPerceptualOffset(newCodec);
   return crfToQuality(effectiveCrfNew, newCodec);
+}
+
+export const FORMAT_METADATA = {
+  mp4: { name: "MP4", extension: "mp4" },
+  webm: { name: "WebM", extension: "webm" },
+} as const;
+
+export type FormatKey = keyof typeof FORMAT_METADATA;
+
+export function getCodecsForFormat(format: string, codecs: CodecInfo[]): CodecInfo[] {
+  return codecs.filter((c) => c.formats.includes(format));
+}
+
+export function getAvailableFormats(codecs: CodecInfo[]): string[] {
+  return [...new Set(codecs.flatMap((c) => c.formats))];
+}
+
+export function getCodecInfo(value: string, codecs: CodecInfo[]): CodecInfo | undefined {
+  return codecs.find((c) => c.value === value);
 }

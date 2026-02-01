@@ -1,11 +1,3 @@
-/**
- * Types for Tauri IPC - must stay in sync with Rust backend.
- *
- * FfmpegErrorPayload: mirrors ffmpeg::error::FfmpegErrorPayload
- * FfmpegPreviewResult: mirrors lib::PreviewResult
- * TranscodeOptions: mirrors ffmpeg::TranscodeOptions (options for ffmpeg_transcode_to_temp and ffmpeg_preview)
- */
-
 export interface FfmpegErrorPayload {
   summary: string;
   detail: string;
@@ -17,7 +9,6 @@ export interface FfmpegPreviewResult {
   estimatedSize: number;
 }
 
-/** Response from get_video_metadata - mirrors lib::VideoMetadataResult */
 export interface GetVideoMetadataResult {
   duration: number;
   width: number;
@@ -26,13 +17,19 @@ export interface GetVideoMetadataResult {
   sizeMb: number;
 }
 
-/** Response from get_build_variant - mirrors lib::BuildVariantResult */
-export interface BuildVariantResult {
-  variant: "full" | "lgpl-macos";
-  codecs: string[];
+export interface CodecInfo {
+  value: string;
+  name: string;
+  formats: string[];
+  supportsTune: boolean;
+  presetType: string;
 }
 
-/** Options for ffmpeg_transcode_to_temp and ffmpeg_preview - mirrors ffmpeg::TranscodeOptions */
+export interface BuildVariantResult {
+  variant: "full" | "lgpl-macos";
+  codecs: CodecInfo[];
+}
+
 export interface TranscodeOptions {
   codec?: string;
   quality?: number;

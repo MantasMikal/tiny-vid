@@ -4,6 +4,7 @@ fn main() {
             tauri_build::AppManifest::new().commands(&[
                 "ffmpeg_transcode_to_temp",
                 "ffmpeg_preview",
+                "preview_ffmpeg_command",
                 "ffmpeg_terminate",
                 "get_file_size",
                 "get_video_metadata",

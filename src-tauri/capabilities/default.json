@@ -18,6 +18,7 @@
     "allow-get-file-size",
     "allow-get-video-metadata",
     "allow-move-compressed-file",
-    "allow-cleanup-temp-file"
+    "allow-cleanup-temp-file",
+    "allow-get-build-variant"
   ]
 }

@@ -12,7 +12,7 @@ import { cn } from "@/lib/utils";
 export interface CompressionDetailsCardProps {
   inputPath: string | null;
   videoMetadata: VideoMetadata | null;
-  cOptions: CompressionOptions;
+  cOptions: CompressionOptions | null;
   estimatedSize: number | null;
   isDisabled: boolean;
   workerState: WorkerState;
@@ -45,7 +45,7 @@ export function CompressionDetailsCard({
           className={cn("flex flex-col gap-2 rounded-md border bg-card p-4")}
         >
           <h2 className={cn("text-xl font-semibold")}>Details</h2>
-          {videoMetadata && (
+          {videoMetadata && cOptions && (
             <VideoMetadataDisplay
               videoMetadata={videoMetadata}
               cOptions={cOptions}
@@ -57,6 +57,7 @@ export function CompressionDetailsCard({
           >
             <Button
               className={cn("flex-1")}
+              disabled={!inputPath || (isDisabled && !isTranscoding)}
               onClick={() => {
                 if (isWorking) {
                   onTerminate();
@@ -64,12 +65,11 @@ export function CompressionDetailsCard({
                   onTranscode();
                 }
               }}
-              disabled={!inputPath || (isDisabled && !isTranscoding)}
             >
               {isWorking && <SquareStop className={cn("size-4")} />}
               {isWorking ? "Stop" : "Compress"}
             </Button>
-            {!cOptions.generatePreview && (
+            {cOptions && !cOptions.generatePreview && (
               <Button
                 className={cn("flex-1")}
                 variant="secondary"

@@ -17,6 +17,7 @@ export interface VideoWorkspaceProps {
   error: { type: string; message: string; detail?: string } | null;
   workerState: WorkerState;
   progress: number;
+  disabled?: boolean;
   onBrowse: () => void;
   onClear: () => void;
   onDismissError?: () => void;
@@ -30,6 +31,7 @@ export function VideoWorkspace({
   error,
   workerState,
   progress,
+  disabled = false,
   onBrowse,
   onClear,
   onDismissError,
@@ -47,6 +49,7 @@ export function VideoWorkspace({
       <div className={cn("relative flex h-full items-center justify-center")}>
         {!inputPath ? (
           <DropZone
+            disabled={disabled}
             onDrop={(paths) => {
               const path = paths[0];
               if (typeof path === "string") onDrop?.(path);

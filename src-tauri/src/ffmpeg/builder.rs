@@ -1,3 +1,5 @@
+//! Build FFmpeg CLI args from TranscodeOptions. Maps quality/preset per codec (x264, x265, VP9, AV1, VideoToolbox).
+
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
@@ -54,10 +56,9 @@ fn get_quality(quality: u32, codec_lower: &str) -> i32 {
     map_linear_crf(quality, 23, 51)
 }
 
-/// VideoToolbox uses -q:v 0-100 (0=best, 100=worst). Map quality 0-100 slider to it.
+/// VideoToolbox uses -q:v 0-100 (100=best, 0=worst). Pass quality through directly.
 fn get_quality_vt(quality: u32) -> u32 {
-    let q = (100 - quality.min(100)) as u32;
-    q
+    quality.min(100)
 }
 
 fn get_codec_preset(preset: &str, codec_lower: &str) -> String {
@@ -552,7 +553,7 @@ mod tests {
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
         assert!(args.contains(&"-q:v".to_string()), "VideoToolbox should use -q:v");
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
-        assert_eq!(args.get(qv_idx + 1).unwrap(), "25", "quality 75 -> -q:v 25 (100-75)");
+        assert_eq!(args.get(qv_idx + 1).unwrap(), "75", "quality 75 -> -q:v 75");
         assert!(!args.contains(&"-crf".to_string()), "VideoToolbox should not use -crf");
     }
 
@@ -568,23 +569,23 @@ mod tests {
     }
 
     #[test]
-    fn videotoolbox_quality_100_is_qv_0() {
+    fn videotoolbox_quality_100_is_qv_100() {
         let mut o = opts();
         o.codec = Some("h264_videotoolbox".to_string());
         o.quality = Some(100);
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
-        assert_eq!(args.get(qv_idx + 1).unwrap(), "0", "quality 100 -> -q:v 0 (best)");
+        assert_eq!(args.get(qv_idx + 1).unwrap(), "100", "quality 100 -> -q:v 100 (best)");
     }
 
     #[test]
-    fn videotoolbox_quality_0_is_qv_100() {
+    fn videotoolbox_quality_0_is_qv_0() {
         let mut o = opts();
         o.codec = Some("h264_videotoolbox".to_string());
         o.quality = Some(0);
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
-        assert_eq!(args.get(qv_idx + 1).unwrap(), "100", "quality 0 -> -q:v 100 (worst)");
+        assert_eq!(args.get(qv_idx + 1).unwrap(), "0", "quality 0 -> -q:v 0 (worst)");
     }
 
     #[test]

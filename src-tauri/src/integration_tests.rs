@@ -6,9 +6,8 @@ use crate::ffmpeg::{
     build_ffmpeg_command, cleanup_transcode_temp, run_ffmpeg_blocking, set_transcode_temp,
     verify_video, TempFileManager, TranscodeOptions,
 };
+use crate::test_util::{create_test_video, find_ffmpeg_and_set_env};
 use std::fs;
-use std::path::PathBuf;
-use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::thread;
 use std::time::Duration as StdDuration;
@@ -18,84 +17,14 @@ fn run_transcode_integration(
     duration_secs: f32,
     skip_if_encoder_missing: bool,
 ) {
-    let ffmpeg = {
-        if let Ok(p) = std::env::var("FFMPEG_PATH") {
-            let path = PathBuf::from(p);
-            if path.exists() {
-                Some(path)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-    .or_else(|| {
-        let cmd = if cfg!(windows) { "where" } else { "which" };
-        let output = Command::new(cmd).arg("ffmpeg").output().ok()?;
-        if output.status.success() {
-            let first = std::str::from_utf8(&output.stdout)
-                .ok()?
-                .lines()
-                .next()?
-                .trim();
-            if !first.is_empty() {
-                return Some(PathBuf::from(first));
-            }
-        }
-        None
-    });
-
-    let ffmpeg = ffmpeg.expect("FFmpeg not found; set FFMPEG_PATH or add to PATH");
-    // SAFETY: Single-threaded test; no other threads access env vars during test
-    unsafe {
-        std::env::set_var("FFMPEG_PATH", ffmpeg.to_string_lossy().as_ref());
-    }
+    let ffmpeg = find_ffmpeg_and_set_env();
 
     let dir = tempfile::tempdir().unwrap();
     let input_path = dir.path().join("input.mp4");
     let output_path = dir.path().join("output.mp4");
 
-    let duration_arg = format!("{}", duration_secs);
-    let status = {
-        #[cfg(not(feature = "lgpl-macos"))]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
-                    "-c:v",
-                    "libx264",
-                    "-pix_fmt",
-                    "yuv420p",
-                    input_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-        #[cfg(feature = "lgpl-macos")]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-allow_sw",
-                    "1",
-                    "-q:v",
-                    "25",
-                    input_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-    }
-    .expect("failed to create test video");
+    let status =
+        create_test_video(&ffmpeg, &input_path, duration_secs).expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let args = build_ffmpeg_command(
@@ -449,39 +378,7 @@ fn ffmpeg_transcode_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_progress_emission_integration -- --ignored"]
 fn ffmpeg_progress_emission_integration() {
-    let ffmpeg = {
-        if let Ok(p) = std::env::var("FFMPEG_PATH") {
-            let path = PathBuf::from(p);
-            if path.exists() {
-                Some(path)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-    .or_else(|| {
-        let cmd = if cfg!(windows) { "where" } else { "which" };
-        let output = Command::new(cmd).arg("ffmpeg").output().ok()?;
-        if output.status.success() {
-            let first = std::str::from_utf8(&output.stdout)
-                .ok()?
-                .lines()
-                .next()?
-                .trim();
-            if !first.is_empty() {
-                return Some(PathBuf::from(first));
-            }
-        }
-        None
-    });
-
-    let ffmpeg = ffmpeg.expect("FFmpeg not found; set FFMPEG_PATH or add to PATH");
-    // SAFETY: Single-threaded test; no other threads access env vars during test
-    unsafe {
-        std::env::set_var("FFMPEG_PATH", ffmpeg.to_string_lossy().as_ref());
-    }
+    let ffmpeg = find_ffmpeg_and_set_env();
 
     let dir = tempfile::tempdir().unwrap();
     let input_path = dir.path().join("input.mp4");
@@ -489,45 +386,8 @@ fn ffmpeg_progress_emission_integration() {
 
     // 2 seconds - long enough for multiple progress updates
     let duration_secs = 2.0_f32;
-    let status = {
-        #[cfg(not(feature = "lgpl-macos"))]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
-                    "-c:v",
-                    "libx264",
-                    "-pix_fmt",
-                    "yuv420p",
-                    input_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-        #[cfg(feature = "lgpl-macos")]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-allow_sw",
-                    "1",
-                    "-q:v",
-                    "25",
-                    input_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-    }
-    .expect("failed to create test video");
+    let status =
+        create_test_video(&ffmpeg, &input_path, duration_secs).expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let options = TranscodeOptions {
@@ -593,84 +453,15 @@ fn ffmpeg_progress_emission_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_cancel_cleanup_integration -- --ignored"]
 fn ffmpeg_cancel_cleanup_integration() {
-    let ffmpeg = {
-        if let Ok(p) = std::env::var("FFMPEG_PATH") {
-            let path = PathBuf::from(p);
-            if path.exists() {
-                Some(path)
-            } else {
-                None
-            }
-        } else {
-            None
-        }
-    }
-    .or_else(|| {
-        let cmd = if cfg!(windows) { "where" } else { "which" };
-        let output = Command::new(cmd).arg("ffmpeg").output().ok()?;
-        if output.status.success() {
-            let first = std::str::from_utf8(&output.stdout)
-                .ok()?
-                .lines()
-                .next()?
-                .trim();
-            if !first.is_empty() {
-                return Some(PathBuf::from(first));
-            }
-        }
-        None
-    });
-
-    let ffmpeg = ffmpeg.expect("FFmpeg not found; set FFMPEG_PATH or add to PATH");
-    // SAFETY: Single-threaded test; no other threads access env vars during test
-    unsafe {
-        std::env::set_var("FFMPEG_PATH", ffmpeg.to_string_lossy().as_ref());
-    }
+    let ffmpeg = find_ffmpeg_and_set_env();
 
     let dir = tempfile::tempdir().unwrap();
     let input_path = dir.path().join("input.mp4");
     // 60 seconds + slow preset so transcode takes long enough to cancel mid-run
     // (modern hardware can encode 10s video in ~50ms, so we need a longer video)
     let duration_secs = 60.0_f32;
-    let status = {
-        #[cfg(not(feature = "lgpl-macos"))]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
-                    "-c:v",
-                    "libx264",
-                    "-pix_fmt",
-                    "yuv420p",
-                    input_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-        #[cfg(feature = "lgpl-macos")]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-allow_sw",
-                    "1",
-                    "-q:v",
-                    "25",
-                    input_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-    }
-    .expect("failed to create test video");
+    let status =
+        create_test_video(&ffmpeg, &input_path, duration_secs).expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let options = TranscodeOptions {

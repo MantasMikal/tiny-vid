@@ -4,17 +4,19 @@ import { create } from "zustand";
 
 import {
   type CompressionOptions,
-  getCodecsForProfile,
   getDefaultExtension,
-  getOutputFormatsForProfile,
-  type LicenseProfile,
-  resolveOptions,
 } from "@/features/compression/lib/compression-options";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
 import { getVideoMetadataFromPath } from "@/features/compression/lib/get-video-metadata";
+import {
+  createInitialOptions,
+  DEFAULT_PRESET_ID,
+  resolve,
+} from "@/features/compression/lib/options-pipeline";
 import { type ResultError, tryCatch } from "@/lib/try-catch";
 import type {
   BuildVariantResult,
+  CodecInfo,
   FfmpegPreviewResult,
   TranscodeOptions,
 } from "@/types/tauri";
@@ -49,27 +51,6 @@ function toRustOptions(
   };
 }
 
-function getDefaultOptions(profile: LicenseProfile): CompressionOptions {
-  const codecsForProfile = getCodecsForProfile(profile);
-  const defaultCodec = codecsForProfile[0]?.value ?? "libx264";
-  const formatsForProfile = getOutputFormatsForProfile(profile);
-  const defaultFormat = formatsForProfile[0]?.value ?? "mp4";
-  return resolveOptions(
-    {
-      quality: 75,
-      preset: "fast",
-      fps: 30,
-      scale: 1,
-      removeAudio: false,
-      codec: defaultCodec,
-      outputFormat: defaultFormat,
-      generatePreview: true,
-      previewDuration: 3,
-      tune: undefined,
-    },
-    profile
-  );
-}
 
 let debouncePreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let previewRequestId = 0;
@@ -83,13 +64,12 @@ interface CompressionState {
   estimatedSize: number | null;
   videoMetadata: VideoMetadata | null;
   isSaving: boolean;
-  compressionOptions: CompressionOptions;
-  /** "full" or "lgpl-macos" from get_build_variant; used to filter codecs/formats. */
-  buildVariant: LicenseProfile;
+  compressionOptions: CompressionOptions | null;
+  availableCodecs: CodecInfo[];
+  initError: string | null;
   error: ResultError | null;
   workerState: WorkerState;
   progress: number;
-  /** True after FFmpeg event listeners are registered; avoid starting transcode before this. */
   listenersReady: boolean;
   ffmpegCommandPreview: string | null;
   ffmpegCommandPreviewLoading: boolean;
@@ -113,8 +93,9 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   estimatedSize: null,
   videoMetadata: null,
   isSaving: false,
-  compressionOptions: getDefaultOptions("full"),
-  buildVariant: "full",
+  compressionOptions: null,
+  availableCodecs: [],
+  initError: null,
   error: null,
   workerState: WorkerState.Idle,
   progress: 0,
@@ -123,22 +104,25 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   ffmpegCommandPreviewLoading: false,
 
   initBuildVariant: async () => {
-    const result = await tryCatch(
-      () => invoke<BuildVariantResult>("get_build_variant"),
-      "Build variant"
-    );
-    if (result.ok) {
-      const profile: LicenseProfile =
-        result.value.variant === "lgpl-macos" ? "lgpl-macos" : "full";
+    try {
+      const result = await invoke<BuildVariantResult>("get_build_variant");
       set({
-        buildVariant: profile,
-        compressionOptions: getDefaultOptions(profile),
+        availableCodecs: result.codecs,
+        initError: null,
+        compressionOptions: createInitialOptions(result.codecs, DEFAULT_PRESET_ID),
+      });
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error);
+      set({
+        availableCodecs: [],
+        initError: message,
       });
     }
   },
 
   refreshFfmpegCommandPreview: async () => {
     const { compressionOptions, inputPath } = get();
+    if (!compressionOptions) return;
     const requestId = ++commandPreviewRequestId;
     const tid = setTimeout(() => {
       if (commandPreviewRequestId === requestId) {
@@ -193,7 +177,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     await tryCatch(
       async () => {
         const { compressionOptions } = get();
-        if (compressionOptions.generatePreview) {
+        if (compressionOptions?.generatePreview) {
           set({ workerState: WorkerState.GeneratingPreview, error: null });
           const result = await tryCatch(
             () =>
@@ -261,7 +245,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
   transcodeAndSave: async () => {
     const { inputPath, compressionOptions, videoMetadata } = get();
-    if (!inputPath) return;
+    if (!inputPath || !compressionOptions) return;
 
     set({ workerState: WorkerState.Transcoding, progress: 0, error: null });
     const transcodeResult = await tryCatch(
@@ -353,7 +337,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
   generatePreview: async (requestId?: number) => {
     const { inputPath, compressionOptions, workerState } = get();
-    if (!inputPath) return;
+    if (!inputPath || !compressionOptions) return;
 
     if (workerState === WorkerState.GeneratingPreview) {
       await get().terminate();
@@ -370,10 +354,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       "Preview Error"
     );
 
-    // If requestId was provided (debounced call), check if this request is still current
-    if (requestId !== undefined && requestId !== previewRequestId) {
-      return; // Stale result, discard
-    }
+    if (requestId !== undefined && requestId !== previewRequestId) return;
 
     if (result.ok) {
       set({
@@ -397,8 +378,9 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     options: CompressionOptions,
     opts?: { triggerPreview?: boolean }
   ) => {
-    const { buildVariant } = get();
-    const resolved = resolveOptions(options, buildVariant);
+    const { availableCodecs } = get();
+    if (availableCodecs.length === 0) return;
+    const resolved = resolve(options, availableCodecs);
     set({ compressionOptions: resolved });
     if (debounceCommandPreviewTimer) {
       clearTimeout(debounceCommandPreviewTimer);

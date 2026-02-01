@@ -1,8 +1,13 @@
 mod error;
 pub mod ffmpeg;
+mod log_plugin;
+
+use std::fs;
+use std::path::PathBuf;
+
+use tauri::Emitter;
 
 use error::AppError;
-use tauri::Emitter;
 use ffmpeg::{
     build_ffmpeg_command, cleanup_previous_preview_paths, cleanup_transcode_temp,
     format_args_for_display_multiline, get_cached_extract, parse_ffmpeg_error, run_ffmpeg_blocking,
@@ -13,16 +18,12 @@ use ffmpeg::ffprobe::get_video_metadata_impl;
 use ffmpeg::FfmpegErrorPayload;
 
 fn build_error_payload(e: &AppError) -> FfmpegErrorPayload {
-    let (stderr, code) = match e {
-        AppError::FfmpegFailed { code, stderr } => (stderr.clone(), Some(*code)),
-        _ => (e.to_string(), None),
-    };
-    parse_ffmpeg_error(&stderr, code)
+    match e {
+        AppError::FfmpegFailed { code, stderr } => parse_ffmpeg_error(stderr, Some(*code)),
+        _ => parse_ffmpeg_error(&e.to_string(), None),
+    }
 }
-use std::fs;
-use std::path::PathBuf;
 
-/// Run FFmpeg in a blocking task, emit progress/complete/error events, and return Result.
 async fn run_ffmpeg_step(
     args: Vec<String>,
     app: &tauri::AppHandle,
@@ -308,29 +309,107 @@ fn ffmpeg_terminate() {
     terminate_all_ffmpeg();
 }
 
-#[derive(serde::Serialize)]
+#[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
-struct BuildVariantResult {
-    variant: &'static str,
-    codecs: Vec<&'static str>,
+pub struct CodecInfo {
+    pub value: String,
+    pub name: String,
+    pub formats: Vec<String>,
+    pub supports_tune: bool,
+    pub preset_type: String,
+}
+
+#[derive(serde::Serialize, Debug, Clone, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildVariantResult {
+    pub variant: &'static str,
+    pub codecs: Vec<CodecInfo>,
+}
+
+/// Return CodecInfo for a known codec string. Panics on unknown codec.
+fn get_codec_info(codec: &str) -> CodecInfo {
+    match codec {
+        "libx264" => CodecInfo {
+            value: "libx264".to_string(),
+            name: "H.264 (Widest support)".to_string(),
+            formats: vec!["mp4".to_string()],
+            supports_tune: true,
+            preset_type: "x264".to_string(),
+        },
+        "libx265" => CodecInfo {
+            value: "libx265".to_string(),
+            name: "H.265 (Smaller files)".to_string(),
+            formats: vec!["mp4".to_string()],
+            supports_tune: false,
+            preset_type: "x265".to_string(),
+        },
+        "libsvtav1" => CodecInfo {
+            value: "libsvtav1".to_string(),
+            name: "AV1 (Smallest files)".to_string(),
+            formats: vec!["mp4".to_string(), "webm".to_string()],
+            supports_tune: false,
+            preset_type: "av1".to_string(),
+        },
+        "libvpx-vp9" => CodecInfo {
+            value: "libvpx-vp9".to_string(),
+            name: "VP9 (Browser-friendly WebM)".to_string(),
+            formats: vec!["webm".to_string()],
+            supports_tune: false,
+            preset_type: "vp9".to_string(),
+        },
+        "h264_videotoolbox" => CodecInfo {
+            value: "h264_videotoolbox".to_string(),
+            name: "H.264 (VideoToolbox)".to_string(),
+            formats: vec!["mp4".to_string()],
+            supports_tune: false,
+            preset_type: "vt".to_string(),
+        },
+        "hevc_videotoolbox" => CodecInfo {
+            value: "hevc_videotoolbox".to_string(),
+            name: "H.265 (VideoToolbox)".to_string(),
+            formats: vec!["mp4".to_string()],
+            supports_tune: false,
+            preset_type: "vt".to_string(),
+        },
+        _ => panic!("Unknown codec: {}", codec),
+    }
+}
+
+/// When non-LGPL (software) codecs are available, filter out VideoToolbox so we prefer libx264/etc.
+fn filter_codecs_for_display(available: &[String]) -> Vec<String> {
+    const NON_VT: &[&str] = &["libx264", "libx265", "libsvtav1", "libvpx-vp9"];
+    const VT: &[&str] = &["h264_videotoolbox", "hevc_videotoolbox"];
+    let has_non_vt = available.iter().any(|c| NON_VT.contains(&c.as_str()));
+    if has_non_vt {
+        available.iter()
+            .filter(|c| !VT.contains(&c.as_str()))
+            .cloned()
+            .collect()
+    } else {
+        available.to_vec()
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
-fn get_build_variant() -> BuildVariantResult {
+fn get_build_variant() -> Result<BuildVariantResult, error::AppError> {
+    let available = ffmpeg::discovery::get_available_codecs()?;
+    let codecs = filter_codecs_for_display(&available);
+
+    if codecs.is_empty() {
+        return Err(error::AppError::from(
+            "No supported video codecs found in FFmpeg. Please ensure FFmpeg is properly installed with codec support."
+        ));
+    }
+
     #[cfg(feature = "lgpl-macos")]
-    {
-        BuildVariantResult {
-            variant: "lgpl-macos",
-            codecs: vec!["h264_videotoolbox", "hevc_videotoolbox"],
-        }
-    }
+    let variant = "lgpl-macos";
     #[cfg(not(feature = "lgpl-macos"))]
-    {
-        BuildVariantResult {
-            variant: "full",
-            codecs: vec!["libx264", "libx265", "libsvtav1"],
-        }
-    }
+    let variant = "full";
+    
+    Ok(BuildVariantResult {
+        variant,
+        codecs: codecs.iter().map(|s| get_codec_info(s)).collect(),
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -342,6 +421,101 @@ struct PreviewResult {
 }
 
 #[cfg(test)]
+mod build_variant_tests {
+    use super::*;
+    
+    #[test]
+    fn codec_info_has_correct_metadata() {
+        let info = get_codec_info("libx264");
+        assert_eq!(info.value, "libx264");
+        assert_eq!(info.name, "H.264 (Widest support)");
+        assert_eq!(info.formats, vec!["mp4"]);
+        assert!(info.supports_tune);
+        assert_eq!(info.preset_type, "x264");
+    }
+    
+    #[test]
+    fn all_codecs_have_info() {
+        for codec in ["libx264", "libx265", "libsvtav1", "libvpx-vp9", 
+                      "h264_videotoolbox", "hevc_videotoolbox"] {
+            let info = get_codec_info(codec);
+            assert!(!info.value.is_empty());
+            assert!(!info.name.is_empty());
+        }
+    }
+
+    #[test]
+    fn get_codec_info_returns_correct_formats() {
+        let x264 = get_codec_info("libx264");
+        assert_eq!(x264.formats, vec!["mp4"]);
+
+        let av1 = get_codec_info("libsvtav1");
+        assert_eq!(av1.formats, vec!["mp4", "webm"]);
+
+        let vp9 = get_codec_info("libvpx-vp9");
+        assert_eq!(vp9.formats, vec!["webm"]);
+    }
+
+    #[test]
+    fn get_codec_info_preset_types() {
+        assert_eq!(get_codec_info("libx264").preset_type, "x264");
+        assert_eq!(get_codec_info("libx265").preset_type, "x265");
+        assert_eq!(get_codec_info("libsvtav1").preset_type, "av1");
+        assert_eq!(get_codec_info("h264_videotoolbox").preset_type, "vt");
+    }
+
+    #[test]
+    fn filter_codecs_hides_videotoolbox_when_non_vt_available() {
+        // When libx264 (or any non-VT) is available, VideoToolbox is filtered out
+        let available = vec![
+            "libx264".to_string(),
+            "h264_videotoolbox".to_string(),
+            "hevc_videotoolbox".to_string(),
+        ];
+        let filtered = filter_codecs_for_display(&available);
+        assert_eq!(filtered, vec!["libx264"]);
+    }
+
+    #[test]
+    fn filter_codecs_keeps_videotoolbox_when_only_vt_available() {
+        let available = vec![
+            "h264_videotoolbox".to_string(),
+            "hevc_videotoolbox".to_string(),
+        ];
+        let filtered = filter_codecs_for_display(&available);
+        assert_eq!(filtered.len(), 2);
+        assert!(filtered.contains(&"h264_videotoolbox".to_string()));
+        assert!(filtered.contains(&"hevc_videotoolbox".to_string()));
+    }
+    
+    #[test]
+    #[ignore = "requires FFmpeg on system to detect codecs; run with: cargo test get_build_variant_returns_valid_codecs -- --ignored"]
+    fn get_build_variant_returns_valid_codecs() {
+        let result = get_build_variant();
+        assert!(result.is_ok(), "Should detect codecs: {:?}", result.err());
+        let variant = result.unwrap();
+        assert!(!variant.codecs.is_empty(), "Should have at least one codec");
+        
+        #[cfg(feature = "lgpl-macos")]
+        assert_eq!(variant.variant, "lgpl-macos");
+
+        #[cfg(not(feature = "lgpl-macos"))]
+        assert_eq!(variant.variant, "full");
+
+        for codec in &variant.codecs {
+            assert!(
+                matches!(codec.value.as_str(), 
+                    "libx264" | "libx265" | "libsvtav1" | "libvpx-vp9" | 
+                    "h264_videotoolbox" | "hevc_videotoolbox"
+                ),
+                "Unexpected codec: {}",
+                codec.value
+            );
+        }
+    }
+}
+
+#[cfg(test)]
 mod test_util;
 
 #[cfg(test)]
@@ -350,58 +524,10 @@ mod commands_tests;
 #[cfg(test)]
 mod integration_tests;
 
-fn build_log_plugin() -> tauri_plugin_log::Builder {
-    use tauri_plugin_log::fern::colors::{Color, ColoredLevelConfig};
-    use time::macros::format_description;
-
-    let colors = ColoredLevelConfig::default()
-        .error(Color::Red)
-        .warn(Color::Yellow)
-        .info(Color::Cyan)
-        .debug(Color::Magenta)
-        .trace(Color::BrightBlack);
-
-    let timezone = tauri_plugin_log::TimezoneStrategy::UseLocal;
-    let time_fmt = format_description!("[hour]:[minute]:[second]");
-
-    let mut builder = tauri_plugin_log::Builder::new()
-        .timezone_strategy(timezone.clone())
-        .format(move |out, message, record| {
-            let now = timezone.get_now();
-            let ts = now
-                .format(&time_fmt)
-                .unwrap_or_else(|_| "??:??:??".into());
-            let target = record
-                .target()
-                .strip_prefix("tiny_vid_tauri::")
-                .or_else(|| record.target().strip_prefix("tiny_vid::"))
-                .unwrap_or(record.target());
-            out.finish(format_args!(
-                "{ts}  {level:5}  {target:5}  {message}",
-                ts = ts,
-                level = colors.color(record.level()),
-                target = target,
-                message = message
-            ))
-        });
-
-    #[cfg(debug_assertions)]
-    {
-        builder = builder
-            .level(log::LevelFilter::Debug)
-            .level_for("tiny_vid_tauri", log::LevelFilter::Trace);
-    }
-    #[cfg(not(debug_assertions))]
-    {
-        builder = builder.level(log::LevelFilter::Info);
-    }
-    builder
-}
-
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
-        .plugin(build_log_plugin().build())
+        .plugin(log_plugin::build_log_plugin().build())
         .plugin(tauri_plugin_opener::init())
         .plugin(tauri_plugin_shell::init())
         .plugin(tauri_plugin_dialog::init())

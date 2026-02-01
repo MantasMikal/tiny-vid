@@ -28,15 +28,10 @@ async function applyNativeWindowTheme(theme: Theme) {
         : { red: 255, green: 255, blue: 255, alpha: 1 };
     await appWindow.setBackgroundColor(color);
   } catch {
-    // Not in Tauri or setBackgroundColor unsupported
+    console.error("Failed to apply native window theme");
   }
 }
 
-/**
- * Syncs app theme with user system preference.
- * Uses Tauri's native theme API when available (more reliable on all platforms),
- * falls back to prefers-color-scheme media query for web/Vite dev.
- */
 export function useTheme() {
   const [theme, setTheme] = useState<Theme>(() => getSystemTheme());
   const [isTauri, setIsTauri] = useState<boolean | null>(null);

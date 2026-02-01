@@ -107,7 +107,6 @@ pub fn resolve_sidecar_path(base_name: &str) -> Option<PathBuf> {
 }
 
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
-    // 1. Pre-installed: common paths first to avoid spawning which/where
     for path in common_paths() {
         if path.exists() {
             log::debug!(
@@ -119,7 +118,6 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
         }
     }
 
-    // 2. Pre-installed: PATH
     if let Some(p) = find_in_path() {
         if p.exists() {
             log::debug!(
@@ -131,7 +129,6 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
         }
     }
 
-    // 3. Bundled sidecar (macOS/Windows only; fallback for zero-install)
     if let Some(p) = resolve_sidecar_path("ffmpeg") {
         return Ok(p);
     }
@@ -147,8 +144,10 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 }
 
 /// Get FFmpeg path. Cached for process lifetime.
-/// Env override: FFMPEG_PATH takes precedence (for tests/CI or bundled binaries).
-/// Falls back to PATH, then common installation paths.
+/// 1. FFMPEG_PATH env (when set and path exists) – for tests/CI or bundled binaries.
+/// 2. Common installation paths (Homebrew, /usr/bin, etc.).
+/// 3. PATH (via which/where).
+/// 4. Bundled sidecar next to executable (macOS/Windows only).
 pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
     if let Some(path) = FFMPEG_PATH_CACHE.get() {
         log::trace!(
@@ -173,10 +172,7 @@ pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
     } else {
         resolve_ffmpeg_path()?
     };
-    match FFMPEG_PATH_CACHE.set(path) {
-        Ok(()) => {}
-        Err(_) => {} // Another thread initialized first
-    }
+    let _ = FFMPEG_PATH_CACHE.set(path);
     Ok(FFMPEG_PATH_CACHE.get().unwrap().as_path())
 }
 
@@ -230,6 +226,50 @@ pub fn get_ffprobe_path() -> Result<PathBuf, AppError> {
     )))
 }
 
+/// Parse ffmpeg -encoders stdout and return supported video encoder names.
+/// Lines starting with " V" are video encoders; we filter to codecs we support.
+fn parse_encoder_output(stdout: &str) -> Vec<String> {
+    let mut codecs = Vec::new();
+    for line in stdout.lines() {
+        if line.starts_with(" V") {
+            if let Some(codec_name) = line.split_whitespace().nth(1) {
+                if matches!(codec_name, "libx264" | "libx265" | "libsvtav1" | "libvpx-vp9" | "h264_videotoolbox" | "hevc_videotoolbox") {
+                    codecs.push(codec_name.to_string());
+                }
+            }
+        }
+    }
+    codecs
+}
+
+/// Detects available video encoders by running `ffmpeg -encoders`.
+/// Returns list of codec names that we support (libx264, libx265, etc.).
+pub fn get_available_codecs() -> Result<Vec<String>, AppError> {
+    let ffmpeg_path = get_ffmpeg_path()?;
+    log::debug!(
+        target: "tiny_vid::ffmpeg::discovery",
+        "Detecting available codecs from: {}",
+        ffmpeg_path.display()
+    );
+    let output = Command::new(ffmpeg_path)
+        .arg("-encoders")
+        .output()
+        .map_err(|e| AppError::from(format!("Failed to run ffmpeg -encoders: {}", e)))?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        return Err(AppError::from(format!("ffmpeg -encoders failed: {}", stderr)));
+    }
+    let stdout = String::from_utf8_lossy(&output.stdout);
+    let codecs = parse_encoder_output(&stdout);
+    log::debug!(
+        target: "tiny_vid::ffmpeg::discovery",
+        "Detected {} supported codecs: {:?}",
+        codecs.len(),
+        codecs
+    );
+    Ok(codecs)
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -280,5 +320,35 @@ mod tests {
             );
             assert_eq!(candidates[1], PathBuf::from("C:\\app\\bin\\ffprobe.exe"));
         }
+    }
+
+    #[test]
+    fn parse_ffmpeg_encoders_output() {
+        let sample_output = r#"
+Encoders:
+ V..... libx264              H.264 / AVC / MPEG-4 AVC / MPEG-4 part 10
+ V..... libx265              H.265 / HEVC (High Efficiency Video Coding)
+ V..... libsvtav1            SVT-AV1(Scalable Video Technology for AV1) encoder
+ V..... libvpx-vp9           libvpx VP9
+ V..... h264_videotoolbox    VideoToolbox H.264 Encoder
+ V..... hevc_videotoolbox    VideoToolbox H.265 Encoder
+ V..... mpeg4                MPEG-4 part 2
+ A..... aac                  AAC (Advanced Audio Coding)
+"#;
+        let codecs = parse_encoder_output(sample_output);
+        assert_eq!(codecs.len(), 6);
+        assert!(codecs.contains(&"libx264".to_string()));
+        assert!(codecs.contains(&"h264_videotoolbox".to_string()));
+        assert!(!codecs.contains(&"mpeg4".to_string()));
+        assert!(!codecs.contains(&"aac".to_string()));
+    }
+    
+    #[test]
+    #[ignore]
+    fn get_available_codecs_returns_valid_list() {
+        let result = get_available_codecs();
+        assert!(result.is_ok(), "Should detect codecs: {:?}", result.err());
+        let codecs = result.unwrap();
+        assert!(!codecs.is_empty(), "Should detect at least one codec");
     }
 }

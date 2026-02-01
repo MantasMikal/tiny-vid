@@ -8,6 +8,9 @@ import { cn } from "@/lib/utils";
 
 export default function Compressor() {
   const {
+    isInitialized,
+    isDisabled,
+    availableCodecs,
     inputPath,
     videoPreview,
     videoUploading,
@@ -17,8 +20,7 @@ export default function Compressor() {
     videoMetadata,
     estimatedSize,
     compressionOptions,
-    buildVariant,
-    isDisabled,
+    initError,
     browseAndSelectFile,
     clear,
     dismissError,
@@ -44,6 +46,7 @@ export default function Compressor() {
         error={error}
         workerState={workerState}
         progress={progress}
+        disabled={!isInitialized}
         onBrowse={() => void browseAndSelectFile()}
         onClear={clear}
         onDismissError={dismissError}
@@ -72,7 +75,8 @@ export default function Compressor() {
               <h2 className={cn("text-xl font-semibold")}>Settings</h2>
               <VideoSettings
                 isDisabled={isDisabled}
-                buildVariant={buildVariant}
+                availableCodecs={availableCodecs}
+                initError={initError}
                 cOptions={compressionOptions}
                 onOptionsChange={setCompressionOptions}
               />

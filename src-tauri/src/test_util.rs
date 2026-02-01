@@ -5,6 +5,9 @@
 //! test lives in `integration_tests.rs`. Run ignored tests with:
 //! `cargo test -- --ignored`.
 
+use std::path::{Path, PathBuf};
+use std::process::Command;
+
 use crate::{
     cleanup_temp_file, ffmpeg_terminate, get_build_variant, get_file_size, get_video_metadata,
     move_compressed_file,
@@ -12,6 +15,82 @@ use crate::{
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
 use tauri::webview::InvokeRequest;
+
+/// Finds FFmpeg via FFMPEG_PATH env or `which`/`where`, sets FFMPEG_PATH for the process, and returns its path.
+/// Use in tests that need a real FFmpeg binary.
+pub fn find_ffmpeg_and_set_env() -> PathBuf {
+    let path = std::env::var("FFMPEG_PATH")
+        .ok()
+        .map(PathBuf::from)
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let cmd = if cfg!(windows) { "where" } else { "which" };
+            let output = Command::new(cmd).arg("ffmpeg").output().ok()?;
+            if output.status.success() {
+                let first = std::str::from_utf8(&output.stdout)
+                    .ok()?
+                    .lines()
+                    .next()?
+                    .trim();
+                if !first.is_empty() {
+                    return Some(PathBuf::from(first));
+                }
+            }
+            None
+        })
+        .expect("FFmpeg not found; set FFMPEG_PATH or add to PATH");
+    // SAFETY: Single-threaded test; no other threads access env vars during test
+    unsafe {
+        std::env::set_var("FFMPEG_PATH", path.to_string_lossy().as_ref());
+    }
+    path
+}
+
+/// Creates a short test video at `output_path` using lavfi testsrc. Duration in seconds.
+/// Uses libx264 or h264_videotoolbox depending on lgpl-macos feature.
+pub fn create_test_video(
+    ffmpeg: &Path,
+    output_path: &Path,
+    duration_secs: f32,
+) -> std::io::Result<std::process::ExitStatus> {
+    let duration_arg = format!("{}", duration_secs);
+    #[cfg(not(feature = "lgpl-macos"))]
+    {
+        Command::new(ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
+                "-c:v",
+                "libx264",
+                "-pix_fmt",
+                "yuv420p",
+                output_path.to_str().unwrap(),
+            ])
+            .status()
+    }
+    #[cfg(feature = "lgpl-macos")]
+    {
+        Command::new(ffmpeg)
+            .args([
+                "-y",
+                "-f",
+                "lavfi",
+                "-i",
+                &format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
+                "-c:v",
+                "h264_videotoolbox",
+                "-allow_sw",
+                "1",
+                "-q:v",
+                "25",
+                output_path.to_str().unwrap(),
+            ])
+            .status()
+    }
+}
 
 pub fn create_test_app() -> tauri::App<tauri::test::MockRuntime> {
     mock_builder()

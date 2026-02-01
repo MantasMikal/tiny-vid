@@ -1,6 +1,7 @@
 //! Tauri IPC command tests. Uses test_util for app and invoke helpers.
 
-use crate::test_util::{create_test_app, invoke_request};
+use crate::test_util::{create_test_app, create_test_video, find_ffmpeg_and_set_env, invoke_request};
+use crate::CodecInfo;
 use std::fs;
 use tauri::ipc::InvokeBody;
 
@@ -19,44 +20,25 @@ fn get_build_variant_returns_variant_and_codecs() {
     #[serde(rename_all = "camelCase")]
     struct BuildVariantResult {
         variant: String,
-        codecs: Vec<String>,
+        codecs: Vec<CodecInfo>,
     }
     let result: BuildVariantResult = body.deserialize().unwrap();
     assert!(!result.codecs.is_empty(), "codecs should not be empty");
 
+    for codec in &result.codecs {
+        assert!(!codec.value.is_empty());
+        assert!(!codec.name.is_empty());
+        assert!(!codec.formats.is_empty());
+    }
+
     #[cfg(feature = "lgpl-macos")]
     {
         assert_eq!(result.variant, "lgpl-macos", "lgpl-macos build should return variant lgpl-macos");
-        assert!(
-            result.codecs.contains(&"h264_videotoolbox".to_string()),
-            "lgpl-macos codecs should include h264_videotoolbox, got {:?}",
-            result.codecs
-        );
-        assert!(
-            result.codecs.contains(&"hevc_videotoolbox".to_string()),
-            "lgpl-macos codecs should include hevc_videotoolbox, got {:?}",
-            result.codecs
-        );
     }
 
     #[cfg(not(feature = "lgpl-macos"))]
     {
         assert_eq!(result.variant, "full", "full build should return variant full");
-        assert!(
-            result.codecs.contains(&"libx264".to_string()),
-            "full codecs should include libx264, got {:?}",
-            result.codecs
-        );
-        assert!(
-            result.codecs.contains(&"libx265".to_string()),
-            "full codecs should include libx265, got {:?}",
-            result.codecs
-        );
-        assert!(
-            result.codecs.contains(&"libsvtav1".to_string()),
-            "full codecs should include libsvtav1, got {:?}",
-            result.codecs
-        );
     }
 }
 
@@ -145,32 +127,7 @@ fn get_video_metadata_nonexistent_returns_error() {
 #[test]
 #[ignore = "requires FFmpeg/ffprobe on system; run with: cargo test get_video_metadata_with_video -- --ignored"]
 fn get_video_metadata_with_video_returns_metadata() {
-    use std::process::Command;
-
-    let ffmpeg = std::env::var("FFMPEG_PATH")
-        .ok()
-        .map(std::path::PathBuf::from)
-        .filter(|p| p.exists())
-        .or_else(|| {
-            let cmd = if cfg!(windows) { "where" } else { "which" };
-            let output = Command::new(cmd).arg("ffmpeg").output().ok()?;
-            if output.status.success() {
-                let first = std::str::from_utf8(&output.stdout)
-                    .ok()?
-                    .lines()
-                    .next()?
-                    .trim();
-                if !first.is_empty() {
-                    return Some(std::path::PathBuf::from(first));
-                }
-            }
-            None
-        })
-        .expect("FFmpeg not found; set FFMPEG_PATH or add to PATH");
-
-    unsafe {
-        std::env::set_var("FFMPEG_PATH", ffmpeg.to_string_lossy().as_ref());
-    }
+    let ffmpeg = find_ffmpeg_and_set_env();
 
     let app = create_test_app();
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
@@ -179,45 +136,7 @@ fn get_video_metadata_with_video_returns_metadata() {
 
     let dir = tempfile::tempdir().unwrap();
     let video_path = dir.path().join("test.mp4");
-    let status = {
-        #[cfg(not(feature = "lgpl-macos"))]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "testsrc=duration=2:size=320x240:rate=30",
-                    "-c:v",
-                    "libx264",
-                    "-pix_fmt",
-                    "yuv420p",
-                    video_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-        #[cfg(feature = "lgpl-macos")]
-        {
-            Command::new(&ffmpeg)
-                .args([
-                    "-y",
-                    "-f",
-                    "lavfi",
-                    "-i",
-                    "testsrc=duration=2:size=320x240:rate=30",
-                    "-c:v",
-                    "h264_videotoolbox",
-                    "-allow_sw",
-                    "1",
-                    "-q:v",
-                    "25",
-                    video_path.to_str().unwrap(),
-                ])
-                .status()
-        }
-    }
-    .expect("failed to create test video");
+    let status = create_test_video(&ffmpeg, &video_path, 2.0).expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let body = InvokeBody::from(serde_json::json!({

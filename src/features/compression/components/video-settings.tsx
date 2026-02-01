@@ -14,6 +14,7 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -34,99 +35,65 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type {
-  Codec,
-  CompressionOptions,
-  Format,
-  LicenseProfile,
+import type { CompressionOptions } from "@/features/compression/lib/compression-options";
+import {
+  FORMAT_METADATA,
+  getAvailableFormats,
+  getCodecInfo,
+  getCodecsForFormat,
+  isCodec,
+  isFormat,
+  isPresetValue,
+  presets,
+  tuneOptions,
 } from "@/features/compression/lib/compression-options";
 import {
-  getCodecCapabilities,
-  getCodecsForProfile,
-  getCompatibleCodecs,
-  getOutputFormatsForProfile,
-  getTuneOptionsForCodec,
-  presets,
-  resolveOptions,
-} from "@/features/compression/lib/compression-options";
+  applyPreset,
+  type BasicPresetId,
+  DEFAULT_PRESET_ID,
+  isBasicPresetId,
+  resolve,
+} from "@/features/compression/lib/options-pipeline";
 import { useCompression } from "@/features/compression/store/use-compression";
 import { cn } from "@/lib/utils";
+import type { CodecInfo } from "@/types/tauri";
 
-type BasicPresets = "basic" | "super" | "ultra" | "cooked";
 type TabOptions = "basic" | "advanced";
 
-const toggleConfig = [
+const TOGGLE_CONFIG: {
+  value: BasicPresetId;
+  icon: typeof BikeIcon;
+  title: string;
+  description: string;
+}[] = [
   {
     value: "basic",
     icon: BikeIcon,
     title: "Basic",
     description: "Basic compression with minimal loss in quality",
-    options: {
-      quality: 90,
-      preset: "fast",
-      fps: 30,
-      scale: 1,
-      removeAudio: false,
-      codec: "libx264",
-      outputFormat: "mp4" as Format,
-      generatePreview: true,
-      tune: undefined,
-    },
   },
   {
     value: "super",
     icon: CarFrontIcon,
     title: "Medium",
     description: "Medium compression with some loss in quality",
-    options: {
-      quality: 75,
-      preset: "fast",
-      fps: 30,
-      scale: 1,
-      removeAudio: false,
-      codec: "libx264",
-      outputFormat: "mp4" as Format,
-      generatePreview: true,
-      tune: undefined,
-    },
   },
   {
     value: "ultra",
     icon: RocketIcon,
     title: "Strong",
     description: "Strong compression with loss in quality",
-    options: {
-      quality: 60,
-      preset: "fast",
-      fps: 30,
-      scale: 1,
-      removeAudio: false,
-      codec: "libx264",
-      outputFormat: "mp4" as Format,
-      generatePreview: true,
-      tune: undefined,
-    },
   },
   {
     value: "cooked",
     icon: CookingPotIcon,
     title: "Cooked",
     description: "Deep fried with extra crunch",
-    options: {
-      quality: 40,
-      preset: "fast",
-      fps: 30,
-      scale: 1,
-      removeAudio: false,
-      codec: "libx264",
-      outputFormat: "mp4" as Format,
-      generatePreview: true,
-      tune: undefined,
-    },
   },
-] as const;
+];
 
 const TAB_ORDER: TabOptions[] = ["basic", "advanced"];
+
 const getTabIndex = (tab: TabOptions) => TAB_ORDER.indexOf(tab);
 
 const MotionTabsContent = motion.create(TabsContent);
@@ -164,8 +131,9 @@ function AnimatedTabPanel({
 
 interface VideoSettingsProps {
   isDisabled: boolean;
-  buildVariant: LicenseProfile;
-  cOptions: CompressionOptions;
+  availableCodecs: CodecInfo[];
+  initError: string | null;
+  cOptions: CompressionOptions | null;
   onOptionsChange: (
     options: CompressionOptions,
     opts?: { triggerPreview?: boolean }
@@ -174,7 +142,8 @@ interface VideoSettingsProps {
 
 export function VideoSettings({
   isDisabled,
-  buildVariant,
+  availableCodecs,
+  initError,
   cOptions,
   onOptionsChange,
 }: VideoSettingsProps) {
@@ -183,7 +152,8 @@ export function VideoSettings({
     direction: number;
   }>({ activeTab: "basic", direction: 0 });
   const { activeTab, direction } = tabState;
-  const [basicPreset, setBasicPreset] = useState<BasicPresets>("super");
+  const [basicPreset, setBasicPreset] =
+    useState<BasicPresetId>(DEFAULT_PRESET_ID);
   const {
     ffmpegCommandPreview,
     ffmpegCommandPreviewLoading,
@@ -197,18 +167,29 @@ export function VideoSettings({
   }, [activeTab, ffmpegCommandPreview, refreshFfmpegCommandPreview]);
 
   const handleTabChange = (value: string) => {
-    const newTab = value as TabOptions;
+    const newTab: TabOptions = value === "advanced" ? "advanced" : "basic";
     const prevIndex = getTabIndex(activeTab);
     const nextIndex = getTabIndex(newTab);
     const nextDirection = nextIndex > prevIndex ? 1 : -1;
     setTabState({ activeTab: newTab, direction: nextDirection });
   };
 
+  if (!cOptions) return null;
+
+  const currentCodec = getCodecInfo(cOptions.codec, availableCodecs);
+  const availableFormats = getAvailableFormats(availableCodecs);
+
   return (
     <TooltipProvider>
+      {initError && (
+        <Alert variant="destructive" className={cn("mb-4")}>
+          <AlertTitle>FFmpeg Configuration Error</AlertTitle>
+          <AlertDescription>{initError}</AlertDescription>
+        </Alert>
+      )}
       <Tabs
         value={activeTab}
-        className={cn("w-full min-w-0")}
+        className={cn("w-full min-w-0 ")}
         onValueChange={handleTabChange}
       >
         <TabsList className={cn("mb-4 grid w-full grid-cols-2")}>
@@ -228,22 +209,15 @@ export function VideoSettings({
                   value={basicPreset}
                   spacing={2}
                   onValueChange={(v) => {
-                    if (!v) return;
-                    const preset = toggleConfig.find((c) => c.value === v);
-                    setBasicPreset(v as BasicPresets);
-                    if (preset)
-                      onOptionsChange(
-                        resolveOptions(
-                          { ...cOptions, ...preset.options },
-                          buildVariant
-                        )
-                      );
+                    if (!v || !isBasicPresetId(v)) return;
+                    setBasicPreset(v);
+                    onOptionsChange(applyPreset(cOptions, v, availableCodecs));
                   }}
                   disabled={isDisabled}
                   className={cn("w-full min-w-0 flex-col items-start")}
                   type="single"
                 >
-                  {toggleConfig.map((config) => (
+                  {TOGGLE_CONFIG.map((config) => (
                     <ToggleGroupItem
                       key={config.value}
                       variant="outline"
@@ -302,11 +276,9 @@ export function VideoSettings({
                   value={cOptions.outputFormat}
                   disabled={isDisabled}
                   onValueChange={(v) => {
+                    if (!isFormat(v)) return;
                     onOptionsChange(
-                      resolveOptions(
-                        { ...cOptions, outputFormat: v as Format },
-                        buildVariant
-                      )
+                      resolve({ ...cOptions, outputFormat: v }, availableCodecs)
                     );
                   }}
                 >
@@ -314,11 +286,17 @@ export function VideoSettings({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {getOutputFormatsForProfile(buildVariant).map((f) => (
-                      <SelectItem key={f.value} value={f.value}>
-                        {f.name}
-                      </SelectItem>
-                    ))}
+                    {availableFormats.map((format) => {
+                      const name =
+                        isFormat(format) && format in FORMAT_METADATA
+                          ? FORMAT_METADATA[format].name
+                          : format.toUpperCase();
+                      return (
+                        <SelectItem key={format} value={format}>
+                          {name}
+                        </SelectItem>
+                      );
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -330,11 +308,9 @@ export function VideoSettings({
                   value={cOptions.codec}
                   disabled={isDisabled}
                   onValueChange={(v) => {
+                    if (!isCodec(v)) return;
                     onOptionsChange(
-                      resolveOptions(
-                        { ...cOptions, codec: v as Codec },
-                        buildVariant
-                      )
+                      resolve({ ...cOptions, codec: v }, availableCodecs)
                     );
                   }}
                 >
@@ -342,19 +318,14 @@ export function VideoSettings({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {getCompatibleCodecs(
+                    {getCodecsForFormat(
                       cOptions.outputFormat,
-                      buildVariant
-                    ).map((codecValue) => {
-                      const c = getCodecsForProfile(buildVariant).find(
-                        (x) => x.value === codecValue
-                      );
-                      return c ? (
-                        <SelectItem key={c.value} value={c.value}>
-                          {c.name}
-                        </SelectItem>
-                      ) : null;
-                    })}
+                      availableCodecs
+                    ).map((codec) => (
+                      <SelectItem key={codec.value} value={codec.value}>
+                        {codec.name}
+                      </SelectItem>
+                    ))}
                   </SelectContent>
                 </Select>
               </div>
@@ -380,7 +351,7 @@ export function VideoSettings({
                   }}
                 />
               </div>
-              {buildVariant !== "lgpl-macos" && (
+              {currentCodec?.presetType !== "vt" && (
                 <div className={cn("flex flex-col gap-2")}>
                   <TooltipLabel tooltip="Encoding speed vs compression. Slower presets produce smaller files at the same quality but take longer to encode.">
                     Encoding Preset
@@ -389,10 +360,8 @@ export function VideoSettings({
                     value={cOptions.preset}
                     disabled={isDisabled}
                     onValueChange={(v) => {
-                      onOptionsChange({
-                        ...cOptions,
-                        preset: v as (typeof presets)[number]["value"],
-                      });
+                      if (!isPresetValue(v)) return;
+                      onOptionsChange({ ...cOptions, preset: v });
                     }}
                   >
                     <SelectTrigger className={cn("w-full")}>
@@ -408,35 +377,34 @@ export function VideoSettings({
                   </Select>
                 </div>
               )}
-              {buildVariant !== "lgpl-macos" &&
-                getCodecCapabilities(cOptions.codec).supportsTune && (
-                  <div className={cn("flex flex-col gap-2")}>
-                    <TooltipLabel tooltip="x264 tune: optimizes for specific content (film, animation, etc.). Only applies to H.264.">
-                      Tune
-                    </TooltipLabel>
-                    <Select
-                      value={cOptions.tune ?? "none"}
-                      disabled={isDisabled}
-                      onValueChange={(v) => {
-                        onOptionsChange({
-                          ...cOptions,
-                          tune: v === "none" ? undefined : v,
-                        });
-                      }}
-                    >
-                      <SelectTrigger className={cn("w-full")}>
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {getTuneOptionsForCodec(cOptions.codec).map((t) => (
-                          <SelectItem key={t.value} value={t.value}>
-                            {t.name}
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  </div>
-                )}
+              {currentCodec?.supportsTune && (
+                <div className={cn("flex flex-col gap-2")}>
+                  <TooltipLabel tooltip="x264 tune: optimizes for specific content (film, animation, etc.). Only applies to H.264.">
+                    Tune
+                  </TooltipLabel>
+                  <Select
+                    value={cOptions.tune ?? "none"}
+                    disabled={isDisabled}
+                    onValueChange={(v) => {
+                      onOptionsChange({
+                        ...cOptions,
+                        tune: v === "none" ? undefined : v,
+                      });
+                    }}
+                  >
+                    <SelectTrigger className={cn("w-full")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {tuneOptions.map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className={cn("flex flex-col gap-2")}>
                 <TooltipLabel tooltip="Resize output (scale filter). 1.0 = original size. Lower values shrink resolution and file size; aspect ratio preserved, dimensions kept even for encoders.">
                   Resolution Scale
