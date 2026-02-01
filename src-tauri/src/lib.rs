@@ -85,9 +85,16 @@ async fn ffmpeg_transcode_to_temp(
     );
     cleanup_transcode_temp();
 
+    let ext = options
+        .output_format
+        .as_deref()
+        .unwrap_or("mp4")
+        .to_lowercase();
+    let suffix = format!("transcode-output.{}", ext);
+
     let temp = TempFileManager::default();
     let output_path = temp
-        .create("transcode-output.mp4", None)
+        .create(&suffix, None)
         .map_err(AppError::from)?;
     let output_str = output_path.to_string_lossy().to_string();
 
@@ -175,8 +182,17 @@ async fn ffmpeg_preview(
     );
     cleanup_previous_preview_paths(&input_str, preview_duration_u32);
 
+    let ext = options
+        .output_format
+        .as_deref()
+        .unwrap_or("mp4")
+        .to_lowercase();
+    let preview_suffix = format!("preview-output.{}", ext);
+
     let temp = TempFileManager::default();
-    let output_path = temp.create("preview-output.mp4", None).map_err(AppError::from)?;
+    let output_path = temp
+        .create(&preview_suffix, None)
+        .map_err(AppError::from)?;
 
     let original_path = match get_cached_extract(&input_str, preview_duration_u32) {
         Some(cached) => {

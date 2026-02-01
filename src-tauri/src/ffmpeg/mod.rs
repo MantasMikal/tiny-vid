@@ -32,6 +32,7 @@ pub struct TranscodeOptions {
     pub remove_audio: Option<bool>,
     pub preset: Option<String>,
     pub tune: Option<String>,
+    pub output_format: Option<String>,
     pub preview_duration: Option<u32>,
     pub duration_secs: Option<f64>,
 }
@@ -47,6 +48,7 @@ impl Default for TranscodeOptions {
             remove_audio: Some(false),
             preset: Some("fast".to_string()),
             tune: None,
+            output_format: Some("mp4".to_string()),
             preview_duration: Some(3),
             duration_secs: None,
         }

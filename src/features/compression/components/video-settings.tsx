@@ -34,12 +34,19 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { CompressionOptions } from "@/features/compression/lib/compression-options";
+import type {
+  Codec,
+  CompressionOptions,
+  Format,
+} from "@/features/compression/lib/compression-options";
 import {
   codecs,
-  convertQualityForCodecSwitch,
+  getCodecCapabilities,
+  getCompatibleCodecs,
+  getTuneOptionsForCodec,
+  outputFormats,
   presets,
-  qualityToCrf,
+  resolveOptions,
 } from "@/features/compression/lib/compression-options";
 import { useCompression } from "@/features/compression/store/use-compression";
 import { cn } from "@/lib/utils";
@@ -60,6 +67,7 @@ const toggleConfig = [
       scale: 1,
       removeAudio: false,
       codec: "libx264",
+      outputFormat: "mp4" as Format,
       generatePreview: true,
       tune: undefined,
     },
@@ -76,6 +84,7 @@ const toggleConfig = [
       scale: 1,
       removeAudio: false,
       codec: "libx264",
+      outputFormat: "mp4" as Format,
       generatePreview: true,
       tune: undefined,
     },
@@ -92,6 +101,7 @@ const toggleConfig = [
       scale: 1,
       removeAudio: false,
       codec: "libx264",
+      outputFormat: "mp4" as Format,
       generatePreview: true,
       tune: undefined,
     },
@@ -108,6 +118,7 @@ const toggleConfig = [
       scale: 1,
       removeAudio: false,
       codec: "libx264",
+      outputFormat: "mp4" as Format,
       generatePreview: true,
       tune: undefined,
     },
@@ -218,7 +229,9 @@ export function VideoSettings({
                     const preset = toggleConfig.find((c) => c.value === v);
                     setBasicPreset(v as BasicPresets);
                     if (preset)
-                      onOptionsChange({ ...cOptions, ...preset.options });
+                      onOptionsChange(
+                        resolveOptions({ ...cOptions, ...preset.options })
+                      );
                   }}
                   disabled={isDisabled}
                   className={cn("w-full min-w-0 flex-col items-start")}
@@ -276,47 +289,67 @@ export function VideoSettings({
               className={cn("flex flex-col gap-4")}
             >
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Video encoder (-c:v). H.264: best compatibility. H.265: ~30–50% smaller files than H.264. AV1: best compression, royalty-free; may not play on older devices.">
-                  Codec
+                <TooltipLabel tooltip="Output container format. MP4: widest support. WebM: open format; VP9 (Safari-friendly) or AV1.">
+                  Format
                 </TooltipLabel>
                 <Select
-                  value={cOptions.codec}
+                  value={cOptions.outputFormat}
                   disabled={isDisabled}
                   onValueChange={(v) => {
-                    const newQuality =
-                      v !== cOptions.codec
-                        ? convertQualityForCodecSwitch(
-                            cOptions.quality,
-                            cOptions.codec,
-                            v
-                          )
-                        : cOptions.quality;
-                    onOptionsChange({
-                      ...cOptions,
-                      codec: v,
-                      quality: newQuality,
-                    });
+                    onOptionsChange(
+                      resolveOptions({ ...cOptions, outputFormat: v as Format })
+                    );
                   }}
                 >
                   <SelectTrigger className={cn("w-full")}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {codecs.map((c) => (
-                      <SelectItem key={c.value} value={c.value}>
-                        {c.name}
+                    {outputFormats.map((f) => (
+                      <SelectItem key={f.value} value={f.value}>
+                        {f.name}
                       </SelectItem>
                     ))}
                   </SelectContent>
                 </Select>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Constant Rate Factor (CRF): keeps perceived quality steady while varying bitrate. Lower = higher quality and larger files. A change of ±6 roughly halves or doubles file size. Mapped per codec (x264: 23–51, x265: 28–51, AV1: 24–63).">
+                <TooltipLabel tooltip="Video encoder (-c:v). H.264: best compatibility. H.265: ~30–50% smaller. AV1: best compression. VP9: Safari-friendly WebM.">
+                  Codec
+                </TooltipLabel>
+                <Select
+                  value={cOptions.codec}
+                  disabled={isDisabled}
+                  onValueChange={(v) => {
+                    onOptionsChange(
+                      resolveOptions({ ...cOptions, codec: v as Codec })
+                    );
+                  }}
+                >
+                  <SelectTrigger className={cn("w-full")}>
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {getCompatibleCodecs(cOptions.outputFormat).map(
+                      (codecValue) => {
+                        const c = codecs.find((x) => x.value === codecValue);
+                        return c ? (
+                          <SelectItem key={c.value} value={c.value}>
+                            {c.name}
+                          </SelectItem>
+                        ) : null;
+                      }
+                    )}
+                  </SelectContent>
+                </Select>
+              </div>
+              <div className={cn("flex flex-col gap-2")}>
+                <TooltipLabel tooltip="Constant Rate Factor (CRF): keeps perceived quality steady while varying bitrate. Lower = higher quality and larger files. A change of ±6 roughly halves or doubles file size. Mapped per codec (x264: 23–51, x265: 28–51, VP9: 20–63, AV1: 24–63).">
                   Quality
                 </TooltipLabel>
                 <Slider
                   disabled={isDisabled}
-                  min={0}
+                  min={1}
                   max={100}
                   step={1}
                   value={[cOptions.quality]}
@@ -331,9 +364,6 @@ export function VideoSettings({
                     onOptionsChange({ ...cOptions, quality: v });
                   }}
                 />
-                <p className={cn("text-xs text-muted-foreground")}>
-                  CRF {qualityToCrf(cOptions.quality, cOptions.codec)}
-                </p>
               </div>
               <div className={cn("flex flex-col gap-2")}>
                 <TooltipLabel tooltip="Encoding speed vs compression. Slower presets produce smaller files at the same quality but take longer to encode.">
@@ -345,7 +375,7 @@ export function VideoSettings({
                   onValueChange={(v) => {
                     onOptionsChange({
                       ...cOptions,
-                      preset: v,
+                      preset: v as (typeof presets)[number]["value"],
                     });
                   }}
                 >
@@ -361,6 +391,34 @@ export function VideoSettings({
                   </SelectContent>
                 </Select>
               </div>
+              {getCodecCapabilities(cOptions.codec).supportsTune && (
+                <div className={cn("flex flex-col gap-2")}>
+                  <TooltipLabel tooltip="x264 tune: optimizes for specific content (film, animation, etc.). Only applies to H.264.">
+                    Tune
+                  </TooltipLabel>
+                  <Select
+                    value={cOptions.tune ?? "none"}
+                    disabled={isDisabled}
+                    onValueChange={(v) => {
+                      onOptionsChange({
+                        ...cOptions,
+                        tune: v === "none" ? undefined : v,
+                      });
+                    }}
+                  >
+                    <SelectTrigger className={cn("w-full")}>
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {getTuneOptionsForCodec(cOptions.codec).map((t) => (
+                        <SelectItem key={t.value} value={t.value}>
+                          {t.name}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+              )}
               <div className={cn("flex flex-col gap-2")}>
                 <TooltipLabel tooltip="Resize output (scale filter). 1.0 = original size. Lower values shrink resolution and file size; aspect ratio preserved, dimensions kept even for encoders.">
                   Resolution Scale
@@ -460,11 +518,11 @@ export function VideoSettings({
                       )}
                     >
                       {ffmpegCommandPreviewLoading ? (
-                        <p className={cn("text-muted-foreground")}>
-                          Loading…
-                        </p>
+                        <p className={cn("text-muted-foreground")}>Loading…</p>
                       ) : ffmpegCommandPreview ? (
-                        <pre className={cn("m-0 whitespace-pre-wrap select-text")}>
+                        <pre
+                          className={cn("m-0 whitespace-pre-wrap select-text")}
+                        >
                           {ffmpegCommandPreview}
                         </pre>
                       ) : (

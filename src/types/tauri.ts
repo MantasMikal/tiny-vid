@@ -36,6 +36,7 @@ export interface TranscodeOptions {
   removeAudio?: boolean;
   preset?: string;
   tune?: string;
+  outputFormat?: string;
   previewDuration?: number;
   durationSecs?: number;
 }

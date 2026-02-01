@@ -2,7 +2,11 @@ import { convertFileSrc, invoke } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
 import { create } from "zustand";
 
-import type { CompressionOptions } from "@/features/compression/lib/compression-options";
+import {
+  type CompressionOptions,
+  getDefaultExtension,
+  resolveOptions,
+} from "@/features/compression/lib/compression-options";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
 import { getVideoMetadataFromPath } from "@/features/compression/lib/get-video-metadata";
 import { type ResultError, tryCatch } from "@/lib/try-catch";
@@ -32,22 +36,24 @@ function toRustOptions(
     removeAudio: opts.removeAudio,
     preset: opts.preset,
     tune: opts.tune,
+    outputFormat: opts.outputFormat,
     previewDuration: opts.previewDuration ?? 3,
     durationSecs,
   };
 }
 
-const DEFAULT_COMPRESSION_OPTIONS: CompressionOptions = {
+const DEFAULT_COMPRESSION_OPTIONS: CompressionOptions = resolveOptions({
   quality: 75,
   preset: "fast",
   fps: 30,
   scale: 1,
   removeAudio: false,
   codec: "libx264",
+  outputFormat: "mp4",
   generatePreview: true,
   previewDuration: 3,
   tune: undefined,
-};
+});
 
 let debouncePreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let previewRequestId = 0;
@@ -247,9 +253,17 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     set({ isSaving: true });
     await tryCatch(
       async () => {
+        const inputFilename = inputPath.split(/[/\\]/).pop() ?? "output";
+        const basename = inputFilename.replace(/\.[^.]+$/, "") || "output";
+        const ext = getDefaultExtension(compressionOptions.outputFormat);
         const outputPath = await save({
-          defaultPath: `compressed-${inputPath.split(/[/\\]/).pop() ?? "output.mp4"}`,
-          filters: [{ name: "Video", extensions: ["mp4"] }],
+          defaultPath: `compressed-${basename}.${ext}`,
+          filters: [
+            {
+              name: "Video",
+              extensions: [ext],
+            },
+          ],
         });
 
         if (!outputPath) {

@@ -53,7 +53,7 @@ export function VideoWorkspace({
             }}
             onClick={onBrowse}
           >
-            <p className={cn("text-muted-foreground")}>
+            <p className={cn("text-center text-muted-foreground")}>
               Drop video or click to browse
             </p>
           </DropZone>
