@@ -2,7 +2,7 @@
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "Tiny Vid",
   "version": "0.1.0",
-  "identifier": "tiny-vid-lgpl",
+  "identifier": "tiny-vid",
   "build": {
     "beforeDevCommand": "yarn dev",
     "devUrl": "http://localhost:1420",
@@ -35,7 +35,10 @@
       },
       "assetProtocol": {
         "enable": true,
-        "scope": ["$TEMP/**", "$HOME/**"]
+        "scope": [
+          "$TEMP/**",
+          "$HOME/**"
+        ]
       }
     },
     "withGlobalTauri": false
@@ -43,13 +46,23 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
+    "externalBin": [],
     "category": "Video",
     "shortDescription": "Compress and optimize video files",
-    "longDescription": "Tiny Vid is a desktop app for compressing and optimizing video files with support for H.264 and H.265.",
+    "longDescription": "Tiny Vid is a desktop app for compressing and optimizing video files with support for H.264, H.265, and AV1 codecs.",
     "fileAssociations": [
       {
-        "ext": ["mp4", "mov"],
+        "ext": [
+          "mp4",
+          "mov",
+          "webm",
+          "mkv",
+          "avi",
+          "mpeg",
+          "3gp",
+          "flv",
+          "ogg"
+        ],
         "name": "Video",
         "role": "Editor"
       }

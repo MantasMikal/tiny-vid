@@ -6,35 +6,27 @@ Video compressor app using native FFmpeg. [Web version (WASM)](https://handy.too
 
 ## Build variants (FFmpeg bundling)
 
-| Variant    | Platform      | FFmpeg source  |
-| ---------- | ------------- | -------------- |
+| Variant    | Platform       | FFmpeg source  |
+| ---------- | -------------- | -------------- |
 | full       | macOS, Windows | BtbN GPL       |
-| lgpl-macos | macOS only    | Custom LGPL+VT |
-| bare       | Any           | System         |
+| lgpl-macos | macOS only     | Custom LGPL+VT |
+| bare       | Any            | System         |
 
 - **Full (macOS / Windows)** – Bundles BtbN GPL FFmpeg (libx264, libx265, libsvtav1).
 - **lgpl-macos (macOS App Store)** – Custom LGPL FFmpeg with VideoToolbox only (H.264/HEVC, MP4). Requires building FFmpeg first.
 - **Bare** – No FFmpeg in the bundle; app uses system FFmpeg (e.g. `apt install ffmpeg` on Linux).
 
-### Build commands
+### How to build
 
-```bash
-# Full install (macOS / Windows): downloads BtbN FFmpeg (cached), then builds
-yarn build:full
+From the repo root, run the script for the variant you want. Installers go to **releases/<platform>/**.
 
-# lgpl-macos (macOS only): same product name "Tiny Vid", bundle identifier tiny-vid-lgpl
-yarn build-ffmpeg-lgpl-macos   # clone, configure, build FFmpeg (macOS) — run once
-yarn build:lgpl-macos          # prepare + tauri build with lgpl-macos config
+| Script | Description |
+| ------ | ----------- |
+| `yarn build:bare` | No bundled FFmpeg; uses system FFmpeg. Works on macOS, Windows, Linux (Linux requires Docker). |
+| `yarn build:full` | Bundles BtbN FFmpeg. macOS and Windows only. |
+| `yarn build:lgpl-macos` | macOS App Store build (custom LGPL FFmpeg). Run `yarn build-ffmpeg-lgpl-macos` once first. |
 
-# Bare: no FFmpeg download; use tauri.conf.bare.json (no externalBin)
-yarn build:bare
-```
-
-Manual steps if needed:
-
-- **Full**: `yarn prepare-ffmpeg` then `TAURI_CONFIG_PATH=src-tauri/tauri.conf.json yarn tauri build`
-- **lgpl-macos**: `TINY_VID_LGPL_MACOS=1 yarn prepare-ffmpeg` then `TAURI_CONFIG_PATH=src-tauri/tauri.conf.lgpl-macos.json yarn tauri build -- --features lgpl-macos`
-- **Bare**: `TAURI_CONFIG_PATH=src-tauri/tauri.conf.bare.json yarn tauri build`
+To build by platform script instead: `./scripts/build-macos.sh [full|bare|lgpl]`, `./scripts/build-linux.sh`, or `./scripts/build-windows.sh [full|bare]`.
 
 BtbN downloads are cached in `~/.cache/tiny-vid/ffmpeg` (or `TINY_VID_FFMPEG_CACHE`). Checksums are verified when BtbN provides `checksums.sha256`. Binaries go to `src-tauri/binaries/` (gitignored). lgpl-macos build expects custom FFmpeg there from `yarn build-ffmpeg-lgpl-macos`.
 

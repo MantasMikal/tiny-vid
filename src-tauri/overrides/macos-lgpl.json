@@ -1,0 +1,13 @@
+{
+  "identifier": "tiny-vid-lgpl",
+  "bundle": {
+    "longDescription": "Tiny Vid is a desktop app for compressing and optimizing video files with support for H.264 and H.265.",
+    "fileAssociations": [
+      {
+        "ext": ["mp4", "mov"],
+        "name": "Video",
+        "role": "Editor"
+      }
+    ]
+  }
+}

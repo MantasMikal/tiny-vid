@@ -1,7 +1,7 @@
 /**
  * Prepares FFmpeg binaries for bundling. Run before `tauri build` for macOS/Windows.
  *
- * - Linux / bare: No-op (use tauri.conf.bare.json which has no externalBin)
+ * - Linux / bare: No-op (platform overrides set externalBin to [])
  * - Windows: Downloads BtbN win64-gpl, extracts to src-tauri/binaries/
  * - macOS Direct: Downloads BtbN macos64/macosarm64-gpl
  * - macOS lgpl-macos: Expects output from build-ffmpeg-lgpl-macos.sh; fails if missing
@@ -323,7 +323,7 @@ async function main(): Promise<void> {
   );
 
   if (isLinux(target)) {
-    console.log("Bare build: no FFmpeg bundling (use tauri.conf.bare.json)");
+    console.log("Bare build: no FFmpeg bundling (platform overrides set externalBin to [])");
     return;
   }
 
