@@ -89,6 +89,8 @@ export function useCompression() {
       estimatedSize: s.estimatedSize,
       compressionOptions: s.compressionOptions,
       listenersReady: s.listenersReady,
+      ffmpegCommandPreview: s.ffmpegCommandPreview,
+      ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,
       isDisabled:
         !s.inputPath ||
         s.isSaving ||
@@ -102,6 +104,7 @@ export function useCompression() {
       dismissError: s.dismissError,
       generatePreview: s.generatePreview,
       setCompressionOptions: s.setCompressionOptions,
+      refreshFfmpegCommandPreview: s.refreshFfmpegCommandPreview,
       terminate: s.terminate,
     }))
   );

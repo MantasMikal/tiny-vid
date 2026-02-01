@@ -51,6 +51,8 @@ const DEFAULT_COMPRESSION_OPTIONS: CompressionOptions = {
 
 let debouncePreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let previewRequestId = 0;
+let commandPreviewRequestId = 0;
+let debounceCommandPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 
 interface CompressionState {
   inputPath: string | null;
@@ -65,6 +67,8 @@ interface CompressionState {
   progress: number;
   /** True after FFmpeg event listeners are registered; avoid starting transcode before this. */
   listenersReady: boolean;
+  ffmpegCommandPreview: string | null;
+  ffmpegCommandPreviewLoading: boolean;
 
   selectPath: (path: string) => Promise<void>;
   browseAndSelectFile: () => Promise<void>;
@@ -73,6 +77,7 @@ interface CompressionState {
   dismissError: () => void;
   generatePreview: (requestId?: number) => Promise<void>;
   setCompressionOptions: (options: CompressionOptions) => void;
+  refreshFfmpegCommandPreview: () => Promise<void>;
   terminate: () => Promise<void>;
 }
 
@@ -88,6 +93,36 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   workerState: WorkerState.Idle,
   progress: 0,
   listenersReady: false,
+  ffmpegCommandPreview: null,
+  ffmpegCommandPreviewLoading: false,
+
+  refreshFfmpegCommandPreview: async () => {
+    const { compressionOptions, inputPath } = get();
+    const requestId = ++commandPreviewRequestId;
+    const tid = setTimeout(() => {
+      if (commandPreviewRequestId === requestId) {
+        set({ ffmpegCommandPreviewLoading: true });
+      }
+    }, 0);
+    try {
+      const result = await invoke<string>("preview_ffmpeg_command", {
+        options: toRustOptions(compressionOptions),
+        inputPath,
+      });
+      if (commandPreviewRequestId === requestId) {
+        set({ ffmpegCommandPreview: result });
+      }
+    } catch {
+      if (commandPreviewRequestId === requestId) {
+        set({ ffmpegCommandPreview: null });
+      }
+    } finally {
+      clearTimeout(tid);
+      if (commandPreviewRequestId === requestId) {
+        set({ ffmpegCommandPreviewLoading: false });
+      }
+    }
+  },
 
   selectPath: async (path: string) => {
     const { workerState } = get();
@@ -112,6 +147,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       return;
     }
     set({ videoMetadata: metadataResult.value });
+    void get().refreshFfmpegCommandPreview();
 
     await tryCatch(
       async () => {
@@ -259,6 +295,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       estimatedSize: null,
       error: null,
     });
+    void get().refreshFfmpegCommandPreview();
   },
 
   dismissError: () => {
@@ -312,6 +349,13 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     opts?: { triggerPreview?: boolean }
   ) => {
     set({ compressionOptions: options });
+    if (debounceCommandPreviewTimer) {
+      clearTimeout(debounceCommandPreviewTimer);
+    }
+    debounceCommandPreviewTimer = setTimeout(() => {
+      debounceCommandPreviewTimer = null;
+      void get().refreshFfmpegCommandPreview();
+    }, 250);
     if (opts?.triggerPreview === false) return;
     if (!options.generatePreview) return;
 

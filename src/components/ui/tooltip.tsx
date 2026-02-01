@@ -29,9 +29,23 @@ function Tooltip({
 }
 
 function TooltipTrigger({
+  className,
   ...props
 }: React.ComponentProps<typeof TooltipPrimitive.Trigger>) {
-  return <TooltipPrimitive.Trigger data-slot="tooltip-trigger" {...props} />
+  return (
+    <TooltipPrimitive.Trigger
+      data-slot="tooltip-trigger"
+      className={cn(
+        `
+          rounded-md outline-none
+          focus-visible:border-ring focus-visible:ring-[3px]
+          focus-visible:ring-ring/50
+        `,
+        className
+      )}
+      {...props}
+    />
+  )
 }
 
 function TooltipContent({

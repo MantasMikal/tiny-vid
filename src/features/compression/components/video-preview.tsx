@@ -1,4 +1,5 @@
-import React, { useEffect, useRef } from "react";
+import { AnimatePresence, motion } from "motion/react";
+import { useEffect, useRef } from "react";
 import { ReactCompareSlider } from "react-compare-slider";
 
 import { cn } from "@/lib/utils";
@@ -8,7 +9,7 @@ interface PreviewProps {
   compressedSrc: string;
 }
 
-function VideoPreviewComponent({ originalSrc, compressedSrc }: PreviewProps) {
+export function VideoPreview({ originalSrc, compressedSrc }: PreviewProps) {
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const compressedVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -60,29 +61,57 @@ function VideoPreviewComponent({ originalSrc, compressedSrc }: PreviewProps) {
         compressedVideo.removeEventListener("ended", handleSecondEnded);
       };
     }
-  }, []);
+  }, [originalSrc, compressedSrc]);
 
   return (
     <ReactCompareSlider
       className={cn("size-full")}
       itemOne={
-        <video
-          ref={compressedVideoRef}
-          muted
-          className={cn("size-full object-contain")}
-          src={compressedSrc}
-        />
+        <div className="relative size-full">
+          <AnimatePresence mode="sync">
+            <motion.div
+              key={originalSrc}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0"
+            >
+              <video
+                ref={originalVideoRef}
+                muted
+                playsInline
+                preload="auto"
+                className={cn("size-full object-contain")}
+                src={originalSrc}
+              />
+            </motion.div>
+          </AnimatePresence>
+        </div>
       }
       itemTwo={
-        <video
-          ref={originalVideoRef}
-          muted
-          className={cn("size-full object-contain")}
-          src={originalSrc}
-        />
+        <div className="relative size-full">
+          <AnimatePresence mode="sync">
+            <motion.div
+              key={compressedSrc}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              exit={{ opacity: 0 }}
+              transition={{ duration: 0.2 }}
+              className="absolute inset-0"
+            >
+              <video
+                ref={compressedVideoRef}
+                muted
+                playsInline
+                preload="auto"
+                className={cn("size-full object-contain")}
+                src={compressedSrc}
+              />
+            </motion.div>
+          </AnimatePresence>
+        </div>
       }
     />
   );
 }
-
-export const VideoPreview = React.memo(VideoPreviewComponent);

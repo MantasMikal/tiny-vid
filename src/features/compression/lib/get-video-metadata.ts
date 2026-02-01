@@ -1,4 +1,6 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { invoke } from "@tauri-apps/api/core";
+
+import type { GetVideoMetadataResult } from "@/types/tauri";
 
 export interface VideoMetadata {
   duration: number;
@@ -8,36 +10,17 @@ export interface VideoMetadata {
   sizeMB: number;
 }
 
-export async function getVideoMetadata(
-  filePath: string,
-  size: number
-): Promise<VideoMetadata> {
-  return new Promise((resolve, reject) => {
-    const video = document.createElement("video");
-    video.preload = "metadata";
-    const src = convertFileSrc(filePath);
-
-    video.onloadedmetadata = () => {
-      resolve({
-        duration: video.duration,
-        width: video.videoWidth,
-        height: video.videoHeight,
-        size,
-        sizeMB: size / 1024 / 1024,
-      });
-    };
-
-    video.onerror = () => {
-      reject(new Error("Error loading video"));
-    };
-
-    video.src = src;
-  });
-}
-
 export async function getVideoMetadataFromPath(
   filePath: string
 ): Promise<VideoMetadata> {
-  const size = await invoke<number>("get_file_size", { path: filePath });
-  return getVideoMetadata(filePath, size);
+  const meta = await invoke<GetVideoMetadataResult>("get_video_metadata", {
+    path: filePath,
+  });
+  return {
+    duration: meta.duration,
+    width: meta.width,
+    height: meta.height,
+    size: meta.size,
+    sizeMB: meta.sizeMb,
+  };
 }

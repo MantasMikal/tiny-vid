@@ -1,7 +1,8 @@
+import { SquareStop } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
-import { Loader2, SquareStop } from "lucide-react";
 
 import { Button } from "@/components/ui/button";
+import { Spinner } from "@/components/ui/spinner";
 import { VideoMetadataDisplay } from "@/features/compression/components/video-metadata-display";
 import type { CompressionOptions } from "@/features/compression/lib/compression-options";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
@@ -63,7 +64,7 @@ export function CompressionDetailsCard({
               onClick={() => { if (isWorking) { onTerminate(); } else { onTranscode(); } }}
               disabled={!inputPath || (isDisabled && !isTranscoding)}
             >
-              {isWorking && <SquareStop className={cn("mr-2 size-4")} />}
+              {isWorking && <SquareStop className={cn("size-4")} />}
               {isWorking ? "Stop" : "Compress"}
             </Button>
             {!cOptions.generatePreview && (
@@ -74,7 +75,7 @@ export function CompressionDetailsCard({
                 disabled={isDisabled || isGeneratingPreview}
               >
                 {isGeneratingPreview && (
-                  <Loader2 className={cn("mr-2 size-4 animate-spin")} />
+                  <Spinner className={cn("size-4")} />
                 )}
                 {isGeneratingPreview ? "Processing" : "Generate Preview"}
               </Button>

@@ -17,6 +17,15 @@ export interface FfmpegPreviewResult {
   estimatedSize: number;
 }
 
+/** Response from get_video_metadata - mirrors lib::VideoMetadataResult */
+export interface GetVideoMetadataResult {
+  duration: number;
+  width: number;
+  height: number;
+  size: number;
+  sizeMb: number;
+}
+
 /** Options for ffmpeg_transcode_to_temp and ffmpeg_preview - mirrors ffmpeg::TranscodeOptions */
 export interface TranscodeOptions {
   codec?: string;

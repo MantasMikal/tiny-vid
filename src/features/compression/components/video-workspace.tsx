@@ -69,22 +69,31 @@ export function VideoWorkspace({
             {videoUploading && (
               <Spinner className={cn("absolute inset-0 z-10 m-auto size-12")} />
             )}
-            {videoPreview && !videoUploading && (
-              <>
-                <VideoPreview
-                  originalSrc={videoPreview.originalSrc}
-                  compressedSrc={videoPreview.compressedSrc}
-                />
-                <Button
-                  size="icon"
-                  variant="secondary"
-                  onClick={onClear}
-                  className={cn("absolute top-4 right-4 z-10")}
+            <AnimatePresence>
+              {videoPreview && !videoUploading && (
+                <motion.div
+                  key="video-preview"
+                  initial={{ opacity: 0 }}
+                  animate={{ opacity: 1 }}
+                  exit={{ opacity: 0 }}
+                  transition={{ duration: 0.2 }}
+                  className="absolute inset-0"
                 >
-                  <TrashIcon className={cn("size-5")} />
-                </Button>
-              </>
-            )}
+                  <VideoPreview
+                    originalSrc={videoPreview.originalSrc}
+                    compressedSrc={videoPreview.compressedSrc}
+                  />
+                  <Button
+                    size="icon"
+                    variant="secondary"
+                    onClick={onClear}
+                    className={cn("absolute top-4 right-4 z-10")}
+                  >
+                    <TrashIcon className={cn("size-5")} />
+                  </Button>
+                </motion.div>
+              )}
+            </AnimatePresence>
             {inputPath && !videoPreview && !videoUploading && (
               <div
                 className={cn(

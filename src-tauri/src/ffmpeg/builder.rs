@@ -73,8 +73,11 @@ pub fn build_ffmpeg_command(
     );
 
     let mut args = vec![
+        "-nostdin".to_string(),
         "-threads".to_string(),
         "0".to_string(),
+        "-thread_queue_size".to_string(),
+        "512".to_string(),
         "-progress".to_string(),
         "pipe:1".to_string(),
         "-i".to_string(),
@@ -127,6 +130,31 @@ pub fn build_ffmpeg_command(
 
     args.push(output_path.to_string());
     args
+}
+
+/// Formats args for readable display: option and value on the same line when the next arg is a value.
+pub fn format_args_for_display_multiline(args: &[String]) -> String {
+    if args.is_empty() {
+        return String::new();
+    }
+    let mut lines = Vec::new();
+    let mut i = 0;
+    while i < args.len() {
+        let arg = &args[i];
+        let line = if arg.starts_with('-')
+            && i + 1 < args.len()
+            && !args[i + 1].starts_with('-')
+        {
+            let value = &args[i + 1];
+            i += 2;
+            format!("  {} {}", arg, value)
+        } else {
+            i += 1;
+            format!("  {}", arg)
+        };
+        lines.push(line);
+    }
+    lines.join("\n")
 }
 
 #[cfg(test)]

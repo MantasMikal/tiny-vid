@@ -13,8 +13,10 @@
     "shell:allow-spawn",
     "allow-ffmpeg-transcode-to-temp",
     "allow-ffmpeg-preview",
+    "allow-preview-ffmpeg-command",
     "allow-ffmpeg-terminate",
     "allow-get-file-size",
+    "allow-get-video-metadata",
     "allow-move-compressed-file",
     "allow-cleanup-temp-file"
   ]

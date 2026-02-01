@@ -1,12 +1,15 @@
 mod builder;
 mod discovery;
 mod error;
+pub mod ffprobe;
 mod progress;
 mod runner;
 mod temp;
 mod verify;
 
-pub use builder::build_ffmpeg_command;
+pub use builder::{
+    build_ffmpeg_command, format_args_for_display_multiline,
+};
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
 pub use runner::{run_ffmpeg_blocking, terminate_all_ffmpeg};
 pub use temp::{

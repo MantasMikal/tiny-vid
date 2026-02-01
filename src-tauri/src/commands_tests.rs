@@ -73,6 +73,97 @@ fn move_compressed_file_renames() {
 }
 
 #[test]
+fn get_video_metadata_nonexistent_returns_error() {
+    let app = create_test_app();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let body = InvokeBody::from(serde_json::json!({
+        "path": "/nonexistent/path/video.mp4"
+    }));
+    let res = tauri::test::get_ipc_response(&window, invoke_request("get_video_metadata", body));
+    assert!(res.is_err(), "get_video_metadata should fail for nonexistent path");
+}
+
+#[test]
+#[ignore = "requires FFmpeg/ffprobe on system; run with: cargo test get_video_metadata_with_video -- --ignored"]
+fn get_video_metadata_with_video_returns_metadata() {
+    use std::process::Command;
+
+    let ffmpeg = std::env::var("FFMPEG_PATH")
+        .ok()
+        .map(std::path::PathBuf::from)
+        .filter(|p| p.exists())
+        .or_else(|| {
+            let cmd = if cfg!(windows) { "where" } else { "which" };
+            let output = Command::new(cmd).arg("ffmpeg").output().ok()?;
+            if output.status.success() {
+                let first = std::str::from_utf8(&output.stdout)
+                    .ok()?
+                    .lines()
+                    .next()?
+                    .trim();
+                if !first.is_empty() {
+                    return Some(std::path::PathBuf::from(first));
+                }
+            }
+            None
+        })
+        .expect("FFmpeg not found; set FFMPEG_PATH or add to PATH");
+
+    unsafe {
+        std::env::set_var("FFMPEG_PATH", ffmpeg.to_string_lossy().as_ref());
+    }
+
+    let app = create_test_app();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let dir = tempfile::tempdir().unwrap();
+    let video_path = dir.path().join("test.mp4");
+    let status = Command::new(&ffmpeg)
+        .args([
+            "-y",
+            "-f",
+            "lavfi",
+            "-i",
+            "testsrc=duration=2:size=320x240:rate=30",
+            "-c:v",
+            "libx264",
+            "-pix_fmt",
+            "yuv420p",
+            video_path.to_str().unwrap(),
+        ])
+        .status()
+        .expect("failed to create test video");
+    assert!(status.success(), "ffmpeg failed to create test video");
+
+    let body = InvokeBody::from(serde_json::json!({
+        "path": video_path.to_string_lossy()
+    }));
+    let res =
+        tauri::test::get_ipc_response(&window, invoke_request("get_video_metadata", body));
+    assert!(res.is_ok(), "get_video_metadata failed: {:?}", res.err());
+
+    let body = res.unwrap();
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Meta {
+        duration: f64,
+        width: u32,
+        height: u32,
+        size: u64,
+    }
+    let meta: Meta = body.deserialize().unwrap();
+    assert!(meta.duration > 1.0 && meta.duration < 3.0, "duration={}", meta.duration);
+    assert_eq!(meta.width, 320);
+    assert_eq!(meta.height, 240);
+    assert!(meta.size > 0);
+}
+
+#[test]
 fn cleanup_temp_file_removes_file() {
     let app = create_test_app();
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())

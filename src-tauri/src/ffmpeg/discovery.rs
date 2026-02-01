@@ -64,17 +64,7 @@ fn common_paths() -> Vec<PathBuf> {
 static FFMPEG_PATH_CACHE: OnceLock<PathBuf> = OnceLock::new();
 
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
-    if let Some(p) = find_in_path() {
-        if p.exists() {
-            log::debug!(
-                target: "tiny_vid::ffmpeg::discovery",
-                "FFmpeg found in PATH: {}",
-                p.display()
-            );
-            return Ok(p);
-        }
-    }
-
+    // Check common paths first to avoid spawning which/where
     for path in common_paths() {
         if path.exists() {
             log::debug!(
@@ -83,6 +73,17 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
                 path.display()
             );
             return Ok(path);
+        }
+    }
+
+    if let Some(p) = find_in_path() {
+        if p.exists() {
+            log::debug!(
+                target: "tiny_vid::ffmpeg::discovery",
+                "FFmpeg found in PATH: {}",
+                p.display()
+            );
+            return Ok(p);
         }
     }
 
@@ -128,4 +129,25 @@ pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
         Err(_) => {} // Another thread initialized first
     }
     Ok(FFMPEG_PATH_CACHE.get().unwrap().as_path())
+}
+
+/// Get ffprobe path. Same directory as ffmpeg (ffmpeg/ffprobe ship together).
+pub fn get_ffprobe_path() -> Result<PathBuf, AppError> {
+    let ffmpeg = get_ffmpeg_path()?;
+    let parent = ffmpeg
+        .parent()
+        .ok_or_else(|| AppError::from("FFmpeg path has no parent directory".to_string()))?;
+    #[cfg(target_os = "windows")]
+    let ffprobe = parent.join("ffprobe.exe");
+    #[cfg(not(target_os = "windows"))]
+    let ffprobe = parent.join("ffprobe");
+    if ffprobe.exists() {
+        Ok(ffprobe)
+    } else {
+        Err(AppError::from(format!(
+            "ffprobe not found at {} (FFmpeg dir: {})",
+            ffprobe.display(),
+            parent.display()
+        )))
+    }
 }

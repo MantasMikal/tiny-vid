@@ -4,10 +4,12 @@ mod ffmpeg;
 use error::AppError;
 use tauri::Emitter;
 use ffmpeg::{
-    build_ffmpeg_command, cleanup_previous_preview_paths, cleanup_transcode_temp, get_cached_extract,
-    parse_ffmpeg_error, run_ffmpeg_blocking, set_cached_extract, set_transcode_temp,
-    store_preview_paths_for_cleanup, terminate_all_ffmpeg, TempFileManager, TranscodeOptions,
+    build_ffmpeg_command, cleanup_previous_preview_paths, cleanup_transcode_temp,
+    format_args_for_display_multiline, get_cached_extract, parse_ffmpeg_error, run_ffmpeg_blocking,
+    set_cached_extract, set_transcode_temp, store_preview_paths_for_cleanup, terminate_all_ffmpeg,
+    TempFileManager, TranscodeOptions,
 };
+use ffmpeg::ffprobe::get_video_metadata_impl;
 use ffmpeg::FfmpegErrorPayload;
 
 fn build_error_payload(e: &AppError) -> FfmpegErrorPayload {
@@ -188,8 +190,11 @@ async fn ffmpeg_preview(
             let path = temp.create("preview-original.mp4", None).map_err(AppError::from)?;
 
             let extract_args = vec![
+                "-nostdin".to_string(),
                 "-threads".to_string(),
                 "0".to_string(),
+                "-thread_queue_size".to_string(),
+                "512".to_string(),
                 "-ss".to_string(),
                 "0".to_string(),
                 "-t".to_string(),
@@ -215,9 +220,9 @@ async fn ffmpeg_preview(
 
     run_ffmpeg_step(transcode_args, &app, window.label(), None).await?;
 
-    let input_size = fs::metadata(&input_path).map_err(AppError::from)?.len();
-    let compressed_size = fs::metadata(&output_path).map_err(AppError::from)?.len();
-    let original_size = fs::metadata(&original_path).map_err(AppError::from)?.len();
+    let input_size = fs::metadata(&input_path)?.len();
+    let compressed_size = fs::metadata(&output_path)?.len();
+    let original_size = fs::metadata(&original_path)?.len();
     let ratio = compressed_size as f64 / original_size as f64;
     let estimated_size = (input_size as f64 * ratio) as u64;
 
@@ -243,6 +248,41 @@ fn get_file_size(path: PathBuf) -> Result<u64, AppError> {
         path.display()
     );
     fs::metadata(&path).map(|m| m.len()).map_err(Into::into)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn get_video_metadata(path: PathBuf) -> Result<VideoMetadataResult, AppError> {
+    log::debug!(
+        target: "tiny_vid::commands",
+        "get_video_metadata: path={}",
+        path.display()
+    );
+    let meta = get_video_metadata_impl(&path)?;
+    Ok(VideoMetadataResult {
+        duration: meta.duration,
+        width: meta.width,
+        height: meta.height,
+        size: meta.size,
+        size_mb: meta.size as f64 / 1024.0 / 1024.0,
+    })
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct VideoMetadataResult {
+    duration: f64,
+    width: u32,
+    height: u32,
+    size: u64,
+    size_mb: f64,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn preview_ffmpeg_command(options: TranscodeOptions, input_path: Option<String>) -> String {
+    let input_str = input_path.as_deref().unwrap_or("<input>");
+    let output_str = "<output>";
+    let args = build_ffmpeg_command(input_str, output_str, &options);
+    format!("ffmpeg\n{}", format_args_for_display_multiline(&args))
 }
 
 #[tauri::command]
@@ -328,8 +368,10 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             ffmpeg_transcode_to_temp,
             ffmpeg_preview,
+            preview_ffmpeg_command,
             ffmpeg_terminate,
             get_file_size,
+            get_video_metadata,
             move_compressed_file,
             cleanup_temp_file,
         ])

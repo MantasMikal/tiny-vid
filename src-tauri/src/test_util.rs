@@ -5,7 +5,9 @@
 //! test lives in `integration_tests.rs`. Run ignored tests with:
 //! `cargo test -- --ignored`.
 
-use crate::{cleanup_temp_file, ffmpeg_terminate, get_file_size, move_compressed_file};
+use crate::{
+    cleanup_temp_file, ffmpeg_terminate, get_file_size, get_video_metadata, move_compressed_file,
+};
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
 use tauri::webview::InvokeRequest;
@@ -14,6 +16,7 @@ pub fn create_test_app() -> tauri::App<tauri::test::MockRuntime> {
     mock_builder()
         .invoke_handler(tauri::generate_handler![
             get_file_size,
+            get_video_metadata,
             ffmpeg_terminate,
             move_compressed_file,
             cleanup_temp_file,

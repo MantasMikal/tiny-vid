@@ -6,11 +6,18 @@ import {
   RocketIcon,
 } from "lucide-react";
 import { AnimatePresence, motion, usePresenceData } from "motion/react";
-import { useState } from "react";
+import { useEffect, useState } from "react";
 
+import {
+  Accordion,
+  AccordionContent,
+  AccordionItem,
+  AccordionTrigger,
+} from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -34,6 +41,7 @@ import {
   presets,
   qualityToCrf,
 } from "@/features/compression/lib/compression-options";
+import { useCompression } from "@/features/compression/store/use-compression";
 import { cn } from "@/lib/utils";
 
 type BasicPresets = "basic" | "super" | "ultra" | "cooked";
@@ -162,6 +170,17 @@ export function VideoSettings({
   }>({ activeTab: "basic", direction: 0 });
   const { activeTab, direction } = tabState;
   const [basicPreset, setBasicPreset] = useState<BasicPresets>("super");
+  const {
+    ffmpegCommandPreview,
+    ffmpegCommandPreviewLoading,
+    refreshFfmpegCommandPreview,
+  } = useCompression();
+
+  useEffect(() => {
+    if (activeTab === "advanced" && ffmpegCommandPreview === null) {
+      void refreshFfmpegCommandPreview();
+    }
+  }, [activeTab, ffmpegCommandPreview, refreshFfmpegCommandPreview]);
 
   const handleTabChange = (value: string) => {
     const newTab = value as TabOptions;
@@ -233,7 +252,9 @@ export function VideoSettings({
                 </ToggleGroup>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <h3 className={cn("text-base font-bold")}>Audio</h3>
+                <TooltipLabel tooltip="Omits all audio from output (FFmpeg -an). Saves space when you don't need sound; video-only encoding is faster.">
+                  Audio
+                </TooltipLabel>
                 <div className={cn("flex items-center space-x-2")}>
                   <Checkbox
                     id="removeAudio"
@@ -255,7 +276,7 @@ export function VideoSettings({
               className={cn("flex flex-col gap-4")}
             >
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Choose the video compression codec.">
+                <TooltipLabel tooltip="Video encoder (-c:v). H.264: best compatibility. H.265: ~30–50% smaller files than H.264. AV1: best compression, royalty-free; may not play on older devices.">
                   Codec
                 </TooltipLabel>
                 <Select
@@ -290,7 +311,7 @@ export function VideoSettings({
                 </Select>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="0 = smallest file, 100 = best quality. Mapped automatically for each codec.">
+                <TooltipLabel tooltip="Constant Rate Factor (CRF): keeps perceived quality steady while varying bitrate. Lower = higher quality and larger files. A change of ±6 roughly halves or doubles file size. Mapped per codec (x264: 23–51, x265: 28–51, AV1: 24–63).">
                   Quality
                 </TooltipLabel>
                 <Slider
@@ -299,6 +320,7 @@ export function VideoSettings({
                   max={100}
                   step={1}
                   value={[cOptions.quality]}
+                  showValueOnThumb
                   onValueChange={([v]) => {
                     onOptionsChange(
                       { ...cOptions, quality: v },
@@ -314,7 +336,7 @@ export function VideoSettings({
                 </p>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Compression speed.">
+                <TooltipLabel tooltip="Encoding speed vs compression. Slower presets produce smaller files at the same quality but take longer to encode.">
                   Encoding Preset
                 </TooltipLabel>
                 <Select
@@ -340,7 +362,7 @@ export function VideoSettings({
                 </Select>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Scale video resolution. 1.0 = original.">
+                <TooltipLabel tooltip="Resize output (scale filter). 1.0 = original size. Lower values shrink resolution and file size; aspect ratio preserved, dimensions kept even for encoders.">
                   Resolution Scale
                 </TooltipLabel>
                 <Slider
@@ -349,6 +371,8 @@ export function VideoSettings({
                   max={1}
                   step={0.05}
                   value={[cOptions.scale]}
+                  showValueOnThumb
+                  formatThumbValue={(v) => `${String(Math.round(v * 100))}%`}
                   onValueChange={([v]) => {
                     onOptionsChange(
                       { ...cOptions, scale: v },
@@ -361,7 +385,7 @@ export function VideoSettings({
                 />
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Frames per second.">
+                <TooltipLabel tooltip="Output frame rate (-r): target FPS. Encoder duplicates or drops frames to hit this rate. Common: 24 (film), 30 (NTSC), 60 (smooth). Lower values reduce file size.">
                   Frame Rate (FPS)
                 </TooltipLabel>
                 <Input
@@ -379,7 +403,9 @@ export function VideoSettings({
                 />
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <h3 className={cn("text-base font-bold")}>Preview</h3>
+                <TooltipLabel tooltip="Creates a short preview clip at the start of the video using -t (duration). Lets you check quality quickly before compressing the full file.">
+                  Preview
+                </TooltipLabel>
                 <div className={cn("flex items-center space-x-2")}>
                   <Checkbox
                     id="generatePreview"
@@ -409,7 +435,47 @@ export function VideoSettings({
                     });
                   }}
                 />
+                <p className={cn("text-xs text-muted-foreground")}>
+                  Duration in seconds (FFmpeg -t)
+                </p>
               </div>
+              <Accordion type="single" collapsible className={cn("w-full")}>
+                <AccordionItem
+                  value="ffmpeg-command"
+                  className={cn("border-none")}
+                >
+                  <AccordionTrigger
+                    className={cn(
+                      "py-2 text-base font-bold",
+                      "hover:no-underline"
+                    )}
+                  >
+                    FFmpeg command
+                  </AccordionTrigger>
+                  <AccordionContent>
+                    <ScrollArea
+                      className={cn(
+                        "rounded-md border bg-muted/50 p-3 font-mono text-xs",
+                        "max-h-64 w-full overflow-auto break-all select-text"
+                      )}
+                    >
+                      {ffmpegCommandPreviewLoading ? (
+                        <p className={cn("text-muted-foreground")}>
+                          Loading…
+                        </p>
+                      ) : ffmpegCommandPreview ? (
+                        <pre className={cn("m-0 whitespace-pre-wrap select-text")}>
+                          {ffmpegCommandPreview}
+                        </pre>
+                      ) : (
+                        <p className={cn("text-muted-foreground")}>
+                          Could not generate command
+                        </p>
+                      )}
+                    </ScrollArea>
+                  </AccordionContent>
+                </AccordionItem>
+              </Accordion>
             </AnimatedTabPanel>
           )}
         </AnimatePresence>
@@ -434,7 +500,7 @@ function TooltipLabel({
             <InfoIcon className={cn("size-4 text-muted-foreground")} />
           </button>
         </TooltipTrigger>
-        <TooltipContent className={cn("max-w-44")}>
+        <TooltipContent className={cn("max-w-72")}>
           <p>{tooltip}</p>
         </TooltipContent>
       </Tooltip>

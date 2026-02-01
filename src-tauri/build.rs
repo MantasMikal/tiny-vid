@@ -6,6 +6,7 @@ fn main() {
                 "ffmpeg_preview",
                 "ffmpeg_terminate",
                 "get_file_size",
+                "get_video_metadata",
                 "move_compressed_file",
                 "cleanup_temp_file",
             ]),

@@ -1,7 +1,16 @@
-import * as SliderPrimitive from "@radix-ui/react-slider"
-import * as React from "react"
+import * as SliderPrimitive from "@radix-ui/react-slider";
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
+
+interface SliderProps extends React.ComponentProps<
+  typeof SliderPrimitive.Root
+> {
+  /** When true, shows the current value inside the thumb */
+  showValueOnThumb?: boolean;
+  /** Format the value for the thumb label. Defaults to String(value) */
+  formatThumbValue?: (value: number) => string;
+}
 
 function Slider({
   className,
@@ -9,8 +18,10 @@ function Slider({
   value,
   min = 0,
   max = 100,
+  showValueOnThumb = false,
+  formatThumbValue = (v) => String(v),
   ...props
-}: React.ComponentProps<typeof SliderPrimitive.Root>) {
+}: SliderProps) {
   const _values = React.useMemo(
     () =>
       Array.isArray(value)
@@ -19,7 +30,7 @@ function Slider({
           ? defaultValue
           : [min, max],
     [value, defaultValue, min, max]
-  )
+  );
 
   return (
     <SliderPrimitive.Root
@@ -69,17 +80,31 @@ function Slider({
           key={index}
           className={cn(
             `
-              block size-5 rounded-full border-2 border-primary bg-background
+              relative flex h-6 w-9 shrink-0 cursor-pointer items-center
+              justify-center rounded-full border-2 border-primary bg-background
               ring-offset-background transition-colors
+              hover:bg-background
               focus-visible:ring-2 focus-visible:ring-ring
               focus-visible:ring-offset-2 focus-visible:outline-none
               disabled:pointer-events-none disabled:opacity-50
             `
           )}
-        />
+        >
+          {showValueOnThumb && (
+            <span
+              className={cn(
+                "text-[10px] leading-none font-medium select-none",
+                "pointer-events-none overflow-hidden text-primary",
+                "truncate text-center"
+              )}
+            >
+              {formatThumbValue(_values[index])}
+            </span>
+          )}
+        </SliderPrimitive.Thumb>
       ))}
     </SliderPrimitive.Root>
-  )
+  );
 }
 
-export { Slider }
+export { Slider };
