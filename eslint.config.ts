@@ -5,6 +5,7 @@ import react from "eslint-plugin-react";
 import reactHooks from "eslint-plugin-react-hooks";
 import reactCompiler from "eslint-plugin-react-compiler";
 import simpleImportSort from "eslint-plugin-simple-import-sort";
+import unusedImports from "eslint-plugin-unused-imports";
 import noRelativeImportPaths from "eslint-plugin-no-relative-import-paths";
 import betterTailwindcss from "eslint-plugin-better-tailwindcss";
 import eslintConfigPrettier from "eslint-config-prettier/flat";
@@ -90,13 +91,25 @@ export default defineConfig([
     },
   },
 
-  // 5. Import sorting
+  // 5. Unused imports (auto-fix) + import sorting
   {
     files: tsAndTsx,
     plugins: {
       "simple-import-sort": simpleImportSort,
+      "unused-imports": unusedImports,
     },
     rules: {
+      "@typescript-eslint/no-unused-vars": "off",
+      "unused-imports/no-unused-imports": "error",
+      "unused-imports/no-unused-vars": [
+        "warn",
+        {
+          vars: "all",
+          varsIgnorePattern: "^_",
+          args: "after-used",
+          argsIgnorePattern: "^_",
+        },
+      ],
       "simple-import-sort/imports": "error",
       "simple-import-sort/exports": "error",
     },

@@ -20,6 +20,7 @@ export default function Compressor() {
     isDisabled,
     browseAndSelectFile,
     clear,
+    dismissError,
     setCompressionOptions,
     transcodeAndSave,
     terminate,
@@ -44,6 +45,7 @@ export default function Compressor() {
         progress={progress}
         onBrowse={() => void browseAndSelectFile()}
         onClear={clear}
+        onDismissError={dismissError}
         onDrop={(path: string) =>
           void useCompressionStore.getState().selectPath(path)
         }

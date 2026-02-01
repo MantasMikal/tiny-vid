@@ -1,5 +1,5 @@
-import { AnimatePresence, motion } from "framer-motion";
-import { TrashIcon, TriangleAlert } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
+import { TrashIcon, TriangleAlert, XIcon } from "lucide-react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -19,6 +19,7 @@ export interface VideoWorkspaceProps {
   progress: number;
   onBrowse: () => void;
   onClear: () => void;
+  onDismissError?: () => void;
   onDrop?: (path: string) => void;
 }
 
@@ -31,6 +32,7 @@ export function VideoWorkspace({
   progress,
   onBrowse,
   onClear,
+  onDismissError,
   onDrop,
 }: VideoWorkspaceProps) {
   return (
@@ -120,7 +122,7 @@ export function VideoWorkspace({
                 animate={{ opacity: 1, transform: "translateY(0)" }}
                 exit={{ opacity: 0, transform: "translateY(10px)" }}
               >
-                <Spinner className={cn("size-4 border-2 border-white")} />
+                <Spinner className={cn("size-4")} />
                 <span className={cn("text-sm text-white")}>
                   Generating preview
                 </span>
@@ -143,8 +145,26 @@ export function VideoWorkspace({
             animate={{ opacity: 1 }}
             exit={{ opacity: 0 }}
           >
-            <Alert variant="destructive" className={cn("bg-black")}>
+            <Alert
+              variant="destructive"
+              className={cn("relative bg-black pr-10")}
+            >
               <TriangleAlert className={cn("size-5")} />
+              {onDismissError && (
+                <Button
+                  size="icon"
+                  variant="ghost"
+                  onClick={onDismissError}
+                  className={cn(
+                    `
+                      absolute top-2 right-2 size-8 text-current
+                      hover:bg-white/20
+                    `
+                  )}
+                >
+                  <XIcon className={cn("size-4")} />
+                </Button>
+              )}
               <AlertTitle>{error.type || "Error"}</AlertTitle>
               <AlertDescription>
                 {error.message}

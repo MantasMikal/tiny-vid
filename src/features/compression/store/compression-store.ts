@@ -70,6 +70,7 @@ interface CompressionState {
   browseAndSelectFile: () => Promise<void>;
   transcodeAndSave: () => Promise<void>;
   clear: () => void;
+  dismissError: () => void;
   generatePreview: (requestId?: number) => Promise<void>;
   setCompressionOptions: (options: CompressionOptions) => void;
   terminate: () => Promise<void>;
@@ -258,6 +259,10 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       estimatedSize: null,
       error: null,
     });
+  },
+
+  dismissError: () => {
+    set({ error: null });
   },
 
   generatePreview: async (requestId?: number) => {

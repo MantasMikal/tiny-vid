@@ -1,4 +1,3 @@
-import { AnimatePresence, motion } from "framer-motion";
 import {
   BikeIcon,
   CarFrontIcon,
@@ -6,6 +5,7 @@ import {
   InfoIcon,
   RocketIcon,
 } from "lucide-react";
+import { AnimatePresence, motion, usePresenceData } from "motion/react";
 import { useState } from "react";
 
 import { Checkbox } from "@/components/ui/checkbox";
@@ -106,7 +106,41 @@ const toggleConfig = [
   },
 ] as const;
 
+const TAB_ORDER: TabOptions[] = ["basic", "advanced"];
+const getTabIndex = (tab: TabOptions) => TAB_ORDER.indexOf(tab);
+
 const MotionTabsContent = motion.create(TabsContent);
+
+function AnimatedTabPanel({
+  value,
+  className,
+  children,
+}: {
+  value: TabOptions;
+  className?: string;
+  children: React.ReactNode;
+}) {
+  const direction = usePresenceData() as number | undefined;
+  const dir = direction ?? 0;
+
+  return (
+    <MotionTabsContent
+      value={value}
+      className={className}
+      initial={{
+        opacity: 0,
+        transform: dir > 0 ? "translateX(100px)" : "translateX(-100px)",
+      }}
+      animate={{ opacity: 1, transform: "translateX(0)" }}
+      exit={{
+        opacity: 0,
+        transform: dir > 0 ? "translateX(-100px)" : "translateX(100px)",
+      }}
+    >
+      {children}
+    </MotionTabsContent>
+  );
+}
 
 interface VideoSettingsProps {
   isDisabled: boolean;
@@ -122,31 +156,38 @@ export function VideoSettings({
   cOptions,
   onOptionsChange,
 }: VideoSettingsProps) {
-  const [activeTab, setActiveTab] = useState<TabOptions>("basic");
+  const [tabState, setTabState] = useState<{
+    activeTab: TabOptions;
+    direction: number;
+  }>({ activeTab: "basic", direction: 0 });
+  const { activeTab, direction } = tabState;
   const [basicPreset, setBasicPreset] = useState<BasicPresets>("super");
+
+  const handleTabChange = (value: string) => {
+    const newTab = value as TabOptions;
+    const prevIndex = getTabIndex(activeTab);
+    const nextIndex = getTabIndex(newTab);
+    const nextDirection = nextIndex > prevIndex ? 1 : -1;
+    setTabState({ activeTab: newTab, direction: nextDirection });
+  };
 
   return (
     <TooltipProvider>
       <Tabs
         value={activeTab}
         className={cn("w-full min-w-0")}
-        onValueChange={(v) => {
-          setActiveTab(v as TabOptions);
-        }}
+        onValueChange={handleTabChange}
       >
         <TabsList className={cn("mb-4 grid w-full grid-cols-2")}>
           <TabsTrigger value="basic">Basic</TabsTrigger>
           <TabsTrigger value="advanced">Advanced</TabsTrigger>
         </TabsList>
-        <AnimatePresence initial={false}>
+        <AnimatePresence initial={false} custom={direction}>
           {activeTab === "basic" && (
-            <MotionTabsContent
+            <AnimatedTabPanel
               key="basic"
               value="basic"
               className={cn("flex flex-col gap-4")}
-              initial={{ opacity: 0, transform: "translateX(100px)" }}
-              animate={{ opacity: 1, transform: "translateX(0)" }}
-              exit={{ opacity: 0, transform: "translateX(-100px)" }}
             >
               <div className={cn("flex flex-col gap-2")}>
                 <h3 className={cn("text-base font-bold")}>Preset</h3>
@@ -178,9 +219,7 @@ export function VideoSettings({
                     >
                       <config.icon className={cn("size-7 shrink-0")} />
                       <div
-                        className={cn(
-                          "flex min-w-0 flex-1 flex-col text-left"
-                        )}
+                        className={cn("flex min-w-0 flex-1 flex-col text-left")}
                       >
                         <div className={cn("text-sm font-semibold")}>
                           {config.title}
@@ -207,16 +246,13 @@ export function VideoSettings({
                   <Label htmlFor="removeAudio">Remove soundtrack</Label>
                 </div>
               </div>
-            </MotionTabsContent>
+            </AnimatedTabPanel>
           )}
           {activeTab === "advanced" && (
-            <MotionTabsContent
+            <AnimatedTabPanel
               key="advanced"
               value="advanced"
               className={cn("flex flex-col gap-4")}
-              initial={{ opacity: 0, transform: "translateX(-100px)" }}
-              animate={{ opacity: 1, transform: "translateX(0)" }}
-              exit={{ opacity: 0, transform: "translateX(100px)" }}
             >
               <div className={cn("flex flex-col gap-2")}>
                 <TooltipLabel tooltip="Choose the video compression codec.">
@@ -374,7 +410,7 @@ export function VideoSettings({
                   }}
                 />
               </div>
-            </MotionTabsContent>
+            </AnimatedTabPanel>
           )}
         </AnimatePresence>
       </Tabs>

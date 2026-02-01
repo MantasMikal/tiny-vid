@@ -99,6 +99,7 @@ export function useCompression() {
       browseAndSelectFile: s.browseAndSelectFile,
       transcodeAndSave: s.transcodeAndSave,
       clear: s.clear,
+      dismissError: s.dismissError,
       generatePreview: s.generatePreview,
       setCompressionOptions: s.setCompressionOptions,
       terminate: s.terminate,
