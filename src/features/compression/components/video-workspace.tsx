@@ -1,5 +1,5 @@
-import { AnimatePresence, motion } from "motion/react";
 import { TrashIcon, TriangleAlert, XIcon } from "lucide-react";
+import { AnimatePresence, motion } from "motion/react";
 
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Button } from "@/components/ui/button";
@@ -41,7 +41,6 @@ export function VideoWorkspace({
         `
           relative flex h-full min-h-[300px] flex-col gap-2 rounded-md border
           bg-card p-2
-          md:col-span-2
         `
       )}
     >
@@ -68,9 +67,7 @@ export function VideoWorkspace({
             )}
           >
             {videoUploading && (
-              <Spinner
-                className={cn("absolute inset-0 z-10 m-auto size-12")}
-              />
+              <Spinner className={cn("absolute inset-0 z-10 m-auto size-12")} />
             )}
             {videoPreview && !videoUploading && (
               <>

@@ -32,7 +32,7 @@ export default function Compressor() {
       className={cn(
         `
           mx-auto grid size-full grow items-start gap-4 p-4 pt-2
-          md:grid-cols-3 md:overflow-hidden
+          md:grid-cols-[1fr_290px] md:overflow-hidden
         `
       )}
     >
@@ -53,7 +53,7 @@ export default function Compressor() {
       <aside
         className={cn(
           `
-            col-span-1 flex h-full min-w-0 flex-col gap-4
+            flex h-full min-w-0 flex-col gap-4
             md:overflow-hidden
           `
         )}
