@@ -17,6 +17,7 @@ export default function Compressor() {
     videoMetadata,
     estimatedSize,
     compressionOptions,
+    buildVariant,
     isDisabled,
     browseAndSelectFile,
     clear,
@@ -71,6 +72,7 @@ export default function Compressor() {
               <h2 className={cn("text-xl font-semibold")}>Settings</h2>
               <VideoSettings
                 isDisabled={isDisabled}
+                buildVariant={buildVariant}
                 cOptions={compressionOptions}
                 onOptionsChange={setCompressionOptions}
               />

@@ -1,5 +1,5 @@
 mod builder;
-mod discovery;
+pub mod discovery;
 mod error;
 pub mod ffprobe;
 mod progress;

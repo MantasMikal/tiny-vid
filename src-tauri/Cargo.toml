@@ -5,6 +5,10 @@ description = "A Tauri App"
 authors = ["you"]
 edition = "2024"
 
+[features]
+default = []
+lgpl-macos = []
+
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [lib]
@@ -40,4 +44,3 @@ tempfile = "3"
 opt-level = 3
 lto = "thin"
 codegen-units = 1
-

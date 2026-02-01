@@ -26,6 +26,12 @@ export interface GetVideoMetadataResult {
   sizeMb: number;
 }
 
+/** Response from get_build_variant - mirrors lib::BuildVariantResult */
+export interface BuildVariantResult {
+  variant: "full" | "lgpl-macos";
+  codecs: string[];
+}
+
 /** Options for ffmpeg_transcode_to_temp and ffmpeg_preview - mirrors ffmpeg::TranscodeOptions */
 export interface TranscodeOptions {
   codec?: string;

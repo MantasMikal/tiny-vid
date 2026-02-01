@@ -42,9 +42,7 @@ export function CompressionDetailsCard({
           initial={{ opacity: 0 }}
           animate={{ opacity: 1 }}
           exit={{ opacity: 0 }}
-          className={cn(
-            "flex flex-col gap-2 rounded-md border bg-card p-4"
-          )}
+          className={cn("flex flex-col gap-2 rounded-md border bg-card p-4")}
         >
           <h2 className={cn("text-xl font-semibold")}>Details</h2>
           {videoMetadata && (
@@ -55,13 +53,17 @@ export function CompressionDetailsCard({
             />
           )}
           <div
-            className={cn(
-              "mt-2 flex w-full flex-wrap justify-evenly gap-2"
-            )}
+            className={cn("mt-2 flex w-full flex-wrap justify-evenly gap-2")}
           >
             <Button
               className={cn("flex-1")}
-              onClick={() => { if (isWorking) { onTerminate(); } else { onTranscode(); } }}
+              onClick={() => {
+                if (isWorking) {
+                  onTerminate();
+                } else {
+                  onTranscode();
+                }
+              }}
               disabled={!inputPath || (isDisabled && !isTranscoding)}
             >
               {isWorking && <SquareStop className={cn("size-4")} />}
@@ -74,9 +76,7 @@ export function CompressionDetailsCard({
                 onClick={onGeneratePreview}
                 disabled={isDisabled || isGeneratingPreview}
               >
-                {isGeneratingPreview && (
-                  <Spinner className={cn("size-4")} />
-                )}
+                {isGeneratingPreview && <Spinner className={cn("size-4")} />}
                 {isGeneratingPreview ? "Processing" : "Generate Preview"}
               </Button>
             )}

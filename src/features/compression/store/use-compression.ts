@@ -14,6 +14,7 @@ export function useCompressionStoreInit() {
     const unlisteners: (() => void)[] = [];
 
     const setup = async () => {
+      await useCompressionStore.getState().initBuildVariant();
       const [unProgress, unError, unComplete] = await Promise.all([
         listen<number>("ffmpeg-progress", (e) => {
           useCompressionStore.setState({ progress: e.payload });
@@ -88,6 +89,7 @@ export function useCompression() {
       videoMetadata: s.videoMetadata,
       estimatedSize: s.estimatedSize,
       compressionOptions: s.compressionOptions,
+      buildVariant: s.buildVariant,
       listenersReady: s.listenersReady,
       ffmpegCommandPreview: s.ffmpegCommandPreview,
       ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,

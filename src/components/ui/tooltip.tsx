@@ -1,9 +1,9 @@
-"use client"
+"use client";
 
-import * as TooltipPrimitive from "@radix-ui/react-tooltip"
-import * as React from "react"
+import * as TooltipPrimitive from "@radix-ui/react-tooltip";
+import * as React from "react";
 
-import { cn } from "@/lib/utils"
+import { cn } from "@/lib/utils";
 
 function TooltipProvider({
   delayDuration = 0,
@@ -15,7 +15,7 @@ function TooltipProvider({
       delayDuration={delayDuration}
       {...props}
     />
-  )
+  );
 }
 
 function Tooltip({
@@ -25,7 +25,7 @@ function Tooltip({
     <TooltipProvider>
       <TooltipPrimitive.Root data-slot="tooltip" {...props} />
     </TooltipProvider>
-  )
+  );
 }
 
 function TooltipTrigger({
@@ -45,7 +45,7 @@ function TooltipTrigger({
       )}
       {...props}
     />
-  )
+  );
 }
 
 function TooltipContent({
@@ -71,7 +71,7 @@ function TooltipContent({
         {children}
       </TooltipPrimitive.Content>
     </TooltipPrimitive.Portal>
-  )
+  );
 }
 
-export { Tooltip, TooltipContent, TooltipProvider,TooltipTrigger }
+export { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger };

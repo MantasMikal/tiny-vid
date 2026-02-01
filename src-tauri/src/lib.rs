@@ -1,5 +1,5 @@
 mod error;
-mod ffmpeg;
+pub mod ffmpeg;
 
 use error::AppError;
 use tauri::Emitter;
@@ -100,7 +100,7 @@ async fn ffmpeg_transcode_to_temp(
 
     set_transcode_temp(Some(output_path.clone()));
 
-    let args = build_ffmpeg_command(&input_path.to_string_lossy(), &output_str, &options);
+    let args = build_ffmpeg_command(&input_path.to_string_lossy(), &output_str, &options)?;
     let duration_secs = options.duration_secs;
 
     match run_ffmpeg_step(args, &app, window.label(), duration_secs).await {
@@ -232,7 +232,7 @@ async fn ffmpeg_preview(
         &original_path.to_string_lossy(),
         &output_path.to_string_lossy(),
         &options,
-    );
+    )?;
 
     run_ffmpeg_step(transcode_args, &app, window.label(), None).await?;
 
@@ -297,7 +297,8 @@ struct VideoMetadataResult {
 fn preview_ffmpeg_command(options: TranscodeOptions, input_path: Option<String>) -> String {
     let input_str = input_path.as_deref().unwrap_or("<input>");
     let output_str = "<output>";
-    let args = build_ffmpeg_command(input_str, output_str, &options);
+    let args = build_ffmpeg_command(input_str, output_str, &options)
+        .unwrap_or_else(|e| vec!["# error".into(), e.to_string()]);
     format!("ffmpeg\n{}", format_args_for_display_multiline(&args))
 }
 
@@ -305,6 +306,31 @@ fn preview_ffmpeg_command(options: TranscodeOptions, input_path: Option<String>)
 fn ffmpeg_terminate() {
     log::info!(target: "tiny_vid::commands", "ffmpeg_terminate: terminating all FFmpeg processes");
     terminate_all_ffmpeg();
+}
+
+#[derive(serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+struct BuildVariantResult {
+    variant: &'static str,
+    codecs: Vec<&'static str>,
+}
+
+#[tauri::command(rename_all = "camelCase")]
+fn get_build_variant() -> BuildVariantResult {
+    #[cfg(feature = "lgpl-macos")]
+    {
+        BuildVariantResult {
+            variant: "lgpl-macos",
+            codecs: vec!["h264_videotoolbox", "hevc_videotoolbox"],
+        }
+    }
+    #[cfg(not(feature = "lgpl-macos"))]
+    {
+        BuildVariantResult {
+            variant: "full",
+            codecs: vec!["libx264", "libx265", "libsvtav1"],
+        }
+    }
 }
 
 #[derive(serde::Serialize)]
@@ -388,6 +414,7 @@ pub fn run() {
             ffmpeg_terminate,
             get_file_size,
             get_video_metadata,
+            get_build_variant,
             move_compressed_file,
             cleanup_temp_file,
         ])

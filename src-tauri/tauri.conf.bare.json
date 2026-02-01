@@ -43,7 +43,7 @@
   "bundle": {
     "active": true,
     "targets": "all",
-    "externalBin": ["binaries/ffmpeg", "binaries/ffprobe"],
+    "externalBin": [],
     "category": "Video",
     "shortDescription": "Compress and optimize video files",
     "longDescription": "Tiny Vid is a desktop app for compressing and optimizing video files with support for H.264, H.265, and AV1 codecs.",

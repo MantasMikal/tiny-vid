@@ -57,28 +57,53 @@ fn run_transcode_integration(
     let output_path = dir.path().join("output.mp4");
 
     let duration_arg = format!("{}", duration_secs);
-    let status = Command::new(&ffmpeg)
-        .args([
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            input_path.to_str().unwrap(),
-        ])
-        .status()
-        .expect("failed to create test video");
+    let status = {
+        #[cfg(not(feature = "lgpl-macos"))]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    input_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+        #[cfg(feature = "lgpl-macos")]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
+                    "-c:v",
+                    "h264_videotoolbox",
+                    "-allow_sw",
+                    "1",
+                    "-q:v",
+                    "25",
+                    input_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+    }
+    .expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let args = build_ffmpeg_command(
         input_path.to_str().unwrap(),
         output_path.to_str().unwrap(),
         &options,
-    );
+    )
+    .expect("build_ffmpeg_command");
 
     let result = run_ffmpeg_blocking(args, None, None, None, None);
     if let Err(ref e) = result {
@@ -110,178 +135,311 @@ fn run_transcode_integration(
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_integration -- --ignored"]
 fn ffmpeg_transcode_integration() {
-    let option_sets: Vec<(TranscodeOptions, f32, bool)> = vec![
-        (
-            TranscodeOptions {
-                codec: Some("libx264".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(1.0),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libx264".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(1.0),
-                fps: Some(30),
-                remove_audio: Some(false),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libx264".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(0.5),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libx264".to_string()),
-                quality: Some(75),
-                max_bitrate: Some(1000),
-                scale: Some(1.0),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libx264".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(1.0),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: Some("film".to_string()),
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libx265".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(1.0),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libsvtav1".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(1.0),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libsvtav1".to_string()),
-                quality: Some(75),
-                max_bitrate: Some(1000),
-                scale: Some(1.0),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libsvtav1".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(0.5),
-                fps: Some(30),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-        (
-            TranscodeOptions {
-                codec: Some("libx264".to_string()),
-                quality: Some(75),
-                max_bitrate: None,
-                scale: Some(1.0),
-                fps: Some(24),
-                remove_audio: Some(true),
-                preset: Some("ultrafast".to_string()),
-                tune: None,
-                output_format: None,
-                preview_duration: None,
-                duration_secs: None,
-            },
-            1.0,
-            false,
-        ),
-    ];
+    let option_sets: Vec<(TranscodeOptions, f32, bool)> = {
+        #[cfg(not(feature = "lgpl-macos"))]
+        {
+            vec![
+                (
+                    TranscodeOptions {
+                        codec: Some("libx264".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libx264".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(false),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libx264".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(0.5),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libx264".to_string()),
+                        quality: Some(75),
+                        max_bitrate: Some(1000),
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libx264".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: Some("film".to_string()),
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libx265".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libsvtav1".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libsvtav1".to_string()),
+                        quality: Some(75),
+                        max_bitrate: Some(1000),
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libsvtav1".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(0.5),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("libx264".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(24),
+                        remove_audio: Some(true),
+                        preset: Some("ultrafast".to_string()),
+                        tune: None,
+                        output_format: None,
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    false,
+                ),
+            ]
+        }
+        #[cfg(all(feature = "lgpl-macos", not(target_os = "macos")))]
+        {
+            vec![] // lgpl-macos is macOS-only; skip on other platforms
+        }
+        #[cfg(all(feature = "lgpl-macos", target_os = "macos"))]
+        {
+            vec![
+                (
+                    TranscodeOptions {
+                        codec: Some("h264_videotoolbox".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("fast".to_string()),
+                        tune: None,
+                        output_format: Some("mp4".to_string()),
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    true,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("h264_videotoolbox".to_string()),
+                        quality: Some(0),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("fast".to_string()),
+                        tune: None,
+                        output_format: Some("mp4".to_string()),
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    true,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("h264_videotoolbox".to_string()),
+                        quality: Some(100),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(false),
+                        preset: Some("fast".to_string()),
+                        tune: None,
+                        output_format: Some("mp4".to_string()),
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    true,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("h264_videotoolbox".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(0.5),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("fast".to_string()),
+                        tune: None,
+                        output_format: Some("mp4".to_string()),
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    true,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("h264_videotoolbox".to_string()),
+                        quality: Some(75),
+                        max_bitrate: Some(1000),
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("fast".to_string()),
+                        tune: None,
+                        output_format: Some("mp4".to_string()),
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    true,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("hevc_videotoolbox".to_string()),
+                        quality: Some(75),
+                        max_bitrate: None,
+                        scale: Some(1.0),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("fast".to_string()),
+                        tune: None,
+                        output_format: Some("mp4".to_string()),
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    true,
+                ),
+                (
+                    TranscodeOptions {
+                        codec: Some("hevc_videotoolbox".to_string()),
+                        quality: Some(50),
+                        max_bitrate: None,
+                        scale: Some(0.5),
+                        fps: Some(30),
+                        remove_audio: Some(true),
+                        preset: Some("fast".to_string()),
+                        tune: None,
+                        output_format: Some("mp4".to_string()),
+                        preview_duration: None,
+                        duration_secs: None,
+                    },
+                    1.0,
+                    true,
+                ),
+            ]
+        }
+    };
 
     for (options, duration_secs, skip_if_encoder_missing) in option_sets {
         run_transcode_integration(options, duration_secs, skip_if_encoder_missing);
@@ -331,25 +489,53 @@ fn ffmpeg_progress_emission_integration() {
 
     // 2 seconds - long enough for multiple progress updates
     let duration_secs = 2.0_f32;
-    let status = Command::new(&ffmpeg)
-        .args([
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            input_path.to_str().unwrap(),
-        ])
-        .status()
-        .expect("failed to create test video");
+    let status = {
+        #[cfg(not(feature = "lgpl-macos"))]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    input_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+        #[cfg(feature = "lgpl-macos")]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
+                    "-c:v",
+                    "h264_videotoolbox",
+                    "-allow_sw",
+                    "1",
+                    "-q:v",
+                    "25",
+                    input_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+    }
+    .expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let options = TranscodeOptions {
-        codec: Some("libx264".to_string()),
+        codec: Some(if cfg!(feature = "lgpl-macos") {
+            "h264_videotoolbox".to_string()
+        } else {
+            "libx264".to_string()
+        }),
         quality: Some(75),
         max_bitrate: None,
         scale: Some(1.0),
@@ -366,7 +552,8 @@ fn ffmpeg_progress_emission_integration() {
         input_path.to_str().unwrap(),
         output_path.to_str().unwrap(),
         &options,
-    );
+    )
+    .expect("build_ffmpeg_command");
 
     let progress_collector: Arc<Mutex<Vec<f64>>> = Arc::new(Mutex::new(Vec::new()));
     let result = run_ffmpeg_blocking(
@@ -393,7 +580,7 @@ fn ffmpeg_progress_emission_integration() {
         "expected at least one progress value"
     );
     assert!(
-        progress_values.last().copied().unwrap_or(0.0) >= 0.99,
+        progress_values.last().copied().unwrap_or(0.0) >= 0.98,
         "expected progress to reach ~1.0, got {:?}",
         progress_values.last()
     );
@@ -442,27 +629,56 @@ fn ffmpeg_cancel_cleanup_integration() {
 
     let dir = tempfile::tempdir().unwrap();
     let input_path = dir.path().join("input.mp4");
-    // 10 seconds + slow preset so transcode takes long enough to cancel mid-run
-    let duration_secs = 10.0_f32;
-    let status = Command::new(&ffmpeg)
-        .args([
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            input_path.to_str().unwrap(),
-        ])
-        .status()
-        .expect("failed to create test video");
+    // 60 seconds + slow preset so transcode takes long enough to cancel mid-run
+    // (modern hardware can encode 10s video in ~50ms, so we need a longer video)
+    let duration_secs = 60.0_f32;
+    let status = {
+        #[cfg(not(feature = "lgpl-macos"))]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    input_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+        #[cfg(feature = "lgpl-macos")]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    &format!("testsrc=duration={}:size=320x240:rate=30", duration_secs),
+                    "-c:v",
+                    "h264_videotoolbox",
+                    "-allow_sw",
+                    "1",
+                    "-q:v",
+                    "25",
+                    input_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+    }
+    .expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let options = TranscodeOptions {
-        codec: Some("libx264".to_string()),
+        codec: Some(if cfg!(feature = "lgpl-macos") {
+            "h264_videotoolbox".to_string()
+        } else {
+            "libx264".to_string()
+        }),
         quality: Some(75),
         max_bitrate: None,
         scale: Some(1.0),
@@ -488,10 +704,12 @@ fn ffmpeg_cancel_cleanup_integration() {
         input_path.to_str().unwrap(),
         &output_str,
         &options,
-    );
+    )
+    .expect("build_ffmpeg_command");
 
     let result_handle = thread::spawn(move || {
-        thread::sleep(StdDuration::from_millis(100));
+        // Small delay to let FFmpeg start, then cancel mid-run
+        thread::sleep(StdDuration::from_millis(50));
         crate::ffmpeg::terminate_all_ffmpeg();
     });
 

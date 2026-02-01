@@ -5,6 +5,62 @@ use std::fs;
 use tauri::ipc::InvokeBody;
 
 #[test]
+fn get_build_variant_returns_variant_and_codecs() {
+    let app = create_test_app();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let body = InvokeBody::default();
+    let res = tauri::test::get_ipc_response(&window, invoke_request("get_build_variant", body));
+    assert!(res.is_ok(), "get_build_variant failed: {:?}", res.err());
+    let body = res.unwrap();
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct BuildVariantResult {
+        variant: String,
+        codecs: Vec<String>,
+    }
+    let result: BuildVariantResult = body.deserialize().unwrap();
+    assert!(!result.codecs.is_empty(), "codecs should not be empty");
+
+    #[cfg(feature = "lgpl-macos")]
+    {
+        assert_eq!(result.variant, "lgpl-macos", "lgpl-macos build should return variant lgpl-macos");
+        assert!(
+            result.codecs.contains(&"h264_videotoolbox".to_string()),
+            "lgpl-macos codecs should include h264_videotoolbox, got {:?}",
+            result.codecs
+        );
+        assert!(
+            result.codecs.contains(&"hevc_videotoolbox".to_string()),
+            "lgpl-macos codecs should include hevc_videotoolbox, got {:?}",
+            result.codecs
+        );
+    }
+
+    #[cfg(not(feature = "lgpl-macos"))]
+    {
+        assert_eq!(result.variant, "full", "full build should return variant full");
+        assert!(
+            result.codecs.contains(&"libx264".to_string()),
+            "full codecs should include libx264, got {:?}",
+            result.codecs
+        );
+        assert!(
+            result.codecs.contains(&"libx265".to_string()),
+            "full codecs should include libx265, got {:?}",
+            result.codecs
+        );
+        assert!(
+            result.codecs.contains(&"libsvtav1".to_string()),
+            "full codecs should include libsvtav1, got {:?}",
+            result.codecs
+        );
+    }
+}
+
+#[test]
 fn get_file_size_returns_size() {
     let app = create_test_app();
     let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
@@ -123,21 +179,45 @@ fn get_video_metadata_with_video_returns_metadata() {
 
     let dir = tempfile::tempdir().unwrap();
     let video_path = dir.path().join("test.mp4");
-    let status = Command::new(&ffmpeg)
-        .args([
-            "-y",
-            "-f",
-            "lavfi",
-            "-i",
-            "testsrc=duration=2:size=320x240:rate=30",
-            "-c:v",
-            "libx264",
-            "-pix_fmt",
-            "yuv420p",
-            video_path.to_str().unwrap(),
-        ])
-        .status()
-        .expect("failed to create test video");
+    let status = {
+        #[cfg(not(feature = "lgpl-macos"))]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=duration=2:size=320x240:rate=30",
+                    "-c:v",
+                    "libx264",
+                    "-pix_fmt",
+                    "yuv420p",
+                    video_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+        #[cfg(feature = "lgpl-macos")]
+        {
+            Command::new(&ffmpeg)
+                .args([
+                    "-y",
+                    "-f",
+                    "lavfi",
+                    "-i",
+                    "testsrc=duration=2:size=320x240:rate=30",
+                    "-c:v",
+                    "h264_videotoolbox",
+                    "-allow_sw",
+                    "1",
+                    "-q:v",
+                    "25",
+                    video_path.to_str().unwrap(),
+                ])
+                .status()
+        }
+    }
+    .expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let body = InvokeBody::from(serde_json::json!({

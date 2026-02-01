@@ -38,13 +38,14 @@ import type {
   Codec,
   CompressionOptions,
   Format,
+  LicenseProfile,
 } from "@/features/compression/lib/compression-options";
 import {
-  codecs,
   getCodecCapabilities,
+  getCodecsForProfile,
   getCompatibleCodecs,
+  getOutputFormatsForProfile,
   getTuneOptionsForCodec,
-  outputFormats,
   presets,
   resolveOptions,
 } from "@/features/compression/lib/compression-options";
@@ -163,6 +164,7 @@ function AnimatedTabPanel({
 
 interface VideoSettingsProps {
   isDisabled: boolean;
+  buildVariant: LicenseProfile;
   cOptions: CompressionOptions;
   onOptionsChange: (
     options: CompressionOptions,
@@ -172,6 +174,7 @@ interface VideoSettingsProps {
 
 export function VideoSettings({
   isDisabled,
+  buildVariant,
   cOptions,
   onOptionsChange,
 }: VideoSettingsProps) {
@@ -230,7 +233,10 @@ export function VideoSettings({
                     setBasicPreset(v as BasicPresets);
                     if (preset)
                       onOptionsChange(
-                        resolveOptions({ ...cOptions, ...preset.options })
+                        resolveOptions(
+                          { ...cOptions, ...preset.options },
+                          buildVariant
+                        )
                       );
                   }}
                   disabled={isDisabled}
@@ -297,7 +303,10 @@ export function VideoSettings({
                   disabled={isDisabled}
                   onValueChange={(v) => {
                     onOptionsChange(
-                      resolveOptions({ ...cOptions, outputFormat: v as Format })
+                      resolveOptions(
+                        { ...cOptions, outputFormat: v as Format },
+                        buildVariant
+                      )
                     );
                   }}
                 >
@@ -305,7 +314,7 @@ export function VideoSettings({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {outputFormats.map((f) => (
+                    {getOutputFormatsForProfile(buildVariant).map((f) => (
                       <SelectItem key={f.value} value={f.value}>
                         {f.name}
                       </SelectItem>
@@ -322,7 +331,10 @@ export function VideoSettings({
                   disabled={isDisabled}
                   onValueChange={(v) => {
                     onOptionsChange(
-                      resolveOptions({ ...cOptions, codec: v as Codec })
+                      resolveOptions(
+                        { ...cOptions, codec: v as Codec },
+                        buildVariant
+                      )
                     );
                   }}
                 >
@@ -330,16 +342,19 @@ export function VideoSettings({
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {getCompatibleCodecs(cOptions.outputFormat).map(
-                      (codecValue) => {
-                        const c = codecs.find((x) => x.value === codecValue);
-                        return c ? (
-                          <SelectItem key={c.value} value={c.value}>
-                            {c.name}
-                          </SelectItem>
-                        ) : null;
-                      }
-                    )}
+                    {getCompatibleCodecs(
+                      cOptions.outputFormat,
+                      buildVariant
+                    ).map((codecValue) => {
+                      const c = getCodecsForProfile(buildVariant).find(
+                        (x) => x.value === codecValue
+                      );
+                      return c ? (
+                        <SelectItem key={c.value} value={c.value}>
+                          {c.name}
+                        </SelectItem>
+                      ) : null;
+                    })}
                   </SelectContent>
                 </Select>
               </div>
@@ -365,44 +380,18 @@ export function VideoSettings({
                   }}
                 />
               </div>
-              <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Encoding speed vs compression. Slower presets produce smaller files at the same quality but take longer to encode.">
-                  Encoding Preset
-                </TooltipLabel>
-                <Select
-                  value={cOptions.preset}
-                  disabled={isDisabled}
-                  onValueChange={(v) => {
-                    onOptionsChange({
-                      ...cOptions,
-                      preset: v as (typeof presets)[number]["value"],
-                    });
-                  }}
-                >
-                  <SelectTrigger className={cn("w-full")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {presets.map((p) => (
-                      <SelectItem key={p.value} value={p.value}>
-                        {p.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              {getCodecCapabilities(cOptions.codec).supportsTune && (
+              {buildVariant !== "lgpl-macos" && (
                 <div className={cn("flex flex-col gap-2")}>
-                  <TooltipLabel tooltip="x264 tune: optimizes for specific content (film, animation, etc.). Only applies to H.264.">
-                    Tune
+                  <TooltipLabel tooltip="Encoding speed vs compression. Slower presets produce smaller files at the same quality but take longer to encode.">
+                    Encoding Preset
                   </TooltipLabel>
                   <Select
-                    value={cOptions.tune ?? "none"}
+                    value={cOptions.preset}
                     disabled={isDisabled}
                     onValueChange={(v) => {
                       onOptionsChange({
                         ...cOptions,
-                        tune: v === "none" ? undefined : v,
+                        preset: v as (typeof presets)[number]["value"],
                       });
                     }}
                   >
@@ -410,15 +399,44 @@ export function VideoSettings({
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {getTuneOptionsForCodec(cOptions.codec).map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.name}
+                      {presets.map((p) => (
+                        <SelectItem key={p.value} value={p.value}>
+                          {p.name}
                         </SelectItem>
                       ))}
                     </SelectContent>
                   </Select>
                 </div>
               )}
+              {buildVariant !== "lgpl-macos" &&
+                getCodecCapabilities(cOptions.codec).supportsTune && (
+                  <div className={cn("flex flex-col gap-2")}>
+                    <TooltipLabel tooltip="x264 tune: optimizes for specific content (film, animation, etc.). Only applies to H.264.">
+                      Tune
+                    </TooltipLabel>
+                    <Select
+                      value={cOptions.tune ?? "none"}
+                      disabled={isDisabled}
+                      onValueChange={(v) => {
+                        onOptionsChange({
+                          ...cOptions,
+                          tune: v === "none" ? undefined : v,
+                        });
+                      }}
+                    >
+                      <SelectTrigger className={cn("w-full")}>
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {getTuneOptionsForCodec(cOptions.codec).map((t) => (
+                          <SelectItem key={t.value} value={t.value}>
+                            {t.name}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                )}
               <div className={cn("flex flex-col gap-2")}>
                 <TooltipLabel tooltip="Resize output (scale filter). 1.0 = original size. Lower values shrink resolution and file size; aspect ratio preserved, dimensions kept even for encoders.">
                   Resolution Scale
