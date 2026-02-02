@@ -1,0 +1,22 @@
+{
+  "$schema": "https://unpkg.com/release-it@19/schema/release-it.json",
+  "git": {
+    "commitMessage": "chore: release v${version}",
+    "tagName": "v${version}"
+  },
+  "hooks": {
+    "before:init": "yarn lint && yarn test:all",
+    "after:release": "yarn build"
+  },
+  "plugins": {
+    "@release-it/bumper": {
+      "out": [
+        "src-tauri/tauri.conf.json",
+        {
+          "file": "src-tauri/Cargo.toml",
+          "path": "package.version"
+        }
+      ]
+    }
+  }
+}
