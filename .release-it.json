@@ -6,6 +6,7 @@
   },
   "hooks": {
     "before:init": "yarn lint && yarn test:all",
+    "after:bump": "cd src-tauri && cargo update -p tiny-vid",
     "after:release": "yarn build"
   },
   "plugins": {
