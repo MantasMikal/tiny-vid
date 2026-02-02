@@ -4,8 +4,23 @@ mod log_plugin;
 
 use std::fs;
 use std::path::PathBuf;
+use std::sync::{Arc, Mutex};
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager};
+
+#[derive(Default)]
+pub(crate) struct AppState {
+    pending_opened_files: Arc<Mutex<Vec<PathBuf>>>,
+}
+
+#[cfg(test)]
+impl AppState {
+    pub fn with_pending(paths: Vec<PathBuf>) -> Self {
+        Self {
+            pending_opened_files: Arc::new(Mutex::new(paths)),
+        }
+    }
+}
 
 use error::AppError;
 use ffmpeg::{
@@ -309,6 +324,35 @@ fn ffmpeg_terminate() {
     terminate_all_ffmpeg();
 }
 
+#[tauri::command(rename_all = "camelCase")]
+fn get_pending_opened_files(state: tauri::State<'_, AppState>) -> Vec<String> {
+    let mut files = state.pending_opened_files.lock().unwrap();
+    files
+        .drain(..)
+        .map(|p| p.to_string_lossy().to_string())
+        .collect()
+}
+
+fn buffer_opened_files(app: &tauri::AppHandle, files: Vec<PathBuf>) {
+    if files.is_empty() {
+        return;
+    }
+    let asset_scope = app.asset_protocol_scope();
+    for file in &files {
+        let _ = asset_scope.allow_file(file);
+    }
+    let paths: Vec<String> = files
+        .iter()
+        .map(|p| p.to_string_lossy().to_string())
+        .collect();
+    {
+        let state = app.state::<AppState>();
+        let mut pending = state.pending_opened_files.lock().unwrap();
+        pending.extend(files);
+    }
+    let _ = app.emit("open-file", paths);
+}
+
 #[derive(serde::Serialize, serde::Deserialize, Debug, Clone, PartialEq)]
 #[serde(rename_all = "camelCase")]
 pub struct CodecInfo {
@@ -533,7 +577,28 @@ pub fn run() {
         .plugin(tauri_plugin_dialog::init())
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
+        .manage(AppState::default())
         .setup(|app| {
+            #[cfg(any(windows, target_os = "linux"))]
+            {
+                let mut files = Vec::new();
+                for maybe_file in std::env::args().skip(1) {
+                    if maybe_file.starts_with('-') {
+                        continue;
+                    }
+                    if let Ok(url) = url::Url::parse(&maybe_file) {
+                        if let Ok(path) = url.to_file_path() {
+                            files.push(path);
+                        }
+                    } else {
+                        files.push(PathBuf::from(maybe_file));
+                    }
+                }
+                if !files.is_empty() {
+                    buffer_opened_files(&app.handle().clone(), files);
+                }
+            }
+
             use tauri::menu::{AboutMetadata, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
             let pkg = app.package_info();
 
@@ -555,6 +620,10 @@ pub fn run() {
                 .item(&quit)
                 .build()?;
 
+            let file_menu = SubmenuBuilder::new(app, "File")
+                .text("open-file", "Open File")
+                .build()?;
+
             let fullscreen = PredefinedMenuItem::fullscreen(app, None)?;
             let view_menu = SubmenuBuilder::new(app, "View")
                 .item(&fullscreen)
@@ -573,9 +642,16 @@ pub fn run() {
                 .build()?;
 
             let menu = MenuBuilder::new(app)
-                .items(&[&app_menu, &view_menu, &window_menu])
+                .items(&[&app_menu, &file_menu, &view_menu, &window_menu])
                 .build()?;
             app.set_menu(menu)?;
+
+            app.on_menu_event(move |_app, event| {
+                if event.id().0.as_str() == "open-file" {
+                    let _ = _app.emit("menu-open-file", ());
+                }
+            });
+
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
@@ -588,14 +664,28 @@ pub fn run() {
             get_build_variant,
             move_compressed_file,
             cleanup_temp_file,
+            get_pending_opened_files,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|_app, event| {
-        if let tauri::RunEvent::ExitRequested { .. } = event {
-            log::info!(target: "tiny_vid::commands", "app exit requested, cleaning up");
-            cleanup_transcode_temp();
+    app.run(|app, event| {
+        match &event {
+            #[cfg(any(target_os = "macos", target_os = "ios"))]
+            tauri::RunEvent::Opened { urls } => {
+                let files: Vec<PathBuf> = urls
+                    .iter()
+                    .filter_map(|u| u.to_file_path().ok())
+                    .collect();
+                if !files.is_empty() {
+                    buffer_opened_files(app, files);
+                }
+            }
+            tauri::RunEvent::ExitRequested { .. } => {
+                log::info!(target: "tiny_vid::commands", "app exit requested, cleaning up");
+                cleanup_transcode_temp();
+            }
+            _ => {}
         }
     });
 }
