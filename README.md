@@ -1,6 +1,6 @@
 # Tiny Vid
 
-Video compressor app using native FFmpeg. [Web version (WASM)](https://handy.tools)
+Cross-platform app for compressing and optimizing video files with support for H.264, H.265, VP9, and AV1 codecs. [Web version (WASM)](https://handy.tools)
 
 
 
@@ -22,7 +22,7 @@ Video compressor app using native FFmpeg. [Web version (WASM)](https://handy.too
 
 ### How to build
 
-From the repo root, run the script for the variant you want. Installers go to **releases/<platform>/**.
+From the repo root, run the script for the variant you want. Installers go to **releases/\<platform>\/**.
 
 | Script | Description |
 | ------ | ----------- |
@@ -36,7 +36,7 @@ macOS standalone requires building FFmpeg from source first: `yarn build-ffmpeg-
 
 ### Dev commands
 
-Run the app in development with a specific variant (uses system FFmpeg or `FFMPEG_PATH`; no prepare-ffmpeg needed):
+Run the app in development with a specific variant (uses system FFmpeg or `FFMPEG_PATH`):
 
 - **Default**: `yarn tauri dev` (default config).
 - **dev:standalone**: `yarn dev:standalone` — standalone config (bundled FFmpeg).
