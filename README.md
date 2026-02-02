@@ -8,17 +8,17 @@ Video compressor app using native FFmpeg. [Web version (WASM)](https://handy.too
 
 ## Build variants (FFmpeg bundling)
 
-| Variant    | Platform       | FFmpeg source  |
-| ---------- | -------------- | -------------- |
-| full       | macOS          | Self-built from source (GPL) |
-| full       | Windows        | BtbN GPL       |
+| Variant     | Platform       | FFmpeg source  |
+| ----------- | -------------- | -------------- |
+| standalone  | macOS          | Self-built from source (GPL) |
+| standalone | Windows        | BtbN GPL       |
 | lgpl-macos | macOS only     | Custom LGPL+VT |
-| bare       | Any            | System         |
+| default    | Any            | System         |
 
-- **Full (macOS)** – Bundles GPL FFmpeg (libx264, libx265, etc.). Build from source: run `yarn build-ffmpeg-full-macos` once, then `yarn build:full`.
-- **Full (Windows)** – Bundles BtbN GPL FFmpeg (libx264, libx265, libsvtav1).
+- **Standalone (macOS)** – Bundles GPL FFmpeg (libx264, libx265, etc.). Build from source: run `yarn build-ffmpeg-standalone-macos` once, then `yarn build:standalone`.
+- **Standalone (Windows)** – Bundles BtbN GPL FFmpeg (libx264, libx265, libsvtav1).
 - **lgpl-macos (macOS App Store)** – Custom LGPL FFmpeg with VideoToolbox only (H.264/HEVC, MP4). Requires building FFmpeg first.
-- **Bare** – No FFmpeg in the bundle; app uses system FFmpeg (e.g. `apt install ffmpeg` on Linux).
+- **Default** – No FFmpeg in the bundle; app uses system FFmpeg (e.g. `apt install ffmpeg` on Linux).
 
 ### How to build
 
@@ -26,28 +26,27 @@ From the repo root, run the script for the variant you want. Installers go to **
 
 | Script | Description |
 | ------ | ----------- |
-| `yarn build:bare` | No bundled FFmpeg; uses system FFmpeg. Works on macOS, Windows, Linux (Linux requires Docker). |
-| `yarn build:full` | Bundles FFmpeg. macOS: build from source first (`yarn build-ffmpeg-full-macos`); Windows: BtbN download. |
+| `yarn build` | No bundled FFmpeg; uses system FFmpeg. Works on macOS, Windows, Linux (Linux requires Docker). |
+| `yarn build:standalone` | Bundles FFmpeg. macOS: build from source first (`yarn build-ffmpeg-standalone-macos`); Windows: BtbN download. |
 | `yarn build:lgpl-macos` | macOS App Store build (custom LGPL FFmpeg). Run `yarn build-ffmpeg-lgpl-macos` once first. |
 
-To build by platform script instead: `./scripts/build-macos.sh [full|bare|lgpl]`, `./scripts/build-linux.sh`, or `./scripts/build-windows.sh [full|bare]`.
+To build by platform script instead: `./scripts/build-macos.sh [standalone|lgpl]`, `./scripts/build-linux.sh`, or `./scripts/build-windows.sh [standalone]`.
 
-macOS full requires building FFmpeg from source first: `yarn build-ffmpeg-full-macos` (requires `brew install x264 x265 libvpx opus pkg-config`). Windows full downloads BtbN FFmpeg (cached in `~/.cache/tiny-vid/ffmpeg`; checksums verified). Binaries go to `src-tauri/binaries/` (gitignored). lgpl-macos expects custom FFmpeg from `yarn build-ffmpeg-lgpl-macos`.
+macOS standalone requires building FFmpeg from source first: `yarn build-ffmpeg-standalone-macos` (requires `brew install x264 x265 libvpx opus pkg-config`). Windows standalone downloads BtbN FFmpeg (cached in `~/.cache/tiny-vid/ffmpeg`; checksums verified). Binaries go to `src-tauri/binaries/` (gitignored). lgpl-macos expects custom FFmpeg from `yarn build-ffmpeg-lgpl-macos`.
 
 ### Dev commands
 
 Run the app in development with a specific variant (uses system FFmpeg or `FFMPEG_PATH`; no prepare-ffmpeg needed):
 
-- **Default**: `yarn tauri dev` (full config).
-- **dev:full**: `yarn dev:full` — explicit full config.
+- **Default**: `yarn tauri dev` (default config).
+- **dev:standalone**: `yarn dev:standalone` — standalone config (bundled FFmpeg).
 - **dev:lgpl-macos**: `yarn dev:lgpl-macos` — lgpl-macos variant (App Store build in dev).
-- **dev:bare**: `yarn dev:bare` — bare config (no externalBin).
 
 ## Testing
 
 Run from project root:
 
-- **Default (full)**  
+- **Default**  
   - `yarn test` — unit and command tests; integration tests are `#[ignore]`.  
   - `yarn test:integration` — integration tests (needs FFmpeg with libx264, libx265, libsvtav1).  
   - `yarn test:discovery` — discovery tests (env/cache isolation).

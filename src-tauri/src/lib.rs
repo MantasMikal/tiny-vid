@@ -404,7 +404,7 @@ fn get_build_variant() -> Result<BuildVariantResult, error::AppError> {
     #[cfg(feature = "lgpl-macos")]
     let variant = "lgpl-macos";
     #[cfg(not(feature = "lgpl-macos"))]
-    let variant = "full";
+    let variant = "standalone";
     
     Ok(BuildVariantResult {
         variant,
@@ -500,7 +500,7 @@ mod build_variant_tests {
         assert_eq!(variant.variant, "lgpl-macos");
 
         #[cfg(not(feature = "lgpl-macos"))]
-        assert_eq!(variant.variant, "full");
+        assert_eq!(variant.variant, "standalone");
 
         for codec in &variant.codecs {
             assert!(

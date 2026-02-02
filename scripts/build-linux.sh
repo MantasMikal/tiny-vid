@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Build Tiny Vid for Linux (bare) inside Docker. Produces .deb in releases/linux/.
+# Build Tiny Vid for Linux inside Docker. Produces .deb in releases/linux/.
 # Run from repo root. Idempotent. Best run on Linux or in CI; mounting the repo
 # on macOS will overwrite node_modules/target with Linux artifacts.
 
@@ -22,7 +22,10 @@ if [[ "$VERSION" == "" || "$VERSION" == "null" ]]; then
   exit 1
 fi
 
-echo "Building Linux .deb (bare) — version $VERSION"
+ARCH="$(uname -m)"
+[[ "$ARCH" == "arm64" ]] && ARCH="aarch64"
+
+echo "Building Linux .deb — version $VERSION ($ARCH)"
 
 docker build -t "$IMAGE_NAME" -f docker/linux-builder.Dockerfile .
 
@@ -45,6 +48,6 @@ if [[ -z "$DEB_FILE" ]]; then
 fi
 
 mkdir -p releases/linux
-OUTPUT_NAME="releases/linux/Tiny-Vid-${VERSION}-linux.deb"
+OUTPUT_NAME="releases/linux/Tiny-Vid-${VERSION}-linux-${ARCH}.deb"
 cp -- "$DEB_FILE" "$OUTPUT_NAME"
 echo "Output: $OUTPUT_NAME"

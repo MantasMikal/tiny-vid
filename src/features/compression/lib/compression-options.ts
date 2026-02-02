@@ -1,6 +1,6 @@
 import type { CodecInfo } from "@/types/tauri";
 
-export type LicenseProfile = "full" | "lgpl-macos";
+export type LicenseProfile = "standalone" | "lgpl-macos";
 
 const CODEC_REGISTRY = {
   libx264: {

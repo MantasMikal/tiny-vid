@@ -7,19 +7,19 @@
 # Optional: libvorbis for Vorbis audio (brew install libvorbis)
 # For x86_64 native build you may need: nasm (brew install nasm)
 #
-# After running this, yarn build:full will use these binaries and skip downloading.
+# After running this, yarn build:standalone will use these binaries and skip downloading.
 
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARIES_DIR="$ROOT/src-tauri/binaries"
-BUILD_DIR="${FFMPEG_BUILD_DIR:-/tmp/ffmpeg-full-macos-build}"
+BUILD_DIR="${FFMPEG_BUILD_DIR:-/tmp/ffmpeg-standalone-macos-build}"
 # FFmpeg release branch (e.g. 7.1 → release/7.1). See https://git.ffmpeg.org/ffmpeg.git
 FFMPEG_VERSION="${FFMPEG_VERSION:-7.1}"
 TARGET_TRIPLE="${TARGET_TRIPLE:-$(rustc --print host-tuple 2>/dev/null || echo "aarch64-apple-darwin")}"
 
-echo "Building FFmpeg GPL (full) for $TARGET_TRIPLE (release/$FFMPEG_VERSION)"
+echo "Building FFmpeg GPL for standalone build — $TARGET_TRIPLE (release/$FFMPEG_VERSION)"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
@@ -65,4 +65,4 @@ chmod +x "$BINARIES_DIR/ffmpeg-$SUFFIX" "$BINARIES_DIR/ffprobe-$SUFFIX"
 echo "Done. Binaries at:"
 echo "  $BINARIES_DIR/ffmpeg-$SUFFIX"
 echo "  $BINARIES_DIR/ffprobe-$SUFFIX"
-echo "Run yarn build:full to use these binaries (download will be skipped)."
+echo "Run yarn build:standalone to use these binaries (download will be skipped)."

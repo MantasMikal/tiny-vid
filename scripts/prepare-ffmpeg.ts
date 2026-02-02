@@ -1,9 +1,9 @@
 /**
  * Prepares FFmpeg binaries for bundling. Run before `tauri build` for macOS/Windows.
  *
- * - Linux / bare: No-op (platform overrides set externalBin to [])
+ * - Linux / default: No-op (platform overrides set externalBin to [])
  * - Windows: Downloads BtbN win64-gpl, extracts to src-tauri/binaries/
- * - macOS full: Expects output from build-ffmpeg-full-macos.sh; fails if missing
+ * - macOS standalone: Expects output from build-ffmpeg-standalone-macos.sh; fails if missing
  * - macOS lgpl-macos: Expects output from build-ffmpeg-lgpl-macos.sh; fails if missing
  *
  * Caches BtbN downloads in ~/.cache/tiny-vid/ffmpeg (or TINY_VID_FFMPEG_CACHE). Verifies checksums when BtbN provides checksums.sha256.
@@ -269,19 +269,19 @@ async function prepareBtbN(target: string): Promise<void> {
   console.log(`Prepared ffmpeg and ffprobe for ${target}`);
 }
 
-/** macOS full: expects binaries from build-ffmpeg-full-macos.sh. */
-function prepareFullMacOs(target: string): void {
+/** macOS standalone: expects binaries from build-ffmpeg-standalone-macos.sh. */
+function prepareStandaloneMacOs(target: string): void {
   const suffix = getSidecarSuffix(target);
   const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
   const ffprobeDest = join(BINARIES_DIR, `ffprobe-${suffix}`);
 
   if (!existsSync(ffmpegDest) || !existsSync(ffprobeDest)) {
     throw new Error(
-      `macOS full build requires FFmpeg built from source. Run yarn build-ffmpeg-full-macos first. ` +
+      `macOS standalone build requires FFmpeg built from source. Run yarn build-ffmpeg-standalone-macos first. ` +
         `Expected: ${ffmpegDest}, ${ffprobeDest}`
     );
   }
-  console.log(`Using existing full FFmpeg binaries for ${target}`);
+  console.log(`Using existing standalone FFmpeg binaries for ${target}`);
 }
 
 function prepareLgplMacOs(target: string): void {
@@ -326,7 +326,7 @@ async function main(): Promise<void> {
   );
 
   if (isLinux(target)) {
-    console.log("Bare build: no FFmpeg bundling (platform overrides set externalBin to [])");
+    console.log("Default build: no FFmpeg bundling (platform overrides set externalBin to [])");
     return;
   }
 
@@ -344,7 +344,7 @@ async function main(): Promise<void> {
     if (isLgplMacosBuild()) {
       prepareLgplMacOs(target);
     } else {
-      prepareFullMacOs(target);
+      prepareStandaloneMacOs(target);
     }
     return;
   }

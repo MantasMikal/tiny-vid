@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build Tiny Vid for Windows locally. Produces .msi and .exe in releases/windows/.
-# Usage: ./scripts/build-windows.sh [full|bare]   (default: bare)
+# Usage: ./scripts/build-windows.sh [standalone]   (default: no arg = default)
 # Run from repo root on Windows only (e.g. Git Bash, MSYS2). Signing not included.
 
 set -euo pipefail
@@ -15,9 +15,9 @@ case "$UNAME_S" in
     ;;
 esac
 
-VARIANT="${1:-bare}"
-if [[ "$VARIANT" != "full" && "$VARIANT" != "bare" ]]; then
-  echo "error: variant must be full or bare (got: $VARIANT)" >&2
+VARIANT="${1:-}"
+if [[ "$VARIANT" != "" && "$VARIANT" != "standalone" ]]; then
+  echo "error: variant must be empty (default) or standalone (got: $VARIANT)" >&2
   exit 1
 fi
 
@@ -33,17 +33,28 @@ if [[ -z "$VERSION" ]]; then
   exit 1
 fi
 
-SUFFIX="windows-${VARIANT}"
+ARCH="$(uname -m 2>/dev/null || echo "x86_64")"
+[[ "$ARCH" == "arm64" ]] && ARCH="aarch64"
 
-echo "Building Windows installers ($VARIANT) — version $VERSION"
+if [[ -z "$VARIANT" ]]; then
+  SUFFIX="windows-${ARCH}"
+else
+  SUFFIX="windows-${VARIANT}-${ARCH}"
+fi
+
+if [[ -z "$VARIANT" ]]; then
+  echo "Building Windows installers (default) — version $VERSION ($ARCH)"
+else
+  echo "Building Windows installers ($VARIANT) — version $VERSION ($ARCH)"
+fi
 
 # Avoid tauri receiving CI=1 (invalid --ci 1); use unset so local/CI both work
 unset CI
 
 yarn clean:bundle
-if [[ "$VARIANT" == "full" ]]; then
+if [[ "$VARIANT" == "standalone" ]]; then
   yarn prepare-ffmpeg
-  yarn tauri build --config src-tauri/overrides/windows-full.json
+  yarn tauri build --config src-tauri/overrides/windows-standalone.json
 else
   yarn tauri build
 fi
