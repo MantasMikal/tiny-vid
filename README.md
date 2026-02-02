@@ -1,7 +1,6 @@
 # Tiny Vid
 
-Video compressor app using native FFmpeg. [Web version (WASM)](https://handy.tools)
-
+Desktop app for compressing and optimizing video files with support for H.264, H.265, VP9, and AV1 codecs. [Web version (WASM)](https://handy.tools)
 
 
 ![image](https://github.com/user-attachments/assets/7faa0c2b-320e-45ef-b556-fa35b87142a7)
