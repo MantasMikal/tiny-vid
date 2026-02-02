@@ -1,6 +1,9 @@
 //! Tauri IPC command tests. Uses test_util for app and invoke helpers.
 
-use crate::test_util::{create_test_app, create_test_video, find_ffmpeg_and_set_env, invoke_request};
+use crate::test_util::{
+    create_test_app, create_test_app_with_file_assoc, create_test_video, find_ffmpeg_and_set_env,
+    invoke_request,
+};
 use crate::CodecInfo;
 use std::fs;
 use tauri::ipc::InvokeBody;
@@ -160,6 +163,61 @@ fn get_video_metadata_with_video_returns_metadata() {
     assert_eq!(meta.width, 320);
     assert_eq!(meta.height, 240);
     assert!(meta.size > 0);
+}
+
+#[test]
+fn get_pending_opened_files_returns_empty_when_buffer_empty() {
+    let app = create_test_app_with_file_assoc(None);
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let body = InvokeBody::default();
+    let res = tauri::test::get_ipc_response(
+        &window,
+        invoke_request("get_pending_opened_files", body),
+    );
+    assert!(res.is_ok(), "get_pending_opened_files failed: {:?}", res.err());
+    let body = res.unwrap();
+    let paths: Vec<String> = body.deserialize().unwrap();
+    assert!(paths.is_empty(), "expected empty vec, got {:?}", paths);
+}
+
+#[test]
+fn get_pending_opened_files_returns_and_clears_buffered_paths() {
+    let dir = tempfile::tempdir().unwrap();
+    let path_a = dir.path().join("a.mp4");
+    let path_b = dir.path().join("b.mp4");
+    let paths: Vec<std::path::PathBuf> = vec![path_a.clone(), path_b.clone()];
+
+    let app = create_test_app_with_file_assoc(Some(paths));
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let body = InvokeBody::default();
+    let res = tauri::test::get_ipc_response(
+        &window,
+        invoke_request("get_pending_opened_files", body.clone()),
+    );
+    assert!(res.is_ok(), "first invoke failed: {:?}", res.err());
+    let first: Vec<String> = res.unwrap().deserialize().unwrap();
+    assert_eq!(
+        first,
+        vec![
+            path_a.to_string_lossy().to_string(),
+            path_b.to_string_lossy().to_string(),
+        ],
+        "first invoke should return buffered paths"
+    );
+
+    let res = tauri::test::get_ipc_response(
+        &window,
+        invoke_request("get_pending_opened_files", body),
+    );
+    assert!(res.is_ok(), "second invoke failed: {:?}", res.err());
+    let second: Vec<String> = res.unwrap().deserialize().unwrap();
+    assert!(second.is_empty(), "second invoke should return empty (buffer drained)");
 }
 
 #[test]

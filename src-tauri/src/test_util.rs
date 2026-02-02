@@ -9,8 +9,8 @@ use std::path::{Path, PathBuf};
 use std::process::Command;
 
 use crate::{
-    cleanup_temp_file, ffmpeg_terminate, get_build_variant, get_file_size, get_video_metadata,
-    move_compressed_file,
+    cleanup_temp_file, ffmpeg_terminate, get_build_variant, get_file_size, get_pending_opened_files,
+    get_video_metadata, move_compressed_file, AppState,
 };
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
@@ -101,6 +101,30 @@ pub fn create_test_app() -> tauri::App<tauri::test::MockRuntime> {
             ffmpeg_terminate,
             move_compressed_file,
             cleanup_temp_file,
+        ])
+        .build(mock_context(noop_assets()))
+        .expect("failed to build test app")
+}
+
+/// Creates a test app with file association support (AppState + get_pending_opened_files).
+/// When `pending` is `None`, uses empty buffer; when `Some(paths)`, pre-populates the buffer.
+pub fn create_test_app_with_file_assoc(
+    pending: Option<Vec<PathBuf>>,
+) -> tauri::App<tauri::test::MockRuntime> {
+    let state = match pending {
+        None => AppState::default(),
+        Some(paths) => AppState::with_pending(paths),
+    };
+    mock_builder()
+        .manage(state)
+        .invoke_handler(tauri::generate_handler![
+            get_file_size,
+            get_video_metadata,
+            get_build_variant,
+            ffmpeg_terminate,
+            move_compressed_file,
+            cleanup_temp_file,
+            get_pending_opened_files,
         ])
         .build(mock_context(noop_assets()))
         .expect("failed to build test app")

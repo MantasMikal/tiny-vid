@@ -1,0 +1,7 @@
+[[permission]]
+identifier = "allow-get-pending-opened-files"
+description = "Enables the get_pending_opened_files command"
+
+[permission.commands]
+allow = ["get_pending_opened_files"]
+deny = []

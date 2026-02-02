@@ -19,6 +19,7 @@
     "allow-get-video-metadata",
     "allow-move-compressed-file",
     "allow-cleanup-temp-file",
-    "allow-get-build-variant"
+    "allow-get-build-variant",
+    "allow-get-pending-opened-files"
   ]
 }
