@@ -1,6 +1,7 @@
 import { useRef } from "react";
 import { ReactCompareSlider } from "react-compare-slider";
 
+import { Badge } from "@/components/ui/badge";
 import { useVideoSync } from "@/hooks/useVideoSync";
 import { cn } from "@/lib/utils";
 
@@ -8,6 +9,10 @@ interface PreviewProps {
   originalSrc: string;
   compressedSrc: string;
   startOffsetSeconds?: number;
+  /** Source video FPS. Shown on original when different from previewFps. */
+  sourceFps?: number;
+  /** Preview/compressed FPS. Shown on compressed when different from sourceFps. */
+  previewFps?: number;
 }
 
 function getVideoType(src: string): string {
@@ -18,7 +23,15 @@ export function VideoPreview({
   originalSrc,
   compressedSrc,
   startOffsetSeconds,
+  sourceFps,
+  previewFps,
 }: PreviewProps) {
+  const showFpsBadges =
+    sourceFps != null &&
+    previewFps != null &&
+    sourceFps > 0 &&
+    previewFps > 0 &&
+    sourceFps !== previewFps;
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const compressedVideoRef = useRef<HTMLVideoElement>(null);
 
@@ -46,6 +59,11 @@ export function VideoPreview({
                   <source src={originalSrc} type="video/mp4" />
                 </video>
               </div>
+              {showFpsBadges && (
+                <Badge className={cn("absolute bottom-2 left-2 z-10")}>
+                  {sourceFps} FPS
+                </Badge>
+              )}
             </div>
           }
           itemTwo={
@@ -64,6 +82,11 @@ export function VideoPreview({
                   />
                 </video>
               </div>
+              {showFpsBadges && (
+                <Badge className={cn("absolute right-2 bottom-2 z-10")}>
+                  {previewFps} FPS
+                </Badge>
+              )}
             </div>
           }
         />

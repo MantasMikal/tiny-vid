@@ -46,6 +46,8 @@ export default function Compressor() {
         error={error}
         workerState={workerState}
         progress={progress}
+        sourceFps={videoMetadata?.fps}
+        previewFps={compressionOptions?.fps}
         disabled={!isInitialized}
         onBrowse={() => void browseAndSelectFile()}
         onClear={clear}

@@ -17,6 +17,10 @@ export interface VideoWorkspaceProps {
     compressedSrc: string;
     startOffsetSeconds?: number;
   } | null;
+  /** Source video FPS for FPS badges when different from previewFps. */
+  sourceFps?: number;
+  /** Preview/compressed FPS for FPS badges when different from sourceFps. */
+  previewFps?: number;
   videoUploading: boolean;
   error: { type: string; message: string; detail?: string } | null;
   workerState: WorkerState;
@@ -35,6 +39,8 @@ export function VideoWorkspace({
   error,
   workerState,
   progress,
+  sourceFps,
+  previewFps,
   disabled = false,
   onBrowse,
   onClear,
@@ -90,6 +96,8 @@ export function VideoWorkspace({
                     originalSrc={videoPreview.originalSrc}
                     compressedSrc={videoPreview.compressedSrc}
                     startOffsetSeconds={videoPreview.startOffsetSeconds}
+                    sourceFps={sourceFps}
+                    previewFps={previewFps}
                   />
                   <Button
                     size="icon"
