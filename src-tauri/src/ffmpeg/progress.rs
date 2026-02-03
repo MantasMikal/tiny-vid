@@ -19,17 +19,13 @@ pub fn parse_ffmpeg_progress(
         return (None, Some(duration));
     }
 
-    if let Some(m) = TIME_RE.find(output) {
-        if let Some(dur) = current_duration {
-            if dur > 0.0 {
-                if let Some(num_part) = m.as_str().strip_prefix("out_time_ms=") {
-                    if let Ok(current_time_ms) = num_part.parse::<i64>() {
-                        let current_time = current_time_ms as f64 / 1_000_000.0;
-                        let progress = (current_time / dur).min(1.0);
-                        return (Some(progress), Some(dur));
-                    }
-                }
-            }
+    if let Some(caps) = TIME_RE.captures(output) {
+        if let (Some(dur), Ok(current_time_ms)) =
+            (current_duration.filter(|&d| d > 0.0), caps[1].parse::<i64>())
+        {
+            let current_time = current_time_ms as f64 / 1_000_000.0;
+            let progress = (current_time / dur).min(1.0);
+            return (Some(progress), Some(dur));
         }
     }
 

@@ -1,3 +1,4 @@
+use crate::codec_names::SUPPORTED_CODEC_NAMES;
 use crate::error::AppError;
 use std::path::{Path, PathBuf};
 use std::process::Command;
@@ -5,21 +6,12 @@ use std::sync::OnceLock;
 use tauri::utils::platform;
 
 #[cfg(target_os = "windows")]
-fn find_in_path() -> Option<PathBuf> {
-    let output = Command::new("where").arg("ffmpeg").output().ok()?;
-    if output.status.success() {
-        let path = String::from_utf8_lossy(&output.stdout);
-        let first = path.lines().next()?.trim();
-        if !first.is_empty() {
-            return Some(PathBuf::from(first));
-        }
-    }
-    None
-}
-
+const FIND_CMD: &str = "where";
 #[cfg(not(target_os = "windows"))]
+const FIND_CMD: &str = "which";
+
 fn find_in_path() -> Option<PathBuf> {
-    let output = Command::new("which").arg("ffmpeg").output().ok()?;
+    let output = Command::new(FIND_CMD).arg("ffmpeg").output().ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout);
         let first = path.lines().next()?.trim();
@@ -32,34 +24,23 @@ fn find_in_path() -> Option<PathBuf> {
 
 fn common_paths() -> Vec<PathBuf> {
     #[cfg(target_os = "macos")]
-    {
-        vec![
-            PathBuf::from("/opt/homebrew/bin/ffmpeg"),
-            PathBuf::from("/usr/local/bin/ffmpeg"),
-            PathBuf::from("/opt/local/bin/ffmpeg"),
-        ]
-    }
-
+    return vec![
+        PathBuf::from("/opt/homebrew/bin/ffmpeg"),
+        PathBuf::from("/usr/local/bin/ffmpeg"),
+        PathBuf::from("/opt/local/bin/ffmpeg"),
+    ];
     #[cfg(target_os = "windows")]
-    {
-        vec![
-            PathBuf::from("C:\\ffmpeg\\bin\\ffmpeg.exe"),
-            PathBuf::from("C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe"),
-        ]
-    }
-
+    return vec![
+        PathBuf::from("C:\\ffmpeg\\bin\\ffmpeg.exe"),
+        PathBuf::from("C:\\Program Files\\ffmpeg\\bin\\ffmpeg.exe"),
+    ];
     #[cfg(all(unix, not(target_os = "macos")))]
-    {
-        vec![
-            PathBuf::from("/usr/bin/ffmpeg"),
-            PathBuf::from("/usr/local/bin/ffmpeg"),
-        ]
-    }
-
+    return vec![
+        PathBuf::from("/usr/bin/ffmpeg"),
+        PathBuf::from("/usr/local/bin/ffmpeg"),
+    ];
     #[cfg(not(any(target_os = "macos", target_os = "windows", unix)))]
-    {
-        vec![]
-    }
+    return vec![];
 }
 
 #[cfg_attr(feature = "discovery-test-helpers", allow(dead_code))]
@@ -67,11 +48,11 @@ static FFMPEG_PATH_CACHE: OnceLock<PathBuf> = OnceLock::new();
 
 /// Test-only: resettable cache so discovery tests can run in any order without reusing a previous test's path.
 #[cfg(feature = "discovery-test-helpers")]
-static TEST_FFMPEG_CACHE: std::sync::Mutex<Option<&'static Path>> = std::sync::Mutex::new(None);
+static TEST_FFMPEG_CACHE: parking_lot::Mutex<Option<&'static Path>> = parking_lot::Mutex::new(None);
 
 #[cfg(feature = "discovery-test-helpers")]
 pub fn __test_reset_ffmpeg_path_cache() {
-    *TEST_FFMPEG_CACHE.lock().unwrap() = None;
+    *TEST_FFMPEG_CACHE.lock() = None;
 }
 
 /// Resolve path to bundled sidecar (next to executable). macOS/Windows only.
@@ -124,6 +105,7 @@ fn bundled_sidecar_base_names() -> [&'static str; 2] {
     [concat!("ffmpeg-", env!("TARGET")), "ffmpeg"]
 }
 
+/// Resolve FFmpeg path. Order: bundled sidecar (if not lgpl-macos) → common paths → PATH → sidecar fallback.
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
     #[cfg(all(
         any(target_os = "macos", target_os = "windows"),
@@ -180,10 +162,9 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
     #[cfg(feature = "discovery-test-helpers")]
     {
-        if let Ok(guard) = TEST_FFMPEG_CACHE.lock() {
-            if let Some(p) = *guard {
-                return Ok(p);
-            }
+        let guard = TEST_FFMPEG_CACHE.lock();
+        if let Some(p) = *guard {
+            return Ok(p);
         }
     }
     #[cfg(not(feature = "discovery-test-helpers"))]
@@ -195,25 +176,21 @@ pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
         );
         return Ok(path.as_path());
     }
-    let path = if let Ok(env_path) = std::env::var("FFMPEG_PATH") {
-        let p = PathBuf::from(&env_path);
-        if p.exists() {
+    let path = match std::env::var("FFMPEG_PATH").ok().map(PathBuf::from) {
+        Some(p) if p.exists() => {
             log::debug!(
                 target: "tiny_vid::ffmpeg::discovery",
                 "FFmpeg path from FFMPEG_PATH env: {}",
                 p.display()
             );
             p
-        } else {
-            resolve_ffmpeg_path()?
         }
-    } else {
-        resolve_ffmpeg_path()?
+        _ => resolve_ffmpeg_path()?,
     };
     #[cfg(feature = "discovery-test-helpers")]
     {
         let leaked: &'static Path = Box::leak(path.into_boxed_path());
-        *TEST_FFMPEG_CACHE.lock().unwrap() = Some(leaked);
+        *TEST_FFMPEG_CACHE.lock() = Some(leaked);
         return Ok(leaked);
     }
     #[cfg(not(feature = "discovery-test-helpers"))]
@@ -256,18 +233,19 @@ pub fn get_ffprobe_path() -> Result<PathBuf, AppError> {
     let parent = ffmpeg
         .parent()
         .ok_or_else(|| AppError::from("FFmpeg path has no parent directory".to_string()))?;
-    for candidate in ffprobe_candidates(ffmpeg) {
+    let candidates = ffprobe_candidates(ffmpeg);
+    for candidate in &candidates {
         if candidate.exists() {
-            return Ok(candidate);
+            return Ok(candidate.clone());
         }
     }
-    #[cfg(target_os = "windows")]
-    let ffprobe = parent.join("ffprobe.exe");
-    #[cfg(not(target_os = "windows"))]
-    let ffprobe = parent.join("ffprobe");
+    let expected = candidates
+        .last()
+        .map(|p| p.display().to_string())
+        .unwrap_or_else(|| format!("ffprobe in {}", parent.display()));
     Err(AppError::from(format!(
         "ffprobe not found at {} (FFmpeg dir: {})",
-        ffprobe.display(),
+        expected,
         parent.display()
     )))
 }
@@ -279,7 +257,7 @@ fn parse_encoder_output(stdout: &str) -> Vec<String> {
     for line in stdout.lines() {
         if line.starts_with(" V") {
             if let Some(codec_name) = line.split_whitespace().nth(1) {
-                if matches!(codec_name, "libx264" | "libx265" | "libsvtav1" | "libvpx-vp9" | "h264_videotoolbox" | "hevc_videotoolbox") {
+                if SUPPORTED_CODEC_NAMES.contains(&codec_name) {
                     codecs.push(codec_name.to_string());
                 }
             }

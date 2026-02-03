@@ -4329,6 +4329,7 @@ name = "tiny-vid"
 version = "1.0.0"
 dependencies = [
  "log",
+ "parking_lot",
  "regex",
  "serde",
  "serde_json",

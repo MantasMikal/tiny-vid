@@ -1,30 +1,24 @@
+//! Temp file management and cleanup for FFmpeg operations.
+
 use std::fs;
 use std::io;
 use std::path::PathBuf;
-use std::sync::Mutex;
+
+use parking_lot::Mutex;
+use super::cache::{get_cached_extract, get_cached_transcode_paths_to_keep};
 
 static PREVIOUS_PREVIEW_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static TRANSCODE_TEMP_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
 
-/// Cache for extracted preview original: (input_path, preview_duration) -> original_path.
-/// Reused when only transcode options change, avoiding slow re-extraction from large files.
-struct CachedExtract {
-    input_path: String,
-    preview_duration: u32,
-    original_path: PathBuf,
-}
-static EXTRACT_CACHE: Mutex<Option<CachedExtract>> = Mutex::new(None);
-
 /// Set the current transcode temp path (for cleanup on exit or cancel).
 pub fn set_transcode_temp(path: Option<PathBuf>) {
-    if let Ok(mut guard) = TRANSCODE_TEMP_PATH.lock() {
-        *guard = path;
-    }
+    let mut guard = TRANSCODE_TEMP_PATH.lock();
+    *guard = path;
 }
 
 /// Remove the transcode temp file if it exists. Call on app exit or when user cancels save.
 pub fn cleanup_transcode_temp() {
-    let mut guard = TRANSCODE_TEMP_PATH.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = TRANSCODE_TEMP_PATH.lock();
     if let Some(path) = guard.take() {
         log::debug!(
             target: "tiny_vid::ffmpeg::temp",
@@ -36,33 +30,28 @@ pub fn cleanup_transcode_temp() {
 }
 
 /// Delete temp files from the previous preview. Call at the start of each new preview.
-/// Preserves the cached original when it matches the new request (cache hit).
+/// Preserves extract-cache segments and transcode-cache outputs for the current (input, duration).
 pub fn cleanup_previous_preview_paths(
     new_input_path: &str,
     new_preview_duration: u32,
 ) {
-    let mut guard = PREVIOUS_PREVIEW_PATHS.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = PREVIOUS_PREVIEW_PATHS.lock();
     let paths: Vec<_> = guard.drain(..).collect();
-    let cache_guard = EXTRACT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    let cache_path = cache_guard.as_ref().and_then(|c| {
-        if c.input_path == new_input_path && c.preview_duration == new_preview_duration {
-            Some(c.original_path.clone())
-        } else {
-            None
-        }
-    });
-    drop(cache_guard);
+
+    let mut paths_to_keep: Vec<PathBuf> = Vec::new();
+    if let Some(segments) = get_cached_extract(new_input_path, new_preview_duration) {
+        paths_to_keep.extend(segments);
+    }
+    paths_to_keep.extend(get_cached_transcode_paths_to_keep(new_input_path, new_preview_duration));
 
     for path in &paths {
-        if let Some(ref keep) = cache_path {
-            if path == keep {
-                log::trace!(
-                    target: "tiny_vid::ffmpeg::temp",
-                    "cleanup_previous_preview_paths: keeping cached original {}",
-                    path.display()
-                );
-                continue;
-            }
+        if paths_to_keep.iter().any(|keep| keep == path) {
+            log::trace!(
+                target: "tiny_vid::ffmpeg::temp",
+                "cleanup_previous_preview_paths: keeping cached path {}",
+                path.display()
+            );
+            continue;
         }
         log::trace!(
             target: "tiny_vid::ffmpeg::temp",
@@ -73,60 +62,17 @@ pub fn cleanup_previous_preview_paths(
     }
 }
 
-/// Get cached original path if it matches and the file exists.
-pub fn get_cached_extract(input_path: &str, preview_duration: u32) -> Option<PathBuf> {
-    let guard = EXTRACT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    guard.as_ref().and_then(|c| {
-        if c.input_path == input_path
-            && c.preview_duration == preview_duration
-            && c.original_path.exists()
-        {
-            Some(c.original_path.clone())
-        } else {
-            None
-        }
-    })
-}
-
-/// Store or update the extract cache. Removes old cached file if the key changed.
-pub fn set_cached_extract(input_path: String, preview_duration: u32, original_path: PathBuf) {
-    let mut guard = EXTRACT_CACHE.lock().unwrap_or_else(|e| e.into_inner());
-    if let Some(old) = guard.take() {
-        if old.input_path != input_path || old.preview_duration != preview_duration {
-            log::trace!(
-                target: "tiny_vid::ffmpeg::temp",
-                "set_cached_extract: removing old cache {}",
-                old.original_path.display()
-            );
-            let _ = fs::remove_file(&old.original_path);
-        }
-    }
-    log::debug!(
-        target: "tiny_vid::ffmpeg::temp",
-        "set_cached_extract: caching {} for input={}, duration={}",
-        original_path.display(),
-        input_path,
-        preview_duration
-    );
-    *guard = Some(CachedExtract {
-        input_path,
-        preview_duration,
-        original_path,
-    });
-}
-
 /// Store paths to be cleaned up when the next preview is generated.
-pub fn store_preview_paths_for_cleanup(original: PathBuf, compressed: PathBuf) {
+pub fn store_preview_paths_for_cleanup(originals: &[PathBuf], compresseds: &[PathBuf]) {
     log::debug!(
         target: "tiny_vid::ffmpeg::temp",
-        "store_preview_paths_for_cleanup: original={}, compressed={}",
-        original.display(),
-        compressed.display()
+        "store_preview_paths_for_cleanup: {} originals, {} compresseds",
+        originals.len(),
+        compresseds.len()
     );
-    if let Ok(mut guard) = PREVIOUS_PREVIEW_PATHS.lock() {
-        guard.push(original);
-        guard.push(compressed);
-    }
+    let mut guard = PREVIOUS_PREVIEW_PATHS.lock();
+    guard.extend(originals.iter().cloned());
+    guard.extend(compresseds.iter().cloned());
 }
 
 /// Stateless factory for creating temp files. Paths must be handed off to
@@ -139,7 +85,7 @@ impl Default for TempFileManager {
     }
 }
 
-/// Generates a short random suffix for temp filenames. Not cryptographically secure; for uniqueness only.
+/// Generates a short random suffix for temp filenames
 fn random_alphanumeric_suffix(len: usize) -> String {
     use std::sync::atomic::{AtomicU64, Ordering};
     const CHARS: &[u8] = b"abcdefghijklmnopqrstuvwxyz0123456789";

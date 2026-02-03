@@ -15,6 +15,19 @@ pub enum AppError {
     Aborted,
 }
 
+impl AppError {
+    pub fn aborted() -> Self {
+        Self::Aborted
+    }
+
+    pub fn ffmpeg_failed(code: i32, stderr: impl Into<String>) -> Self {
+        Self::FfmpegFailed {
+            code,
+            stderr: stderr.into(),
+        }
+    }
+}
+
 impl serde::Serialize for AppError {
     fn serialize<S>(&self, serializer: S) -> Result<S::Ok, S::Error>
     where
@@ -39,7 +52,7 @@ impl From<String> for AppError {
 
 impl From<&str> for AppError {
     fn from(s: &str) -> Self {
-        Self::from(s.to_string())
+        s.to_string().into()
     }
 }
 

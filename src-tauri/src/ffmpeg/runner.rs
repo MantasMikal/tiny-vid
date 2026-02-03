@@ -1,35 +1,49 @@
+//! FFmpeg process spawning and progress parsing.
+//!
+//! Spawns FFmpeg as a child process, parses progress from stdout (pipe:1),
+//! and optionally emits progress events to the frontend. Uses a background
+//! thread to read the progress stream while the main thread waits for completion.
+
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
 use std::sync::atomic::{AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::Arc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-/// Sentinel for "duration not yet known" in AtomicU64 (f64 bits).
-const NONE_DURATION_BITS: u64 = u64::MAX;
-
+use parking_lot::Mutex;
 use tauri::Emitter;
 
 use crate::error::AppError;
 use super::discovery::get_ffmpeg_path;
 use super::progress::parse_ffmpeg_progress;
 
+/// Sentinel for "duration not yet known". AtomicU64 cannot hold Option<f64>,
+/// so we encode duration as f64 bits; u64::MAX means "not yet known".
+const NONE_DURATION_BITS: u64 = u64::MAX;
+
 /// Minimum interval between progress emits to reduce IPC and React re-renders.
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(150);
 
-static ACTIVE_PROCESSES: Mutex<Option<Child>> = Mutex::new(None);
+/// Single active FFmpeg process. Only one transcode/preview at a time.
+static ACTIVE_FFMPEG_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 
-fn read_stream<R: std::io::Read + Send + 'static>(
-    reader: R,
+/// Configuration for FFmpeg output stream reading (stdout or stderr).
+struct ReadStreamConfig {
     collect_stderr: Option<Arc<Mutex<String>>>,
     duration: Arc<AtomicU64>,
     app: Option<tauri::AppHandle>,
     window_label: Option<String>,
     progress_collector: Option<Arc<Mutex<Vec<f64>>>>,
+}
+
+fn read_stream<R: std::io::Read + Send + 'static>(
+    reader: R,
+    config: ReadStreamConfig,
 ) -> thread::JoinHandle<()> {
     thread::spawn(move || {
         let load_duration = || {
-            let bits = duration.load(Ordering::Relaxed);
+            let bits = config.duration.load(Ordering::Relaxed);
             if bits == NONE_DURATION_BITS {
                 None
             } else {
@@ -45,24 +59,22 @@ fn read_stream<R: std::io::Read + Send + 'static>(
             let line = std::str::from_utf8(&line_buf)
                 .unwrap_or("")
                 .trim_end_matches(|c| c == '\n' || c == '\r');
-            if let Some(ref buf) = collect_stderr {
-                if let Ok(mut guard) = buf.lock() {
-                    guard.push_str(line);
-                    guard.push('\n');
-                }
+            if let Some(ref buf) = config.collect_stderr {
+                let mut guard = buf.lock();
+                guard.push_str(line);
+                guard.push('\n');
             }
             let (progress, d) = parse_ffmpeg_progress(line, current_duration);
             if let Some(new_dur) = d {
                 current_duration = Some(new_dur);
-                duration.store(new_dur.to_bits(), Ordering::Relaxed);
+                config.duration.store(new_dur.to_bits(), Ordering::Relaxed);
             }
             if let Some(p) = progress {
-                if let Some(ref collector) = progress_collector {
-                    if let Ok(mut guard) = collector.lock() {
-                        guard.push(p);
-                    }
+                if let Some(ref collector) = config.progress_collector {
+                    let mut guard = collector.lock();
+                    guard.push(p);
                 }
-                if let Some(handle) = app.as_ref() {
+                if let Some(handle) = config.app.as_ref() {
                     let now = Instant::now();
                     let should_emit = now.duration_since(last_emit) >= PROGRESS_EMIT_INTERVAL
                         || (p - last_progress).abs() >= 0.01
@@ -70,7 +82,7 @@ fn read_stream<R: std::io::Read + Send + 'static>(
                     if should_emit {
                         last_emit = now;
                         last_progress = p;
-                        let _ = if let Some(ref lbl) = window_label {
+                        let _ = if let Some(ref lbl) = config.window_label {
                             handle.emit_to(lbl, "ffmpeg-progress", p)
                         } else {
                             handle.emit("ffmpeg-progress", p)
@@ -119,7 +131,7 @@ pub fn run_ffmpeg_blocking(
     let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
 
     {
-        let mut guard = ACTIVE_PROCESSES.lock().unwrap_or_else(|e| e.into_inner());
+        let mut guard = ACTIVE_FFMPEG_PROCESS.lock();
         *guard = Some(child);
     }
 
@@ -136,25 +148,29 @@ pub fn run_ffmpeg_blocking(
 
     let stdout_handle = read_stream(
         stdout,
-        None,
-        Arc::clone(&duration),
-        app_stdout,
-        label.clone(),
-        progress_collector,
+        ReadStreamConfig {
+            collect_stderr: None,
+            duration: Arc::clone(&duration),
+            app: app_stdout,
+            window_label: label.clone(),
+            progress_collector,
+        },
     );
     let stderr_handle = read_stream(
         stderr,
-        Some(Arc::clone(&stderr_buffer)),
-        Arc::clone(&duration),
-        app_stderr,
-        label,
-        None,
+        ReadStreamConfig {
+            collect_stderr: Some(Arc::clone(&stderr_buffer)),
+            duration: Arc::clone(&duration),
+            app: app_stderr,
+            window_label: label,
+            progress_collector: None,
+        },
     );
 
     let _ = stdout_handle.join();
     let _ = stderr_handle.join();
 
-    let mut guard = ACTIVE_PROCESSES.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = ACTIVE_FFMPEG_PROCESS.lock();
     let child = guard.take();
     drop(guard);
 
@@ -165,14 +181,11 @@ pub fn run_ffmpeg_blocking(
                 target: "tiny_vid::ffmpeg::runner",
                 "FFmpeg process was aborted (terminated externally)"
             );
-            return Err(AppError::Aborted);
+            return Err(AppError::aborted());
         }
     };
 
-    let stderr_str = stderr_buffer
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-        .clone();
+    let stderr_str = stderr_buffer.lock().clone();
 
     if status.success() {
         log::info!(
@@ -202,7 +215,7 @@ pub fn run_ffmpeg_blocking(
 }
 
 pub fn terminate_all_ffmpeg() {
-    let mut guard = ACTIVE_PROCESSES.lock().unwrap_or_else(|e| e.into_inner());
+    let mut guard = ACTIVE_FFMPEG_PROCESS.lock();
     if let Some(mut child) = guard.take() {
         log::info!(
             target: "tiny_vid::ffmpeg::runner",

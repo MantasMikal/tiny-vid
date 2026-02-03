@@ -6,6 +6,136 @@ use std::sync::LazyLock;
 use crate::error::AppError;
 use super::TranscodeOptions;
 
+/// Codec variant for FFmpeg argument construction. Each variant handles its own quality, preset, and tags.
+#[derive(Clone, Copy)]
+enum CodecKind {
+    X264,
+    X265,
+    VP9,
+    SvtAv1,
+    VideoToolboxH264,
+    VideoToolboxHevc,
+}
+
+impl CodecKind {
+    fn from_codec_str(codec: &str) -> Self {
+        let lower = codec.to_lowercase();
+        if lower.contains("hevc_videotoolbox") {
+            CodecKind::VideoToolboxHevc
+        } else if lower.contains("h264_videotoolbox") {
+            CodecKind::VideoToolboxH264
+        } else if lower.contains("vp9") || lower.contains("vpx") {
+            CodecKind::VP9
+        } else if lower.contains("svtav1") {
+            CodecKind::SvtAv1
+        } else if (lower.contains("x265") || lower.contains("hevc")) && !lower.contains("videotoolbox")
+        {
+            CodecKind::X265
+        } else {
+            CodecKind::X264
+        }
+    }
+
+    fn ffmpeg_name(&self) -> &'static str {
+        match self {
+            CodecKind::X264 => "libx264",
+            CodecKind::X265 => "libx265",
+            CodecKind::VP9 => "libvpx-vp9",
+            CodecKind::SvtAv1 => "libsvtav1",
+            CodecKind::VideoToolboxH264 => "h264_videotoolbox",
+            CodecKind::VideoToolboxHevc => "hevc_videotoolbox",
+        }
+    }
+
+    fn supports_tune(&self) -> bool {
+        matches!(self, CodecKind::X264)
+    }
+
+    /// Build codec-specific args: preset/speed, quality/crf, tags, etc.
+    fn build_codec_args(
+        &self,
+        quality: u32,
+        preset: &str,
+        tune: Option<&str>,
+        max_bitrate: Option<u32>,
+    ) -> Vec<String> {
+        let mut args = Vec::new();
+
+        match self {
+            CodecKind::VP9 => {
+                let (deadline, cpu_used) = VP9_CPU_USED_MAP
+                    .get(preset)
+                    .copied()
+                    .unwrap_or(("good", "2"));
+                args.extend(["-deadline".to_string(), deadline.to_string()]);
+                args.extend(["-cpu-used".to_string(), cpu_used.to_string()]);
+                args.extend(["-row-mt".to_string(), "1".to_string()]);
+                args.extend(["-b:v".to_string(), "0".to_string()]);
+            }
+            CodecKind::SvtAv1 => {
+                let preset_val = SVTAV1_PRESET_MAP.get(preset).unwrap_or(&"8");
+                args.extend(["-preset".to_string(), preset_val.to_string()]);
+                args.extend(["-pix_fmt".to_string(), "yuv420p".to_string()]);
+                args.extend(["-tag:v".to_string(), "av01".to_string()]);
+            }
+            CodecKind::VideoToolboxH264 | CodecKind::VideoToolboxHevc => {
+                args.extend(["-q:v".to_string(), quality.min(100).to_string()]);
+                if let Some(max_br) = max_bitrate {
+                    args.extend([
+                        "-maxrate".to_string(),
+                        format!("{}k", max_br),
+                        "-bufsize".to_string(),
+                        format!("{}k", max_br * 2),
+                    ]);
+                }
+                if matches!(self, CodecKind::VideoToolboxHevc) {
+                    args.extend(["-tag:v".to_string(), "hvc1".to_string()]);
+                }
+            }
+            CodecKind::X264 | CodecKind::X265 => {
+                args.extend(["-preset".to_string(), preset.to_string()]);
+                if matches!(self, CodecKind::X265) {
+                    args.extend(["-tag:v".to_string(), "hvc1".to_string()]);
+                }
+            }
+        }
+
+        if self.supports_tune() {
+            if let Some(tune_val) = tune {
+                if !tune_val.is_empty() && tune_val != "none" {
+                    args.extend(["-tune".to_string(), tune_val.to_string()]);
+                }
+            }
+        }
+
+        match self {
+            CodecKind::X264 | CodecKind::X265 | CodecKind::VP9 | CodecKind::SvtAv1 => {
+                let crf = match self {
+                    CodecKind::X265 => map_linear_crf(quality, 28, 51),
+                    CodecKind::SvtAv1 => map_linear_crf(quality, 24, 63),
+                    CodecKind::VP9 => map_linear_crf(quality, 20, 63),
+                    _ => map_linear_crf(quality, 23, 51),
+                };
+                if let Some(max_br) = max_bitrate {
+                    args.extend([
+                        "-crf".to_string(),
+                        crf.to_string(),
+                        "-maxrate".to_string(),
+                        format!("{}k", max_br),
+                        "-bufsize".to_string(),
+                        format!("{}k", max_br * 2),
+                    ]);
+                } else {
+                    args.extend(["-crf".to_string(), crf.to_string()]);
+                }
+            }
+            _ => {}
+        }
+
+        args
+    }
+}
+
 /// libsvtav1 preset: 0-13 (higher = faster). Maps x264-style preset names.
 static SVTAV1_PRESET_MAP: LazyLock<HashMap<&'static str, &'static str>> = LazyLock::new(|| {
     [
@@ -43,41 +173,37 @@ fn map_linear_crf(quality: u32, high_crf: i32, low_crf: i32) -> i32 {
     (low_crf as f64 - q * (low_crf - high_crf) as f64).round() as i32
 }
 
-fn get_quality(quality: u32, codec_lower: &str) -> i32 {
-    if codec_lower.contains("x265") || codec_lower.contains("hevc") {
-        return map_linear_crf(quality, 28, 51);
-    }
-    if codec_lower.contains("svtav1") {
-        return map_linear_crf(quality, 24, 63);
-    }
-    if codec_lower.contains("vp9") || codec_lower.contains("vpx") {
-        return map_linear_crf(quality, 20, 63);
-    }
-    map_linear_crf(quality, 23, 51)
+/// Base args shared by FFmpeg invocations: nostdin, threads, thread_queue_size.
+fn ffmpeg_base_args() -> Vec<String> {
+    vec![
+        "-nostdin".to_string(),
+        "-threads".to_string(),
+        "0".to_string(),
+        "-thread_queue_size".to_string(),
+        "512".to_string(),
+    ]
 }
 
-/// VideoToolbox uses -q:v 0-100 (100=best, 0=worst). Pass quality through directly.
-fn get_quality_vt(quality: u32) -> u32 {
-    quality.min(100)
-}
-
-fn get_codec_preset(preset: &str, codec_lower: &str) -> String {
-    if codec_lower.contains("svtav1") {
-        return SVTAV1_PRESET_MAP.get(preset).unwrap_or(&"8").to_string();
-    }
-    preset.to_string()
-}
-
-/// For VP9: returns (deadline, cpu_used). For other codecs returns None.
-fn get_vp9_speed(preset: &str, codec_lower: &str) -> Option<(&'static str, &'static str)> {
-    if codec_lower.contains("vp9") || codec_lower.contains("vpx") {
-        VP9_CPU_USED_MAP
-            .get(preset)
-            .copied()
-            .or(Some(("good", "2")))
-    } else {
-        None
-    }
+/// Build args for segment extraction (-ss -t -i -c copy). Used for preview extraction.
+pub fn build_extract_args(
+    input_path: &str,
+    start_secs: f64,
+    duration_secs: f64,
+    output_path: &str,
+) -> Vec<String> {
+    let mut args = ffmpeg_base_args();
+    args.extend([
+        "-ss".to_string(),
+        start_secs.to_string(),
+        "-t".to_string(),
+        duration_secs.to_string(),
+        "-i".to_string(),
+        input_path.to_string(),
+        "-c".to_string(),
+        "copy".to_string(),
+        output_path.to_string(),
+    ]);
+    args
 }
 
 pub fn build_ffmpeg_command(
@@ -85,11 +211,7 @@ pub fn build_ffmpeg_command(
     output_path: &str,
     options: &TranscodeOptions,
 ) -> Result<Vec<String>, AppError> {
-    let output_format = options
-        .output_format
-        .as_deref()
-        .unwrap_or("mp4")
-        .to_lowercase();
+    let output_format = options.effective_output_format();
     #[cfg(feature = "lgpl-macos")]
     {
         if output_format != "mp4" {
@@ -99,51 +221,34 @@ pub fn build_ffmpeg_command(
         }
     }
 
-    let codec = options
-        .codec
-        .as_deref()
-        .unwrap_or("libx264")
-        .to_string();
-    let codec_lower = codec.to_lowercase();
-    let quality = options.quality.unwrap_or(75);
+    let codec_str = options.effective_codec().to_string();
+    let codec_kind = CodecKind::from_codec_str(&codec_str);
+    let quality = options.effective_quality();
     let max_bitrate = options.max_bitrate;
-    let scale = options.scale.unwrap_or(1.0);
-    let fps = options.fps.unwrap_or(30);
-    let remove_audio = options.remove_audio.unwrap_or(false);
-    let preset = options.preset.as_deref().unwrap_or("fast");
-    let tune = options.tune.as_deref();
-
-    let is_vt =
-        codec_lower.contains("h264_videotoolbox") || codec_lower.contains("hevc_videotoolbox");
-    let crf = get_quality(quality, &codec_lower);
-    let qv_vt = get_quality_vt(quality);
-    let codec_preset = get_codec_preset(preset, &codec_lower);
-    let vp9_speed = get_vp9_speed(preset, &codec_lower);
-    let is_vp9 = vp9_speed.is_some();
+    let scale = options.effective_scale();
+    let fps = options.effective_fps();
+    let remove_audio = options.effective_remove_audio();
+    let preset = options.effective_preset();
+    let tune = options.effective_tune();
 
     log::debug!(
         target: "tiny_vid::ffmpeg::builder",
-        "Building FFmpeg command: codec={}, CRF={}, preset={}, input={} -> output={}",
-        codec_lower,
-        crf,
-        codec_preset,
+        "Building FFmpeg command: codec={}, preset={}, input={} -> output={}",
+        codec_kind.ffmpeg_name(),
+        preset,
         input_path,
         output_path
     );
 
-    let mut args = vec![
-        "-nostdin".to_string(),
-        "-threads".to_string(),
-        "0".to_string(),
-        "-thread_queue_size".to_string(),
-        "512".to_string(),
+    let mut args = ffmpeg_base_args();
+    args.extend([
         "-progress".to_string(),
         "pipe:1".to_string(),
         "-i".to_string(),
         input_path.to_string(),
         "-c:v".to_string(),
-        codec,
-    ];
+        codec_kind.ffmpeg_name().to_string(),
+    ]);
 
     let is_webm = output_format == "webm";
 
@@ -170,67 +275,11 @@ pub fn build_ffmpeg_command(
         args.extend(["-vf".to_string(), scale_filter]);
     }
 
-    if is_vp9 {
-        let (deadline, cpu_used) = vp9_speed.unwrap();
-        args.extend(["-deadline".to_string(), deadline.to_string()]);
-        args.extend(["-cpu-used".to_string(), cpu_used.to_string()]);
-        args.extend(["-row-mt".to_string(), "1".to_string()]);
-    } else if !is_vt {
-        args.extend(["-preset".to_string(), codec_preset]);
-    }
+    args.extend(codec_kind.build_codec_args(quality, preset, tune, max_bitrate));
+
     args.extend(["-r".to_string(), fps.to_string()]);
     if !is_webm {
         args.extend(["-movflags".to_string(), "+faststart".to_string()]);
-    }
-
-    if codec_lower.contains("svtav1") {
-        args.extend(["-pix_fmt".to_string(), "yuv420p".to_string()]);
-        args.extend(["-tag:v".to_string(), "av01".to_string()]);
-    }
-    if codec_lower.contains("x265")
-        || (codec_lower.contains("hevc") && !codec_lower.contains("videotoolbox"))
-    {
-        args.extend(["-tag:v".to_string(), "hvc1".to_string()]);
-    }
-    if codec_lower.contains("hevc_videotoolbox") {
-        args.extend(["-tag:v".to_string(), "hvc1".to_string()]);
-    }
-
-    if let Some(tune_val) = tune {
-        if !tune_val.is_empty()
-            && tune_val != "none"
-            && !codec_lower.contains("svtav1")
-            && !is_vp9
-            && !is_vt
-        {
-            args.extend(["-tune".to_string(), tune_val.to_string()]);
-        }
-    }
-
-    if is_vp9 {
-        args.extend(["-b:v".to_string(), "0".to_string()]);
-    }
-    if is_vt {
-        args.extend(["-q:v".to_string(), qv_vt.to_string()]);
-        if let Some(max_br) = max_bitrate {
-            args.extend([
-                "-maxrate".to_string(),
-                format!("{}k", max_br),
-                "-bufsize".to_string(),
-                format!("{}k", max_br * 2),
-            ]);
-        }
-    } else if let Some(max_br) = max_bitrate {
-        args.extend([
-            "-crf".to_string(),
-            crf.to_string(),
-            "-maxrate".to_string(),
-            format!("{}k", max_br),
-            "-bufsize".to_string(),
-            format!("{}k", max_br * 2),
-        ]);
-    } else {
-        args.extend(["-crf".to_string(), crf.to_string()]);
     }
 
     args.push(output_path.to_string());
@@ -243,18 +292,14 @@ pub fn format_args_for_display_multiline(args: &[String]) -> String {
         return String::new();
     }
     let mut lines = Vec::new();
-    let mut i = 0;
-    while i < args.len() {
-        let arg = &args[i];
+    let mut iter = args.iter().peekable();
+    while let Some(arg) = iter.next() {
         let line = if arg.starts_with('-')
-            && i + 1 < args.len()
-            && !args[i + 1].starts_with('-')
+            && iter.peek().is_some_and(|next| !next.starts_with('-'))
         {
-            let value = &args[i + 1];
-            i += 2;
+            let value = iter.next().expect("peeked value exists");
             format!("  {} {}", arg, value)
         } else {
-            i += 1;
             format!("  {}", arg)
         };
         lines.push(line);

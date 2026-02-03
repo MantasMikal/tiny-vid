@@ -6,12 +6,33 @@
 //! `cargo test -- --ignored`.
 
 use std::path::{Path, PathBuf};
+
+use crate::ffmpeg::TranscodeOptions;
+
+/// Build TranscodeOptions with overrides. Use in integration tests.
+pub fn opts_with(overrides: impl FnOnce(&mut TranscodeOptions)) -> TranscodeOptions {
+    let mut o = TranscodeOptions::default();
+    overrides(&mut o);
+    o
+}
+
+/// Preview options for integration tests. Preset varies by lgpl-macos feature.
+pub fn preview_options(preview_duration: u32) -> TranscodeOptions {
+    opts_with(|o| {
+        o.codec = Some(if cfg!(feature = "lgpl-macos") {
+            "h264_videotoolbox".into()
+        } else {
+            "libx264".into()
+        });
+        o.remove_audio = Some(true);
+        o.preset = Some("ultrafast".into());
+        o.preview_duration = Some(preview_duration);
+    })
+}
 use std::process::Command;
 
-use crate::{
-    cleanup_temp_file, ffmpeg_terminate, get_build_variant, get_file_size, get_pending_opened_files,
-    get_video_metadata, move_compressed_file, AppState,
-};
+use crate::commands;
+use crate::AppState;
 use tauri::ipc::{CallbackFn, InvokeBody};
 use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
 use tauri::webview::InvokeRequest;
@@ -95,12 +116,12 @@ pub fn create_test_video(
 pub fn create_test_app() -> tauri::App<tauri::test::MockRuntime> {
     mock_builder()
         .invoke_handler(tauri::generate_handler![
-            get_file_size,
-            get_video_metadata,
-            get_build_variant,
-            ffmpeg_terminate,
-            move_compressed_file,
-            cleanup_temp_file,
+            commands::get_file_size,
+            commands::get_video_metadata,
+            commands::get_build_variant,
+            commands::ffmpeg_terminate,
+            commands::move_compressed_file,
+            commands::cleanup_temp_file,
         ])
         .build(mock_context(noop_assets()))
         .expect("failed to build test app")
@@ -118,13 +139,13 @@ pub fn create_test_app_with_file_assoc(
     mock_builder()
         .manage(state)
         .invoke_handler(tauri::generate_handler![
-            get_file_size,
-            get_video_metadata,
-            get_build_variant,
-            ffmpeg_terminate,
-            move_compressed_file,
-            cleanup_temp_file,
-            get_pending_opened_files,
+            commands::get_file_size,
+            commands::get_video_metadata,
+            commands::get_build_variant,
+            commands::ffmpeg_terminate,
+            commands::move_compressed_file,
+            commands::cleanup_temp_file,
+            commands::get_pending_opened_files,
         ])
         .build(mock_context(noop_assets()))
         .expect("failed to build test app")

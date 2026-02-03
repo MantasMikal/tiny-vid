@@ -38,37 +38,36 @@ fn known_exit_code_summary(code: i32) -> Option<String> {
     }
 }
 
-/// For unknown codes, combine exit code with first line of stderr when available.
-fn summary_for_unknown_code(code: i32, stderr: &str) -> String {
-    let base = format!("FFmpeg failed (exit code {}).", code);
-    let first = stderr
-        .lines()
-        .find(|l| !l.trim().is_empty())
-        .map(|l| l.trim());
-    match first {
-        Some(line) if !line.is_empty() => {
-            let hint = if line.len() > 80 {
-                format!("{}…", &line[..77])
-            } else {
-                line.to_string()
-            };
-            format!("{} {}", base, hint)
-        }
-        _ => base,
-    }
-}
+/// Extract first non-empty line from stderr, truncate to max_len bytes (adding "…" if truncated).
+const ELLIPSIS: &str = "…";
 
-fn fallback_summary(stderr: &str) -> String {
+fn first_line_truncated(stderr: &str, max_len: usize) -> String {
     let first = stderr
         .lines()
         .find(|l| !l.trim().is_empty())
         .map(|l| l.trim())
         .unwrap_or(stderr);
-    if first.len() > 120 {
-        format!("{}…", &first[..117])
-    } else {
+    let max_chars = max_len.saturating_sub(ELLIPSIS.len());
+    if first.len() <= max_len {
         first.to_string()
+    } else {
+        format!("{}{}", &first[..max_chars], ELLIPSIS)
     }
+}
+
+/// For unknown codes, combine exit code with first line of stderr when available.
+fn summary_for_unknown_code(code: i32, stderr: &str) -> String {
+    let base = format!("FFmpeg failed (exit code {}).", code);
+    let first = first_line_truncated(stderr, 80);
+    if first.is_empty() {
+        base
+    } else {
+        format!("{} {}", base, first)
+    }
+}
+
+fn fallback_summary(stderr: &str) -> String {
+    first_line_truncated(stderr, 120)
 }
 
 #[cfg(test)]

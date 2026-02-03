@@ -42,30 +42,22 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
         AppError::from(format!("Failed to parse ffprobe JSON: {}", e))
     })?;
 
-    let (duration, size) = output.format.as_ref().map_or((0.0, 0u64), |f| {
-        let duration = f
-            .duration
-            .as_ref()
-            .and_then(|s| s.parse::<f64>().ok())
-            .unwrap_or(0.0);
-        let size = f
-            .size
-            .as_ref()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(0);
-        (duration, size)
-    });
+    let format = output.format.as_ref();
+    let duration = format
+        .and_then(|f| f.duration.as_ref())
+        .and_then(|s| s.parse::<f64>().ok())
+        .unwrap_or(0.0);
+    let size = format
+        .and_then(|f| f.size.as_ref())
+        .and_then(|s| s.parse::<u64>().ok())
+        .unwrap_or(0);
 
-    let (width, height) = output
+    let video_stream = output
         .streams
         .as_ref()
-        .and_then(|streams| {
-            streams.iter().find(|s| {
-                s.codec_type.as_deref() == Some("video")
-            })
-        })
-        .map(|s| (s.width.unwrap_or(0), s.height.unwrap_or(0)))
-        .unwrap_or((0, 0));
+        .and_then(|streams| streams.iter().find(|s| s.codec_type.as_deref() == Some("video")));
+    let width = video_stream.and_then(|s| s.width).unwrap_or(0);
+    let height = video_stream.and_then(|s| s.height).unwrap_or(0);
 
     Ok(VideoMetadata {
         duration,
