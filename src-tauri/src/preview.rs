@@ -1,16 +1,16 @@
 //! Preview generation for video compression.
 
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::error::AppError;
 use crate::ffmpeg::{
     build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
-    get_cached_preview, get_cached_segments, path_to_string, run_ffmpeg_blocking,
+    file_signature, get_cached_preview, get_cached_segments, path_to_string, run_ffmpeg_blocking,
     set_cached_preview, store_preview_paths_for_cleanup,
-    TempFileManager, TranscodeOptions,
+    FileSignature, TempFileManager, TranscodeOptions,
 };
-use crate::ffmpeg::ffprobe::get_video_metadata_impl;
+use crate::ffmpeg::ffprobe::{get_video_metadata_impl, VideoMetadata};
 use crate::ffmpeg::parse_ffmpeg_error;
 use tauri::Emitter;
 
@@ -33,15 +33,7 @@ pub(crate) async fn run_ffmpeg_step(
     .await;
 
     match result {
-        Ok(Ok(())) => {
-            log::trace!(
-                target: "tiny_vid::preview",
-                "emitting ffmpeg-complete to window={}",
-                window_label_owned
-            );
-            let _ = app.emit_to(&window_label_owned, "ffmpeg-complete", ());
-            Ok(())
-        }
+        Ok(Ok(())) => Ok(()),
         Ok(Err(e)) => {
             log::error!(target: "tiny_vid::preview", "ffmpeg-error: {}", e);
             let payload = match &e {
@@ -61,22 +53,71 @@ pub(crate) async fn run_ffmpeg_step(
     }
 }
 
+struct TempCleanup {
+    paths: Vec<PathBuf>,
+    keep: bool,
+}
+
+impl TempCleanup {
+    fn new() -> Self {
+        Self {
+            paths: Vec::new(),
+            keep: false,
+        }
+    }
+
+    fn add(&mut self, path: PathBuf) {
+        self.paths.push(path);
+    }
+
+    fn keep(mut self) {
+        self.keep = true;
+    }
+}
+
+impl Drop for TempCleanup {
+    fn drop(&mut self) {
+        if self.keep {
+            return;
+        }
+        for path in &self.paths {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+struct SegmentSet {
+    paths: Vec<PathBuf>,
+    created: bool,
+}
+
+async fn get_video_metadata_async(path: &Path) -> Result<VideoMetadata, AppError> {
+    let path = path.to_path_buf();
+    tauri::async_runtime::spawn_blocking(move || get_video_metadata_impl(&path))
+        .await
+        .map_err(|e| AppError::from(e.to_string()))?
+}
+
 /// Extracts preview segments from input, or returns cached segment paths if available.
 async fn extract_segments_or_use_cache(
     input_str: &str,
     preview_duration_u32: u32,
     segments: &[(f64, f64)],
     temp: &TempFileManager,
+    file_signature: Option<&FileSignature>,
     emit: Option<(&tauri::AppHandle, &str)>,
-) -> Result<Vec<PathBuf>, AppError> {
-    match get_cached_segments(input_str, preview_duration_u32) {
+) -> Result<SegmentSet, AppError> {
+    match get_cached_segments(input_str, preview_duration_u32, file_signature) {
         Some(cached) => {
             log::info!(
                 target: "tiny_vid::preview",
                 "extract_segments_or_use_cache: cache hit, reusing {} extracted segment(s)",
                 cached.len()
             );
-            Ok(cached)
+            Ok(SegmentSet {
+                paths: cached,
+                created: false,
+            })
         }
         None => {
             let paths: Vec<PathBuf> = segments
@@ -101,7 +142,10 @@ async fn extract_segments_or_use_cache(
                     }
                 }
             }
-            Ok(paths)
+            Ok(SegmentSet {
+                paths,
+                created: true,
+            })
         }
     }
 }
@@ -113,9 +157,11 @@ async fn transcode_single_segment(
     segment_paths: &[PathBuf],
     output_path: &PathBuf,
     options: &TranscodeOptions,
+    _cleanup: &mut TempCleanup,
     emit: Option<(&tauri::AppHandle, &str)>,
 ) -> Result<TranscodeResult, AppError> {
-    let output_duration = get_video_metadata_impl(&segment_paths[0])
+    let output_duration = get_video_metadata_async(&segment_paths[0])
+        .await
         .ok()
         .filter(|m| m.duration > 0.0)
         .map(|m| m.duration);
@@ -142,6 +188,8 @@ async fn transcode_single_segment(
     let original_size = fs::metadata(&segment_paths[0])?.len();
     let ratio = compressed_size as f64 / original_size as f64;
     let estimated_size = (input_size as f64 * ratio) as u64;
+    let max_reasonable = input_size.saturating_mul(2);
+    let estimated_size = estimated_size.min(max_reasonable);
 
     Ok(TranscodeResult {
         original_path: path_to_string(&segment_paths[0]),
@@ -157,6 +205,7 @@ async fn transcode_multi_segment(
     segment_paths: &[PathBuf],
     output_path: &PathBuf,
     options: &TranscodeOptions,
+    cleanup: &mut TempCleanup,
     emit: Option<(&tauri::AppHandle, &str)>,
 ) -> Result<TranscodeResult, AppError> {
     let ext = options.effective_output_format();
@@ -167,8 +216,12 @@ async fn transcode_multi_segment(
                 .map_err(AppError::from)
         })
         .collect::<Result<Vec<_>, _>>()?;
+    for path in &output_paths {
+        cleanup.add(path.clone());
+    }
 
-    let first_segment_duration = get_video_metadata_impl(&segment_paths[0])
+    let first_segment_duration = get_video_metadata_async(&segment_paths[0])
+        .await
         .ok()
         .filter(|m| m.duration > 0.0)
         .map(|m| m.duration);
@@ -198,14 +251,22 @@ async fn transcode_multi_segment(
     }
 
     let input_size = fs::metadata(input_path)?.len();
-    let mut ratio_sum = 0.0;
+    let mut total_orig: u64 = 0;
+    let mut total_comp: u64 = 0;
     for (orig, compressed) in segment_paths.iter().zip(output_paths.iter()) {
         let orig_size = fs::metadata(orig)?.len();
         let comp_size = fs::metadata(compressed)?.len();
-        ratio_sum += comp_size as f64 / orig_size as f64;
+        total_orig = total_orig.saturating_add(orig_size);
+        total_comp = total_comp.saturating_add(comp_size);
     }
-    let ratio_avg = ratio_sum / segment_paths.len() as f64;
-    let estimated_size = (input_size as f64 * ratio_avg) as u64;
+    let ratio = if total_orig > 0 {
+        total_comp as f64 / total_orig as f64
+    } else {
+        0.0
+    };
+    let estimated_size = (input_size as f64 * ratio) as u64;
+    let max_reasonable = input_size.saturating_mul(2);
+    let estimated_size = estimated_size.min(max_reasonable);
 
     fs::copy(&output_paths[0], output_path)?;
 
@@ -227,12 +288,29 @@ async fn transcode_segments_and_estimate(
     output_path: &PathBuf,
     options: &TranscodeOptions,
     is_multi_segment: bool,
+    cleanup: &mut TempCleanup,
     emit: Option<(&tauri::AppHandle, &str)>,
 ) -> Result<TranscodeResult, AppError> {
     if is_multi_segment {
-        transcode_multi_segment(input_path, segment_paths, output_path, options, emit).await
+        transcode_multi_segment(
+            input_path,
+            segment_paths,
+            output_path,
+            options,
+            cleanup,
+            emit,
+        )
+        .await
     } else {
-        transcode_single_segment(input_path, segment_paths, output_path, options, emit).await
+        transcode_single_segment(
+            input_path,
+            segment_paths,
+            output_path,
+            options,
+            cleanup,
+            emit,
+        )
+        .await
     }
 }
 
@@ -298,6 +376,7 @@ pub(crate) async fn run_preview_core(
     let input_str = path_to_string(&input_path);
     let preview_duration_u32 = options.effective_preview_duration();
     let preview_duration = preview_duration_u32 as f64;
+    let file_sig = file_signature(&input_path);
 
     log::info!(
         target: "tiny_vid::preview",
@@ -306,15 +385,19 @@ pub(crate) async fn run_preview_core(
     );
 
     if let Some((original_path, compressed_path, estimated_size)) =
-        get_cached_preview(&input_str, preview_duration_u32, &options)
+        get_cached_preview(&input_str, preview_duration_u32, &options, file_sig.as_ref())
     {
         log::info!(
             target: "tiny_vid::preview",
             "run_preview_core: cache hit, reusing output"
         );
-        let start_offset_seconds = get_video_metadata_impl(&original_path)
+        let start_offset_seconds = get_video_metadata_async(&original_path)
+            .await
             .ok()
             .and_then(|m| m.start_time);
+        if let Some((app, label)) = emit.as_ref() {
+            let _ = app.emit_to(label, "ffmpeg-complete", ());
+        }
         return Ok(PreviewResult {
             original_path: path_to_string(&original_path),
             compressed_path: path_to_string(&compressed_path),
@@ -325,7 +408,7 @@ pub(crate) async fn run_preview_core(
 
     cleanup_previous_preview_paths(&input_str, preview_duration_u32);
 
-    let meta = get_video_metadata_impl(&input_path)?;
+    let meta = get_video_metadata_async(&input_path).await?;
     let video_duration = meta.duration;
     let segments = compute_preview_segments(video_duration, preview_duration);
     let is_multi_segment = segments.len() > 1;
@@ -337,38 +420,49 @@ pub(crate) async fn run_preview_core(
     let output_path = temp
         .create(&preview_suffix, None)
         .map_err(AppError::from)?;
+    let mut cleanup = TempCleanup::new();
+    cleanup.add(output_path.clone());
 
     let emit_ref = emit.as_ref().map(|(a, l)| (a, l.as_str()));
 
-    let segment_paths = extract_segments_or_use_cache(
+    let segment_set = extract_segments_or_use_cache(
         &input_str,
         preview_duration_u32,
         &segments,
         &temp,
+        file_sig.as_ref(),
         emit_ref,
     )
     .await?;
+    if segment_set.created {
+        for path in &segment_set.paths {
+            cleanup.add(path.clone());
+        }
+    }
 
     let transcode_result = transcode_segments_and_estimate(
         &input_path,
-        &segment_paths,
+        &segment_set.paths,
         &output_path,
         &options,
         is_multi_segment,
+        &mut cleanup,
         emit_ref,
     )
     .await?;
 
-    store_preview_paths_for_cleanup(&segment_paths, &transcode_result.paths_for_cleanup);
+    store_preview_paths_for_cleanup(&segment_set.paths, &transcode_result.paths_for_cleanup);
     set_cached_preview(
         input_str.clone(),
         preview_duration_u32,
         &options,
-        segment_paths.clone(),
+        segment_set.paths.clone(),
         output_path.clone(),
         transcode_result.estimated_size,
+        file_sig.as_ref(),
     );
-    let start_offset_seconds = get_video_metadata_impl(&segment_paths[0])
+    let start_offset_seconds = get_video_metadata_async(&segment_set.paths[0])
+        .await
         .ok()
         .and_then(|m| m.start_time);
     log::info!(
@@ -377,6 +471,10 @@ pub(crate) async fn run_preview_core(
         transcode_result.estimated_size,
         start_offset_seconds
     );
+    if let Some((app, label)) = emit.as_ref() {
+        let _ = app.emit_to(label, "ffmpeg-complete", ());
+    }
+    cleanup.keep();
     Ok(PreviewResult {
         original_path: transcode_result.original_path,
         compressed_path: transcode_result.compressed_path,

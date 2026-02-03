@@ -3,12 +3,14 @@
 use std::fs;
 use std::io;
 use std::path::PathBuf;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 use parking_lot::Mutex;
-use super::cache::get_cached_paths_to_keep;
+use super::cache::get_all_cached_paths;
 
 static PREVIOUS_PREVIEW_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static TRANSCODE_TEMP_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
+const TEMP_FILE_PREFIX: &str = "tiny-vid-";
 
 /// Set the current transcode temp path (for cleanup on exit or cancel).
 pub fn set_transcode_temp(path: Option<PathBuf>) {
@@ -30,15 +32,15 @@ pub fn cleanup_transcode_temp() {
 }
 
 /// Delete temp files from the previous preview. Call at the start of each new preview.
-/// Preserves extract-cache segments and transcode-cache outputs for the current (input, duration).
+/// Preserves any paths that are still referenced by the preview cache.
 pub fn cleanup_previous_preview_paths(
-    new_input_path: &str,
-    new_preview_duration: u32,
+    _new_input_path: &str,
+    _new_preview_duration: u32,
 ) {
     let mut guard = PREVIOUS_PREVIEW_PATHS.lock();
     let paths: Vec<_> = guard.drain(..).collect();
 
-    let paths_to_keep = get_cached_paths_to_keep(new_input_path, new_preview_duration);
+    let paths_to_keep = get_all_cached_paths();
 
     for path in &paths {
         if paths_to_keep.iter().any(|keep| keep == path) {
@@ -97,12 +99,14 @@ fn random_alphanumeric_suffix(len: usize) -> String {
 impl TempFileManager {
     pub fn create(&self, suffix: &str, content: Option<&[u8]>) -> io::Result<PathBuf> {
         let tmp = std::env::temp_dir();
+        let timestamp_ms = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("system time before UNIX_EPOCH")
+            .as_millis();
         let name = format!(
-            "ffmpeg-{}-{}-{}",
-            std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .expect("system time before UNIX_EPOCH")
-                .as_millis(),
+            "{}{}-{}-{}",
+            TEMP_FILE_PREFIX,
+            timestamp_ms,
             random_alphanumeric_suffix(9),
             suffix
         );
@@ -118,6 +122,57 @@ impl TempFileManager {
         );
         Ok(path)
     }
+}
+
+/// Best-effort cleanup of old temp files on startup.
+/// Deletes files matching `tiny-vid-{timestamp}-...` older than `max_age`.
+pub fn cleanup_old_temp_files(max_age: Duration) {
+    let tmp = std::env::temp_dir();
+    let now_ms = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_millis();
+    let max_age_ms = max_age.as_millis();
+
+    let entries = match fs::read_dir(&tmp) {
+        Ok(entries) => entries,
+        Err(e) => {
+            log::debug!(
+                target: "tiny_vid::ffmpeg::temp",
+                "cleanup_old_temp_files: failed to read temp dir {}: {}",
+                tmp.display(),
+                e
+            );
+            return;
+        }
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        let file_name = match path.file_name().and_then(|n| n.to_str()) {
+            Some(name) => name,
+            None => continue,
+        };
+        let Some(ts_ms) = parse_timestamp_from_name(file_name) else {
+            continue;
+        };
+        let age_ms = now_ms.saturating_sub(ts_ms);
+        if age_ms > max_age_ms {
+            log::trace!(
+                target: "tiny_vid::ffmpeg::temp",
+                "cleanup_old_temp_files: removing stale temp file {} (age_ms={})",
+                path.display(),
+                age_ms
+            );
+            let _ = fs::remove_file(&path);
+        }
+    }
+}
+
+fn parse_timestamp_from_name(name: &str) -> Option<u128> {
+    let rest = name.strip_prefix(TEMP_FILE_PREFIX)?;
+    let ts = rest.split('-').next()?;
+    ts.parse::<u128>().ok()
 }
 
 #[cfg(test)]

@@ -6,13 +6,38 @@
 
 use std::collections::{HashMap, VecDeque};
 use std::fs;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
+use std::time::UNIX_EPOCH;
 
 use parking_lot::Mutex;
 use super::TranscodeOptions;
 
 const PREVIEW_CACHE_MAX_ENTRIES: usize = 16;
+
+#[derive(Clone, Hash, Eq, PartialEq, Debug)]
+pub struct FileSignature {
+    size: u64,
+    modified_ms: u128,
+}
+
+pub fn file_signature(path: &Path) -> Option<FileSignature> {
+    let meta = fs::metadata(path).ok()?;
+    file_signature_from_metadata(&meta)
+}
+
+fn file_signature_from_metadata(meta: &fs::Metadata) -> Option<FileSignature> {
+    let size = meta.len();
+    let modified = meta
+        .modified()
+        .ok()
+        .and_then(|t| t.duration_since(UNIX_EPOCH).ok())
+        .map(|d| d.as_millis())?;
+    Some(FileSignature {
+        size,
+        modified_ms: modified,
+    })
+}
 
 /// Key for a full preview: (input_path, preview_duration, options_key).
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
@@ -20,6 +45,7 @@ struct PreviewCacheKey {
     input_path: String,
     preview_duration: u32,
     options_key: String,
+    file_signature: FileSignature,
 }
 
 /// Key for segment store: (input_path, preview_duration).
@@ -27,6 +53,7 @@ struct PreviewCacheKey {
 struct SegmentKey {
     input_path: String,
     preview_duration: u32,
+    file_signature: FileSignature,
 }
 
 /// Segment store entry with ref count. Segments are shared across transcodes with same (input, duration).
@@ -71,6 +98,7 @@ impl PreviewCache {
         let seg_key = SegmentKey {
             input_path: key.input_path,
             preview_duration: key.preview_duration,
+            file_signature: key.file_signature,
         };
         if let Some(seg) = self.segments.get_mut(&seg_key) {
             seg.ref_count = seg.ref_count.saturating_sub(1);
@@ -87,6 +115,24 @@ impl PreviewCache {
             }
         }
     }
+
+    fn drop_preview_entry(&mut self, key: PreviewCacheKey, entry: PreviewEntry) {
+        let _ = fs::remove_file(&entry.output_path);
+        let seg_key = SegmentKey {
+            input_path: key.input_path,
+            preview_duration: key.preview_duration,
+            file_signature: key.file_signature,
+        };
+        if let Some(seg) = self.segments.get_mut(&seg_key) {
+            seg.ref_count = seg.ref_count.saturating_sub(1);
+            if seg.ref_count == 0 {
+                for path in &seg.segment_paths {
+                    let _ = fs::remove_file(path);
+                }
+                self.segments.remove(&seg_key);
+            }
+        }
+    }
 }
 
 static PREVIEW_CACHE: OnceLock<Mutex<PreviewCache>> = OnceLock::new();
@@ -96,19 +142,25 @@ fn preview_cache() -> &'static Mutex<PreviewCache> {
 }
 
 /// Get cached segments for (input, duration). Used to reuse extraction when only options change.
-pub fn get_cached_segments(input_path: &str, preview_duration: u32) -> Option<Vec<PathBuf>> {
-    let guard = preview_cache().lock();
+pub fn get_cached_segments(
+    input_path: &str,
+    preview_duration: u32,
+    file_signature: Option<&FileSignature>,
+) -> Option<Vec<PathBuf>> {
+    let file_signature = file_signature?.clone();
+    let mut guard = preview_cache().lock();
     let key = SegmentKey {
         input_path: input_path.to_string(),
         preview_duration,
+        file_signature,
     };
-    guard.segments.get(&key).and_then(|e| {
-        if e.segment_paths.iter().all(|p| p.exists()) {
-            Some(e.segment_paths.clone())
-        } else {
-            None
-        }
-    })
+    let entry = guard.segments.get(&key)?;
+    if entry.segment_paths.iter().all(|p| p.exists()) {
+        Some(entry.segment_paths.clone())
+    } else {
+        guard.segments.remove(&key);
+        None
+    }
 }
 
 /// Get full cached preview. Returns (original_segment_path, compressed_path, estimated_size).
@@ -117,49 +169,55 @@ pub fn get_cached_preview(
     input_path: &str,
     preview_duration: u32,
     options: &TranscodeOptions,
+    file_signature: Option<&FileSignature>,
 ) -> Option<(PathBuf, PathBuf, u64)> {
+    let file_signature = file_signature?.clone();
     let options_key = options.options_cache_key();
     let key = PreviewCacheKey {
         input_path: input_path.to_string(),
         preview_duration,
         options_key: options_key.clone(),
+        file_signature,
     };
 
     let mut guard = preview_cache().lock();
     let idx = guard.lru.iter().position(|(k, _)| k == &key)?;
     let (k, entry) = guard.lru.remove(idx)?;
     if !entry.output_path.exists() {
+        guard.drop_preview_entry(k, entry);
         return None;
     }
 
     let seg_key = SegmentKey {
         input_path: key.input_path,
         preview_duration: key.preview_duration,
+        file_signature: key.file_signature,
     };
-    let first_segment = guard.segments.get(&seg_key)?.segment_paths.first()?.clone();
-    if !first_segment.exists() {
+    let Some(seg_entry) = guard.segments.get(&seg_key) else {
+        guard.drop_preview_entry(k, entry);
+        return None;
+    };
+    if !seg_entry.segment_paths.iter().all(|p| p.exists()) {
+        guard.drop_preview_entry(k, entry);
         return None;
     }
+    let first_segment = seg_entry.segment_paths.first()?.clone();
 
     let result = (first_segment, entry.output_path.clone(), entry.estimated_size);
     guard.lru.push_back((k, entry));
     Some(result)
 }
 
-/// Returns all cached paths (segments + outputs) for the given input and duration.
+/// Returns all cached paths (segments + outputs).
 /// Used by cleanup to preserve cached files.
-pub fn get_cached_paths_to_keep(input_path: &str, preview_duration: u32) -> Vec<PathBuf> {
+pub fn get_all_cached_paths() -> Vec<PathBuf> {
     let guard = preview_cache().lock();
-    let seg_key = SegmentKey {
-        input_path: input_path.to_string(),
-        preview_duration,
-    };
     let mut paths = Vec::new();
-    if let Some(seg) = guard.segments.get(&seg_key) {
+    for seg in guard.segments.values() {
         paths.extend(seg.segment_paths.iter().filter(|p| p.exists()).cloned());
     }
-    for (k, e) in &guard.lru {
-        if k.input_path == input_path && k.preview_duration == preview_duration && e.output_path.exists() {
+    for (_k, e) in &guard.lru {
+        if e.output_path.exists() {
             paths.push(e.output_path.clone());
         }
     }
@@ -174,16 +232,22 @@ pub fn set_cached_preview(
     segment_paths: Vec<PathBuf>,
     output_path: PathBuf,
     estimated_size: u64,
+    file_signature: Option<&FileSignature>,
 ) {
+    let Some(file_signature) = file_signature.cloned() else {
+        return;
+    };
     let options_key = options.options_cache_key();
     let key = PreviewCacheKey {
         input_path: input_path.clone(),
         preview_duration,
         options_key: options_key.clone(),
+        file_signature: file_signature.clone(),
     };
     let seg_key = SegmentKey {
         input_path: input_path.clone(),
         preview_duration,
+        file_signature,
     };
 
     let mut guard = preview_cache().lock();
@@ -199,6 +263,7 @@ pub fn set_cached_preview(
         let old_seg_key = SegmentKey {
             input_path: old_key.input_path,
             preview_duration: old_key.preview_duration,
+            file_signature: old_key.file_signature,
         };
         if let Some(seg) = guard.segments.get_mut(&old_seg_key) {
             seg.ref_count = seg.ref_count.saturating_sub(1);
@@ -291,6 +356,7 @@ mod tests {
         let input = std::env::temp_dir().join("lru_test_input.mp4");
         let _ = fs::write(&input, b"fake");
         let input_str = input.to_string_lossy().to_string();
+        let sig = file_signature(&input).unwrap();
 
         let temp = TempFileManager::default();
         let mut first_output: Option<PathBuf> = None;
@@ -309,6 +375,7 @@ mod tests {
                 vec![seg],
                 out,
                 1000,
+                Some(&sig),
             );
         }
 
@@ -320,12 +387,13 @@ mod tests {
 
     #[test]
     #[serial]
-    fn get_cached_paths_to_keep_returns_matching_paths() {
+    fn get_all_cached_paths_returns_matching_paths() {
         cleanup_preview_transcode_cache();
 
         let input = std::env::temp_dir().join("paths_test_input.mp4");
         let _ = fs::write(&input, b"fake");
         let input_str = input.to_string_lossy().to_string();
+        let sig = file_signature(&input).unwrap();
 
         let temp = TempFileManager::default();
         let seg = temp.create("paths-seg.mp4", Some(b"s")).unwrap();
@@ -337,16 +405,29 @@ mod tests {
         let mut opts2 = TranscodeOptions::default();
         opts2.preset = Some("p2".into());
 
-        set_cached_preview(input_str.clone(), 3, &opts1, vec![seg.clone()], path1.clone(), 100);
-        set_cached_preview(input_str.clone(), 3, &opts2, vec![seg.clone()], path2.clone(), 200);
+        set_cached_preview(
+            input_str.clone(),
+            3,
+            &opts1,
+            vec![seg.clone()],
+            path1.clone(),
+            100,
+            Some(&sig),
+        );
+        set_cached_preview(
+            input_str.clone(),
+            3,
+            &opts2,
+            vec![seg.clone()],
+            path2.clone(),
+            200,
+            Some(&sig),
+        );
 
-        let kept = get_cached_paths_to_keep(&input_str, 3);
+        let kept = get_all_cached_paths();
         assert!(kept.contains(&seg));
         assert!(kept.contains(&path1));
         assert!(kept.contains(&path2));
-
-        let kept_other = get_cached_paths_to_keep(&input_str, 5);
-        assert!(kept_other.is_empty());
 
         cleanup_preview_transcode_cache();
         let _ = fs::remove_file(&input);
@@ -360,6 +441,7 @@ mod tests {
         let input = std::env::temp_dir().join("preview_test_input.mp4");
         let _ = fs::write(&input, b"fake");
         let input_str = input.to_string_lossy().to_string();
+        let sig = file_signature(&input).unwrap();
 
         let temp = TempFileManager::default();
         let seg = temp.create("preview-seg.mp4", Some(b"s")).unwrap();
@@ -373,9 +455,10 @@ mod tests {
             vec![seg.clone()],
             out.clone(),
             500,
+            Some(&sig),
         );
 
-        let result = get_cached_preview(&input_str, 3, &opts).unwrap();
+        let result = get_cached_preview(&input_str, 3, &opts, Some(&sig)).unwrap();
         assert_eq!(result.0, seg);
         assert_eq!(result.1, out);
         assert_eq!(result.2, 500);
@@ -392,6 +475,7 @@ mod tests {
         let input = std::env::temp_dir().join("redundant_seg_test_input.mp4");
         let _ = fs::write(&input, b"fake");
         let input_str = input.to_string_lossy().to_string();
+        let sig = file_signature(&input).unwrap();
 
         let temp = TempFileManager::default();
         let seg1 = temp.create("redundant-seg-1.mp4", Some(b"s1")).unwrap();
@@ -405,10 +489,26 @@ mod tests {
         opts2.preset = Some("p2".into());
 
         // First: store seg1
-        set_cached_preview(input_str.clone(), 3, &opts1, vec![seg1.clone()], out1.clone(), 100);
+        set_cached_preview(
+            input_str.clone(),
+            3,
+            &opts1,
+            vec![seg1.clone()],
+            out1.clone(),
+            100,
+            Some(&sig),
+        );
 
         // Second: same (input, duration), different segment paths (race scenario)
-        set_cached_preview(input_str.clone(), 3, &opts2, vec![seg2.clone()], out2.clone(), 200);
+        set_cached_preview(
+            input_str.clone(),
+            3,
+            &opts2,
+            vec![seg2.clone()],
+            out2.clone(),
+            200,
+            Some(&sig),
+        );
 
         // Fix: seg2 should be deleted (redundant extraction)
         assert!(!seg2.exists(), "redundant segment files should be deleted");

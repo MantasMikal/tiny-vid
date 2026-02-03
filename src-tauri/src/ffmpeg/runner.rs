@@ -24,13 +24,15 @@ const NONE_DURATION_BITS: u64 = u64::MAX;
 
 /// Minimum interval between progress emits to reduce IPC and React re-renders.
 const PROGRESS_EMIT_INTERVAL: Duration = Duration::from_millis(150);
+/// Keep only the last N bytes of stderr to avoid unbounded memory growth.
+const MAX_STDERR_BYTES: usize = 64 * 1024;
 
 /// Single active FFmpeg process. Only one transcode/preview at a time.
 static ACTIVE_FFMPEG_PROCESS: Mutex<Option<Child>> = Mutex::new(None);
 
 /// Configuration for FFmpeg output stream reading (stdout or stderr).
 struct ReadStreamConfig {
-    collect_stderr: Option<Arc<Mutex<String>>>,
+    collect_stderr: Option<Arc<Mutex<Vec<u8>>>>,
     duration: Arc<AtomicU64>,
     app: Option<tauri::AppHandle>,
     window_label: Option<String>,
@@ -61,8 +63,12 @@ fn read_stream<R: std::io::Read + Send + 'static>(
                 .trim_end_matches(['\n', '\r']);
             if let Some(ref buf) = config.collect_stderr {
                 let mut guard = buf.lock();
-                guard.push_str(line);
-                guard.push('\n');
+                guard.extend_from_slice(line.as_bytes());
+                guard.push(b'\n');
+                if guard.len() > MAX_STDERR_BYTES {
+                    let excess = guard.len() - MAX_STDERR_BYTES;
+                    guard.drain(..excess);
+                }
             }
             let (progress, d) = parse_ffmpeg_progress(line, current_duration);
             if let Some(new_dur) = d {
@@ -141,7 +147,7 @@ pub fn run_ffmpeg_blocking(
             .map(f64::to_bits)
             .unwrap_or(NONE_DURATION_BITS),
     ));
-    let stderr_buffer = Arc::new(Mutex::new(String::new()));
+    let stderr_buffer = Arc::new(Mutex::new(Vec::new()));
     let app_stdout = app.cloned();
     let app_stderr = app.cloned();
     let label = window_label.map(String::from);
@@ -185,7 +191,8 @@ pub fn run_ffmpeg_blocking(
         }
     };
 
-    let stderr_str = stderr_buffer.lock().clone();
+    let stderr_bytes = stderr_buffer.lock().clone();
+    let stderr_str = String::from_utf8_lossy(&stderr_bytes).to_string();
 
     if status.success() {
         log::info!(

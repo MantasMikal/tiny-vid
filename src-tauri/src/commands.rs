@@ -86,14 +86,16 @@ pub async fn ffmpeg_transcode_to_temp(
         None,
     )?;
     let duration_secs = options.duration_secs;
+    let window_label = window.label().to_string();
 
-    match crate::preview::run_ffmpeg_step(args, &app, window.label(), duration_secs).await {
+    match crate::preview::run_ffmpeg_step(args, &app, &window_label, duration_secs).await {
         Ok(()) => {
             log::info!(
                 target: "tiny_vid::commands",
                 "ffmpeg_transcode_to_temp: complete -> {}",
                 output_str
             );
+            let _ = app.emit_to(&window_label, "ffmpeg-complete", ());
             Ok(output_str)
         }
         Err(e) => {
