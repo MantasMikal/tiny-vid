@@ -5,7 +5,7 @@ use std::io;
 use std::path::PathBuf;
 
 use parking_lot::Mutex;
-use super::cache::{get_cached_extract, get_cached_transcode_paths_to_keep};
+use super::cache::get_cached_paths_to_keep;
 
 static PREVIOUS_PREVIEW_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static TRANSCODE_TEMP_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -38,11 +38,7 @@ pub fn cleanup_previous_preview_paths(
     let mut guard = PREVIOUS_PREVIEW_PATHS.lock();
     let paths: Vec<_> = guard.drain(..).collect();
 
-    let mut paths_to_keep: Vec<PathBuf> = Vec::new();
-    if let Some(segments) = get_cached_extract(new_input_path, new_preview_duration) {
-        paths_to_keep.extend(segments);
-    }
-    paths_to_keep.extend(get_cached_transcode_paths_to_keep(new_input_path, new_preview_duration));
+    let paths_to_keep = get_cached_paths_to_keep(new_input_path, new_preview_duration);
 
     for path in &paths {
         if paths_to_keep.iter().any(|keep| keep == path) {

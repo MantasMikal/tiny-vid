@@ -6,8 +6,8 @@ use std::path::PathBuf;
 use crate::error::AppError;
 use crate::ffmpeg::{
     build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
-    get_cached_extract, get_cached_preview_transcode, path_to_string, run_ffmpeg_blocking,
-    set_cached_extract, set_cached_preview_transcode, store_preview_paths_for_cleanup,
+    get_cached_preview, get_cached_segments, path_to_string, run_ffmpeg_blocking,
+    set_cached_preview, store_preview_paths_for_cleanup,
     TempFileManager, TranscodeOptions,
 };
 use crate::ffmpeg::ffprobe::get_video_metadata_impl;
@@ -69,7 +69,7 @@ async fn extract_segments_or_use_cache(
     temp: &TempFileManager,
     emit: Option<(&tauri::AppHandle, &str)>,
 ) -> Result<Vec<PathBuf>, AppError> {
-    match get_cached_extract(input_str, preview_duration_u32) {
+    match get_cached_segments(input_str, preview_duration_u32) {
         Some(cached) => {
             log::info!(
                 target: "tiny_vid::preview",
@@ -101,7 +101,6 @@ async fn extract_segments_or_use_cache(
                     }
                 }
             }
-            set_cached_extract(input_str.to_string(), preview_duration_u32, paths.clone());
             Ok(paths)
         }
     }
@@ -282,22 +281,16 @@ pub(crate) async fn run_preview_core(
         input_path.display()
     );
 
-    if let Some((cached_path, estimated_size)) =
-        get_cached_preview_transcode(&input_str, preview_duration_u32, &options)
+    if let Some((original_path, compressed_path, estimated_size)) =
+        get_cached_preview(&input_str, preview_duration_u32, &options)
     {
         log::info!(
             target: "tiny_vid::preview",
-            "run_preview_core: transcode cache hit, reusing output"
+            "run_preview_core: cache hit, reusing output"
         );
-        let original_path = get_cached_extract(&input_str, preview_duration_u32)
-            .and_then(|segs| segs.first().cloned())
-            .filter(|p| p.exists())
-            .map(|p| path_to_string(&p))
-            .unwrap_or_else(|| input_str.clone());
-
         return Ok(PreviewResult {
-            original_path,
-            compressed_path: path_to_string(&cached_path),
+            original_path: path_to_string(&original_path),
+            compressed_path: path_to_string(&compressed_path),
             estimated_size,
         });
     }
@@ -339,10 +332,11 @@ pub(crate) async fn run_preview_core(
     .await?;
 
     store_preview_paths_for_cleanup(&segment_paths, &transcode_result.paths_for_cleanup);
-    set_cached_preview_transcode(
+    set_cached_preview(
         input_str.clone(),
         preview_duration_u32,
         &options,
+        segment_paths.clone(),
         output_path.clone(),
         transcode_result.estimated_size,
     );
