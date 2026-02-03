@@ -35,6 +35,7 @@ fn run_transcode_integration(
         input_path.to_str().unwrap(),
         output_path.to_str().unwrap(),
         &options,
+        None,
     )
     .expect("build_ffmpeg_command");
 
@@ -111,7 +112,7 @@ fn ffmpeg_transcode_integration() {
                     o.preset = Some("ultrafast".into());
                 }), 1.0, false),
                 (opts_with(|o| {
-                    o.fps = Some(24);
+                    o.fps = Some(24.0);
                     o.preset = Some("ultrafast".into());
                 }), 1.0, false),
             ]
@@ -196,6 +197,7 @@ fn ffmpeg_progress_emission_integration() {
         input_path.to_str().unwrap(),
         output_path.to_str().unwrap(),
         &options,
+        None,
     )
     .expect("build_ffmpeg_command");
 
@@ -268,6 +270,7 @@ fn ffmpeg_cancel_cleanup_integration() {
         input_path.to_str().unwrap(),
         &output_str,
         &options,
+        None,
     )
     .expect("build_ffmpeg_command");
 

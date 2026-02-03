@@ -127,8 +127,8 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
             return Ok(path);
         }
     }
-    if let Some(p) = find_in_path() {
-        if p.exists() {
+    if let Some(p) = find_in_path()
+        && p.exists() {
             log::debug!(
                 target: "tiny_vid::ffmpeg::discovery",
                 "FFmpeg found in PATH: {}",
@@ -136,7 +136,6 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
             );
             return Ok(p);
         }
-    }
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     if let Some(p) = resolve_sidecar_path("ffmpeg") {
@@ -208,16 +207,14 @@ pub fn ffprobe_candidates(ffmpeg_path: &Path) -> Vec<PathBuf> {
     };
     let mut candidates = Vec::with_capacity(2);
     let stem = ffmpeg_path.file_stem().and_then(|s| s.to_str());
-    if let Some(stem) = stem {
-        if let Some(suffix) = stem.strip_prefix("ffmpeg") {
-            if !suffix.is_empty() {
+    if let Some(stem) = stem
+        && let Some(suffix) = stem.strip_prefix("ffmpeg")
+            && !suffix.is_empty() {
                 #[cfg(target_os = "windows")]
                 candidates.push(parent.join(format!("ffprobe{suffix}.exe")));
                 #[cfg(not(target_os = "windows"))]
                 candidates.push(parent.join(format!("ffprobe{suffix}")));
             }
-        }
-    }
     #[cfg(target_os = "windows")]
     candidates.push(parent.join("ffprobe.exe"));
     #[cfg(not(target_os = "windows"))]
@@ -255,13 +252,11 @@ pub fn get_ffprobe_path() -> Result<PathBuf, AppError> {
 fn parse_encoder_output(stdout: &str) -> Vec<String> {
     let mut codecs = Vec::new();
     for line in stdout.lines() {
-        if line.starts_with(" V") {
-            if let Some(codec_name) = line.split_whitespace().nth(1) {
-                if SUPPORTED_CODEC_NAMES.contains(&codec_name) {
+        if line.starts_with(" V")
+            && let Some(codec_name) = line.split_whitespace().nth(1)
+                && SUPPORTED_CODEC_NAMES.contains(&codec_name) {
                     codecs.push(codec_name.to_string());
                 }
-            }
-        }
     }
     codecs
 }

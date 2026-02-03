@@ -7,6 +7,8 @@ export interface FfmpegPreviewResult {
   originalPath: string;
   compressedPath: string;
   estimatedSize: number;
+  /** Start offset (seconds) of original. Delay compressed playback by this to sync. */
+  startOffsetSeconds?: number;
 }
 
 export interface GetVideoMetadataResult {
@@ -15,6 +17,14 @@ export interface GetVideoMetadataResult {
   height: number;
   size: number;
   sizeMb: number;
+  fps: number;
+  codecName?: string;
+  codecLongName?: string;
+  videoBitRate?: number;
+  formatBitRate?: number;
+  formatName?: string;
+  formatLongName?: string;
+  nbStreams?: number;
 }
 
 export interface CodecInfo {

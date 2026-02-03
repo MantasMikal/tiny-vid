@@ -10,6 +10,7 @@ import type { VideoMetadata } from "@/features/compression/lib/get-video-metadat
 import { getVideoMetadataFromPath } from "@/features/compression/lib/get-video-metadata";
 import {
   createInitialOptions,
+  DEFAULT_FPS,
   DEFAULT_PRESET_ID,
   resolve,
 } from "@/features/compression/lib/options-pipeline";
@@ -30,6 +31,8 @@ export enum WorkerState {
 export interface VideoPreview {
   originalSrc: string;
   compressedSrc: string;
+  /** Start offset (seconds) of original. Delay compressed playback by this to sync. */
+  startOffsetSeconds?: number;
 }
 
 function toRustOptions(
@@ -50,7 +53,6 @@ function toRustOptions(
     durationSecs,
   };
 }
-
 
 let debouncePreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let previewRequestId = 0;
@@ -81,7 +83,10 @@ interface CompressionState {
   clear: () => void;
   dismissError: () => void;
   generatePreview: (requestId?: number) => Promise<void>;
-  setCompressionOptions: (options: CompressionOptions) => void;
+  setCompressionOptions: (
+    options: CompressionOptions,
+    opts?: { triggerPreview?: boolean }
+  ) => void;
   refreshFfmpegCommandPreview: () => Promise<void>;
   terminate: () => Promise<void>;
 }
@@ -109,7 +114,10 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       set({
         availableCodecs: result.codecs,
         initError: null,
-        compressionOptions: createInitialOptions(result.codecs, DEFAULT_PRESET_ID),
+        compressionOptions: createInitialOptions(
+          result.codecs,
+          DEFAULT_PRESET_ID
+        ),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -172,6 +180,16 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       return;
     }
     set({ videoMetadata: metadataResult.value });
+
+    const { compressionOptions } = get();
+    const sourceFps = metadataResult.value.fps;
+    if (compressionOptions && sourceFps > 0 && sourceFps < DEFAULT_FPS) {
+      get().setCompressionOptions(
+        { ...compressionOptions, fps: sourceFps },
+        { triggerPreview: false }
+      );
+    }
+
     void get().refreshFfmpegCommandPreview();
 
     await tryCatch(
@@ -194,6 +212,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
               videoPreview: {
                 originalSrc: convertFileSrc(result.value.originalPath),
                 compressedSrc: convertFileSrc(result.value.compressedPath),
+                startOffsetSeconds: result.value.startOffsetSeconds,
               },
               workerState: WorkerState.Idle,
             });
@@ -362,6 +381,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         videoPreview: {
           originalSrc: convertFileSrc(result.value.originalPath),
           compressedSrc: convertFileSrc(result.value.compressedPath),
+          startOffsetSeconds: result.value.startOffsetSeconds,
         },
         workerState: WorkerState.Idle,
       });

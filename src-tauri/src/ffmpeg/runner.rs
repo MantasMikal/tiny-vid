@@ -58,7 +58,7 @@ fn read_stream<R: std::io::Read + Send + 'static>(
         while stream_reader.read_until(b'\n', &mut line_buf).unwrap_or(0) > 0 {
             let line = std::str::from_utf8(&line_buf)
                 .unwrap_or("")
-                .trim_end_matches(|c| c == '\n' || c == '\r');
+                .trim_end_matches(['\n', '\r']);
             if let Some(ref buf) = config.collect_stderr {
                 let mut guard = buf.lock();
                 guard.push_str(line);

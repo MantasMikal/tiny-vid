@@ -127,7 +127,7 @@ pub fn run() {
                 }
             }
 
-            setup_menu(&app).map_err(Into::into)
+            setup_menu(app).map_err(Into::into)
         })
         .invoke_handler(tauri::generate_handler![
             commands::ffmpeg_transcode_to_temp,

@@ -39,6 +39,21 @@ pub(crate) struct VideoMetadataResult {
     height: u32,
     size: u64,
     size_mb: f64,
+    fps: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codec_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    codec_long_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    video_bit_rate: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format_bit_rate: Option<u64>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    format_long_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    nb_streams: Option<u32>,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -58,13 +73,18 @@ pub async fn ffmpeg_transcode_to_temp(
     let ext = options.effective_output_format();
     let suffix = format!("transcode-output.{}", ext);
 
-    let temp = TempFileManager::default();
+    let temp = TempFileManager;
     let output_path = temp.create(&suffix, None).map_err(AppError::from)?;
     let output_str = path_to_string(&output_path);
 
     set_transcode_temp(Some(output_path.clone()));
 
-    let args = build_ffmpeg_command(&path_to_string(&input_path), &output_str, &options)?;
+    let args = build_ffmpeg_command(
+        &path_to_string(&input_path),
+        &output_str,
+        &options,
+        None,
+    )?;
     let duration_secs = options.duration_secs;
 
     match crate::preview::run_ffmpeg_step(args, &app, window.label(), duration_secs).await {
@@ -116,12 +136,21 @@ pub fn get_video_metadata(path: PathBuf) -> Result<VideoMetadataResult, AppError
         path.display()
     );
     let meta = get_video_metadata_impl(&path)?;
+    let fps = (meta.fps * 100.0).round() / 100.0;
     Ok(VideoMetadataResult {
         duration: meta.duration,
         width: meta.width,
         height: meta.height,
         size: meta.size,
         size_mb: meta.size as f64 / 1024.0 / 1024.0,
+        fps,
+        codec_name: meta.codec_name,
+        codec_long_name: meta.codec_long_name,
+        video_bit_rate: meta.video_bit_rate,
+        format_bit_rate: meta.format_bit_rate,
+        format_name: meta.format_name,
+        format_long_name: meta.format_long_name,
+        nb_streams: meta.nb_streams,
     })
 }
 
@@ -129,7 +158,7 @@ pub fn get_video_metadata(path: PathBuf) -> Result<VideoMetadataResult, AppError
 pub fn preview_ffmpeg_command(options: TranscodeOptions, input_path: Option<String>) -> String {
     let input_str = input_path.as_deref().unwrap_or("<input>");
     let output_str = "<output>";
-    let args = build_ffmpeg_command(input_str, output_str, &options)
+    let args = build_ffmpeg_command(input_str, output_str, &options, None)
         .unwrap_or_else(|e| vec!["# error".into(), e.to_string()]);
     format!("ffmpeg\n{}", format_args_for_display_multiline(&args))
 }
@@ -157,7 +186,7 @@ pub fn buffer_opened_files(app: &tauri::AppHandle, files: Vec<PathBuf>) {
     for file in &files {
         let _ = asset_scope.allow_file(file);
     }
-    let paths: Vec<String> = files.iter().map(|p| path_to_string(p)).collect();
+    let paths: Vec<String> = files.iter().map(path_to_string).collect();
     {
         let state = app.state::<AppState>();
         let mut pending = state.pending_opened_files.lock();

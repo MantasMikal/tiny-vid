@@ -43,14 +43,14 @@ pub fn verify_video(path: &Path, codec: Option<&str>) -> Result<(), String> {
         .unwrap_or(false);
 
     let (success, exit_code, stderr) =
-        run_verify(ffmpeg.as_ref(), path_str.as_ref(), use_dav1d);
+        run_verify(ffmpeg, path_str.as_ref(), use_dav1d);
 
     if success {
         return Ok(());
     }
     if use_dav1d && is_dav1d_unavailable(&stderr) {
         let (fallback_success, fallback_code, fallback_stderr) =
-            run_verify(ffmpeg.as_ref(), path_str.as_ref(), false);
+            run_verify(ffmpeg, path_str.as_ref(), false);
         if fallback_success {
             return Ok(());
         }

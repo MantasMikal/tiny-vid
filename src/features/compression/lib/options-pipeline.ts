@@ -10,10 +10,13 @@ import {
 } from "@/features/compression/lib/compression-options";
 import type { CodecInfo } from "@/types/tauri";
 
+/** Default FPS for compression. Source fps is used when it's less than this. */
+export const DEFAULT_FPS = 30;
+
 const DEFAULT_OPTIONS: CompressionOptions = {
   quality: 75,
   preset: "fast",
-  fps: 30,
+  fps: DEFAULT_FPS,
   scale: 1,
   removeAudio: false,
   codec: "libx264",
@@ -122,13 +125,13 @@ export function createInitialOptions(
   const defaultCodec = getFormatCapabilities(format).defaultCodec;
   const initialCodec = compatibleForFormat.some((c) => c.value === defaultCodec)
     ? defaultCodec
-    : compatibleForFormat[0]?.value ?? codecs[0].value;
+    : (compatibleForFormat[0]?.value ?? codecs[0].value);
 
   const base: Partial<CompressionOptions> = {
     codec: initialCodec as Codec,
     outputFormat: format,
     preset: "fast",
-    fps: 30,
+    fps: DEFAULT_FPS,
     scale: 1,
     removeAudio: false,
     generatePreview: true,

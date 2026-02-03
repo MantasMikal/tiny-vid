@@ -33,7 +33,7 @@ pub struct TranscodeOptions {
     pub quality: Option<u32>,
     pub max_bitrate: Option<u32>,
     pub scale: Option<f64>,
-    pub fps: Option<u32>,
+    pub fps: Option<f64>,
     pub remove_audio: Option<bool>,
     pub preset: Option<String>,
     pub tune: Option<String>,
@@ -49,7 +49,7 @@ impl Default for TranscodeOptions {
             quality: Some(75),
             max_bitrate: None,
             scale: Some(1.0),
-            fps: Some(30),
+            fps: Some(30.0),
             remove_audio: Some(false),
             preset: Some("fast".to_string()),
             tune: None,
@@ -73,8 +73,9 @@ impl TranscodeOptions {
         self.scale.unwrap_or(1.0)
     }
 
-    pub fn effective_fps(&self) -> u32 {
-        self.fps.unwrap_or(30)
+    pub fn effective_fps(&self) -> f64 {
+        let fps = self.fps.unwrap_or(30.0);
+        (fps * 100.0).round() / 100.0
     }
 
     pub fn effective_remove_audio(&self) -> bool {

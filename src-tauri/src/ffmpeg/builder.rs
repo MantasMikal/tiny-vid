@@ -100,13 +100,11 @@ impl CodecKind {
             }
         }
 
-        if self.supports_tune() {
-            if let Some(tune_val) = tune {
-                if !tune_val.is_empty() && tune_val != "none" {
+        if self.supports_tune()
+            && let Some(tune_val) = tune
+                && !tune_val.is_empty() && tune_val != "none" {
                     args.extend(["-tune".to_string(), tune_val.to_string()]);
                 }
-            }
-        }
 
         match self {
             CodecKind::X264 | CodecKind::X265 | CodecKind::VP9 | CodecKind::SvtAv1 => {
@@ -201,15 +199,23 @@ pub fn build_extract_args(
         input_path.to_string(),
         "-c".to_string(),
         "copy".to_string(),
+        "-avoid_negative_ts".to_string(),
+        "make_zero".to_string(),
+        "-movflags".to_string(),
+        "+faststart".to_string(),
         output_path.to_string(),
     ]);
     args
 }
 
+/// Build FFmpeg transcode command.
+/// `output_duration_secs`: when set, adds `-t` to limit output duration (used for preview
+/// to match stream-copied original segment duration).
 pub fn build_ffmpeg_command(
     input_path: &str,
     output_path: &str,
     options: &TranscodeOptions,
+    output_duration_secs: Option<f64>,
 ) -> Result<Vec<String>, AppError> {
     let output_format = options.effective_output_format();
     #[cfg(feature = "lgpl-macos")]
@@ -282,6 +288,9 @@ pub fn build_ffmpeg_command(
         args.extend(["-movflags".to_string(), "+faststart".to_string()]);
     }
 
+    if let Some(dur) = output_duration_secs.filter(|&d| d > 0.0) {
+        args.extend(["-t".to_string(), dur.to_string()]);
+    }
     args.push(output_path.to_string());
     Ok(args)
 }
@@ -316,8 +325,19 @@ mod tests {
     }
 
     #[test]
+    fn build_extract_args_includes_faststart_and_avoid_negative_ts() {
+        let args = build_extract_args("/in.mkv", 0.0, 3.0, "/out.mp4");
+        assert!(args.contains(&"-movflags".to_string()));
+        assert!(args.contains(&"+faststart".to_string()));
+        assert!(args.contains(&"-avoid_negative_ts".to_string()));
+        assert!(args.contains(&"make_zero".to_string()));
+        assert!(args.contains(&"-c".to_string()));
+        assert!(args.contains(&"copy".to_string()));
+    }
+
+    #[test]
     fn default_options_produces_expected_args() {
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &opts()).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &opts(), None).unwrap();
         assert!(args.contains(&"-i".to_string()));
         assert!(args.contains(&"/in.mp4".to_string()));
         assert!(args.iter().any(|a| a == "-c:v"));
@@ -335,7 +355,7 @@ mod tests {
     fn scale_below_one_adds_scale_filter() {
         let mut o = opts();
         o.scale = Some(0.5);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-vf".to_string()));
         let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
         assert_eq!(
@@ -348,7 +368,7 @@ mod tests {
     fn remove_audio_adds_an() {
         let mut o = opts();
         o.remove_audio = Some(true);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-an".to_string()));
         assert!(!args.iter().any(|a| a == "-c:a"));
     }
@@ -358,7 +378,7 @@ mod tests {
         let mut o = opts();
         o.quality = Some(0);
         o.codec = Some("libx264".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let crf_idx = args.iter().position(|a| a == "-crf").unwrap();
         assert_eq!(args.get(crf_idx + 1).unwrap(), "51");
     }
@@ -368,7 +388,7 @@ mod tests {
         let mut o = opts();
         o.quality = Some(100);
         o.codec = Some("libx265".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let crf_idx = args.iter().position(|a| a == "-crf").unwrap();
         assert_eq!(args.get(crf_idx + 1).unwrap(), "28");
     }
@@ -377,7 +397,7 @@ mod tests {
     fn h265_adds_hvc1_tag_for_quicktime() {
         let mut o = opts();
         o.codec = Some("libx265".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-tag:v".to_string()));
         let tag_idx = args.iter().position(|a| a == "-tag:v").unwrap();
         assert_eq!(args.get(tag_idx + 1).unwrap(), "hvc1");
@@ -388,7 +408,7 @@ mod tests {
         let mut o = opts();
         o.codec = Some("libsvtav1".to_string());
         o.preset = Some("ultrafast".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-preset".to_string()));
         let preset_idx = args.iter().position(|a| a == "-preset").unwrap();
         assert_eq!(args.get(preset_idx + 1).unwrap(), "12");
@@ -398,7 +418,7 @@ mod tests {
     fn max_bitrate_adds_maxrate_and_bufsize() {
         let mut o = opts();
         o.max_bitrate = Some(2000);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-maxrate".to_string()));
         assert!(args.contains(&"-bufsize".to_string()));
         let maxrate_idx = args.iter().position(|a| a == "-maxrate").unwrap();
@@ -412,11 +432,11 @@ mod tests {
         let mut o = opts();
         o.codec = Some("libsvtav1".to_string());
         o.quality = Some(0);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let crf_idx = args.iter().position(|a| a == "-crf").unwrap();
         assert_eq!(args.get(crf_idx + 1).unwrap(), "63");
         o.quality = Some(100);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let crf_idx = args.iter().position(|a| a == "-crf").unwrap();
         assert_eq!(args.get(crf_idx + 1).unwrap(), "24");
     }
@@ -426,9 +446,9 @@ mod tests {
         let mut o = opts();
         o.quality = Some(75);
         o.codec = Some("libx264".to_string());
-        let args_h264 = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args_h264 = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         o.codec = Some("libsvtav1".to_string());
-        let args_av1 = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args_av1 = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let crf_idx_h264 = args_h264.iter().position(|a| a == "-crf").unwrap();
         let crf_idx_av1 = args_av1.iter().position(|a| a == "-crf").unwrap();
         assert_eq!(args_h264.get(crf_idx_h264 + 1).unwrap(), "30");
@@ -439,7 +459,7 @@ mod tests {
     fn tune_added_for_x264() {
         let mut o = opts();
         o.tune = Some("film".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-tune".to_string()));
         let tune_idx = args.iter().position(|a| a == "-tune").unwrap();
         assert_eq!(args.get(tune_idx + 1).unwrap(), "film");
@@ -450,7 +470,7 @@ mod tests {
         let mut o = opts();
         o.codec = Some("libsvtav1".to_string());
         o.tune = Some("film".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(!args.contains(&"-tune".to_string()));
     }
 
@@ -458,7 +478,7 @@ mod tests {
     fn svtav1_adds_pix_fmt_and_av01_tag() {
         let mut o = opts();
         o.codec = Some("libsvtav1".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-pix_fmt".to_string()));
         let pix_idx = args.iter().position(|a| a == "-pix_fmt").unwrap();
         assert_eq!(args.get(pix_idx + 1).unwrap(), "yuv420p");
@@ -470,7 +490,7 @@ mod tests {
     #[test]
     fn tune_none_omitted() {
         let o = opts();
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(!args.contains(&"-tune".to_string()));
     }
 
@@ -488,7 +508,7 @@ mod tests {
             let mut o = opts();
             o.codec = Some("libsvtav1".to_string());
             o.preset = Some(preset_name.to_string());
-            let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+            let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
             let preset_idx = args.iter().position(|a| a == "-preset").unwrap();
             assert_eq!(
                 args.get(preset_idx + 1).unwrap(),
@@ -505,7 +525,7 @@ mod tests {
         let mut o = opts();
         o.codec = Some("libsvtav1".to_string());
         o.preset = Some("veryslow".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let preset_idx = args.iter().position(|a| a == "-preset").unwrap();
         assert_eq!(args.get(preset_idx + 1).unwrap(), "8");
     }
@@ -513,12 +533,12 @@ mod tests {
     #[test]
     fn custom_fps_passthrough() {
         let mut o = opts();
-        o.fps = Some(24);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        o.fps = Some(24.0);
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let r_idx = args.iter().position(|a| a == "-r").unwrap();
         assert_eq!(args.get(r_idx + 1).unwrap(), "24");
-        o.fps = Some(60);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        o.fps = Some(60.0);
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let r_idx = args.iter().position(|a| a == "-r").unwrap();
         assert_eq!(args.get(r_idx + 1).unwrap(), "60");
     }
@@ -527,7 +547,7 @@ mod tests {
     fn scale_one_no_vf() {
         let mut o = opts();
         o.scale = Some(1.0);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(!args.contains(&"-vf".to_string()));
     }
 
@@ -538,7 +558,7 @@ mod tests {
         o.codec = Some("libsvtav1".to_string());
         o.output_format = Some("webm".to_string());
         o.remove_audio = Some(false);
-        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None).unwrap();
         assert!(args.contains(&"libopus".to_string()));
         assert!(!args.contains(&"-movflags".to_string()));
         assert!(args.last() == Some(&"/out.webm".to_string()));
@@ -551,7 +571,7 @@ mod tests {
         o.codec = Some("libsvtav1".to_string());
         o.output_format = Some("webm".to_string());
         o.remove_audio = Some(true);
-        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None).unwrap();
         assert!(args.contains(&"-an".to_string()));
         assert!(!args.contains(&"-movflags".to_string()));
     }
@@ -563,7 +583,7 @@ mod tests {
         o.codec = Some("libvpx-vp9".to_string());
         o.output_format = Some("webm".to_string());
         o.preset = Some("fast".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None).unwrap();
         assert!(args.contains(&"libvpx-vp9".to_string()));
         assert!(args.contains(&"-deadline".to_string()));
         assert!(args.contains(&"-cpu-used".to_string()));
@@ -581,11 +601,11 @@ mod tests {
         o.codec = Some("libvpx-vp9".to_string());
         o.output_format = Some("webm".to_string());
         o.quality = Some(0);
-        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None).unwrap();
         let crf_idx = args.iter().position(|a| a == "-crf").unwrap();
         assert_eq!(args.get(crf_idx + 1).unwrap(), "63", "quality 0 -> worst CRF");
         o.quality = Some(100);
-        let args2 = build_ffmpeg_command("/in.mp4", "/out.webm", &o).unwrap();
+        let args2 = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None).unwrap();
         let crf_idx2 = args2.iter().position(|a| a == "-crf").unwrap();
         assert_eq!(args2.get(crf_idx2 + 1).unwrap(), "20", "quality 100 -> best CRF");
     }
@@ -595,7 +615,7 @@ mod tests {
         let mut o = opts();
         o.codec = Some("h264_videotoolbox".to_string());
         o.quality = Some(75);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-q:v".to_string()), "VideoToolbox should use -q:v");
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
         assert_eq!(args.get(qv_idx + 1).unwrap(), "75", "quality 75 -> -q:v 75");
@@ -608,7 +628,7 @@ mod tests {
         o.codec = Some("h264_videotoolbox".to_string());
         o.preset = Some("fast".to_string());
         o.tune = Some("film".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(!args.contains(&"-preset".to_string()), "VideoToolbox should not use -preset");
         assert!(!args.contains(&"-tune".to_string()), "VideoToolbox should not use -tune");
     }
@@ -618,7 +638,7 @@ mod tests {
         let mut o = opts();
         o.codec = Some("h264_videotoolbox".to_string());
         o.quality = Some(100);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
         assert_eq!(args.get(qv_idx + 1).unwrap(), "100", "quality 100 -> -q:v 100 (best)");
     }
@@ -628,7 +648,7 @@ mod tests {
         let mut o = opts();
         o.codec = Some("h264_videotoolbox".to_string());
         o.quality = Some(0);
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
         assert_eq!(args.get(qv_idx + 1).unwrap(), "0", "quality 0 -> -q:v 0 (worst)");
     }
@@ -639,7 +659,7 @@ mod tests {
         let mut o = opts();
         o.output_format = Some("webm".to_string());
         o.codec = Some("h264_videotoolbox".to_string());
-        let result = build_ffmpeg_command("/in.mp4", "/out.webm", &o);
+        let result = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None);
         assert!(result.is_err(), "lgpl-macos build should reject webm output");
     }
 
@@ -650,7 +670,7 @@ mod tests {
         o.quality = Some(50);
         o.preset = Some("fast".to_string());
         o.tune = Some("film".to_string());
-        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o).unwrap();
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None).unwrap();
         assert!(args.contains(&"-q:v".to_string()));
         assert!(!args.contains(&"-preset".to_string()));
         assert!(!args.contains(&"-tune".to_string()));

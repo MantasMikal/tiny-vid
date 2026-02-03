@@ -8,6 +8,14 @@ export interface VideoMetadata {
   height: number;
   size: number;
   sizeMB: number;
+  fps: number;
+  codecName?: string;
+  codecLongName?: string;
+  videoBitRate?: number;
+  formatBitRate?: number;
+  formatName?: string;
+  formatLongName?: string;
+  nbStreams?: number;
 }
 
 export async function getVideoMetadataFromPath(
@@ -22,5 +30,13 @@ export async function getVideoMetadataFromPath(
     height: meta.height,
     size: meta.size,
     sizeMB: meta.sizeMb,
+    fps: meta.fps,
+    codecName: meta.codecName,
+    codecLongName: meta.codecLongName,
+    videoBitRate: meta.videoBitRate,
+    formatBitRate: meta.formatBitRate,
+    formatName: meta.formatName,
+    formatLongName: meta.formatLongName,
+    nbStreams: meta.nbStreams,
   };
 }

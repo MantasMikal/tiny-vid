@@ -78,7 +78,13 @@ export function useCompressionStoreInit() {
         unMenuOpenFile();
         return;
       }
-      unlisteners.push(unProgress, unError, unComplete, unOpenFile, unMenuOpenFile);
+      unlisteners.push(
+        unProgress,
+        unError,
+        unComplete,
+        unOpenFile,
+        unMenuOpenFile
+      );
       useCompressionStore.setState({ listenersReady: true });
 
       const pendingPaths = await invoke<string[]>("get_pending_opened_files");

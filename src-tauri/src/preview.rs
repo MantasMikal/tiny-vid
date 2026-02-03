@@ -107,6 +107,7 @@ async fn extract_segments_or_use_cache(
 }
 
 /// Transcodes a single segment and computes size estimate.
+/// Uses original segment duration for output so compressed matches original (avoids sync drift).
 async fn transcode_single_segment(
     input_path: &PathBuf,
     segment_paths: &[PathBuf],
@@ -114,10 +115,15 @@ async fn transcode_single_segment(
     options: &TranscodeOptions,
     emit: Option<(&tauri::AppHandle, &str)>,
 ) -> Result<TranscodeResult, AppError> {
+    let output_duration = get_video_metadata_impl(&segment_paths[0])
+        .ok()
+        .filter(|m| m.duration > 0.0)
+        .map(|m| m.duration);
     let args = build_ffmpeg_command(
         &path_to_string(&segment_paths[0]),
         &path_to_string(output_path),
         options,
+        output_duration,
     )?;
 
     match emit {
@@ -156,15 +162,29 @@ async fn transcode_multi_segment(
     let ext = options.effective_output_format();
     let output_paths: Vec<PathBuf> = (0..segment_paths.len())
         .map(|i| {
-            TempFileManager::default()
+            TempFileManager
                 .create(&format!("preview-compressed-{}.{}", i, ext), None)
                 .map_err(AppError::from)
         })
         .collect::<Result<Vec<_>, _>>()?;
 
-    for (orig, out) in segment_paths.iter().zip(output_paths.iter()) {
-        let args =
-            build_ffmpeg_command(&path_to_string(orig), &path_to_string(out), options)?;
+    let first_segment_duration = get_video_metadata_impl(&segment_paths[0])
+        .ok()
+        .filter(|m| m.duration > 0.0)
+        .map(|m| m.duration);
+
+    for (i, (orig, out)) in segment_paths.iter().zip(output_paths.iter()).enumerate() {
+        let output_duration = if i == 0 {
+            first_segment_duration
+        } else {
+            None
+        };
+        let args = build_ffmpeg_command(
+            &path_to_string(orig),
+            &path_to_string(out),
+            options,
+            output_duration,
+        )?;
         match emit {
             Some((app, label)) => run_ffmpeg_step(args, app, label, None).await?,
             None => {
@@ -245,6 +265,9 @@ pub(crate) struct PreviewResult {
     pub(crate) original_path: String,
     pub(crate) compressed_path: String,
     pub(crate) estimated_size: u64,
+    /// Start offset (seconds) of the original. Compressed typically has 0. Used to delay compressed playback for sync.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub(crate) start_offset_seconds: Option<f64>,
 }
 
 /// Result of transcode step: paths and size estimate for cleanup and caching.
@@ -261,6 +284,7 @@ impl From<TranscodeResult> for PreviewResult {
             original_path: t.original_path,
             compressed_path: t.compressed_path,
             estimated_size: t.estimated_size,
+            start_offset_seconds: None,
         }
     }
 }
@@ -288,10 +312,14 @@ pub(crate) async fn run_preview_core(
             target: "tiny_vid::preview",
             "run_preview_core: cache hit, reusing output"
         );
+        let start_offset_seconds = get_video_metadata_impl(&original_path)
+            .ok()
+            .and_then(|m| m.start_time);
         return Ok(PreviewResult {
             original_path: path_to_string(&original_path),
             compressed_path: path_to_string(&compressed_path),
             estimated_size,
+            start_offset_seconds,
         });
     }
 
@@ -305,7 +333,7 @@ pub(crate) async fn run_preview_core(
     let ext = options.effective_output_format();
     let preview_suffix = format!("preview-output.{}", ext);
 
-    let temp = TempFileManager::default();
+    let temp = TempFileManager;
     let output_path = temp
         .create(&preview_suffix, None)
         .map_err(AppError::from)?;
@@ -340,12 +368,21 @@ pub(crate) async fn run_preview_core(
         output_path.clone(),
         transcode_result.estimated_size,
     );
+    let start_offset_seconds = get_video_metadata_impl(&segment_paths[0])
+        .ok()
+        .and_then(|m| m.start_time);
     log::info!(
         target: "tiny_vid::preview",
-        "run_preview_core: complete, estimated_size={}",
-        transcode_result.estimated_size
+        "run_preview_core: complete, estimated_size={}, start_offset_seconds={:?}",
+        transcode_result.estimated_size,
+        start_offset_seconds
     );
-    Ok(transcode_result.into())
+    Ok(PreviewResult {
+        original_path: transcode_result.original_path,
+        compressed_path: transcode_result.compressed_path,
+        estimated_size: transcode_result.estimated_size,
+        start_offset_seconds,
+    })
 }
 
 #[cfg(test)]

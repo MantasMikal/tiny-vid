@@ -12,7 +12,11 @@ import { cn } from "@/lib/utils";
 
 export interface VideoWorkspaceProps {
   inputPath: string | null;
-  videoPreview: { originalSrc: string; compressedSrc: string } | null;
+  videoPreview: {
+    originalSrc: string;
+    compressedSrc: string;
+    startOffsetSeconds?: number;
+  } | null;
   videoUploading: boolean;
   error: { type: string; message: string; detail?: string } | null;
   workerState: WorkerState;
@@ -75,7 +79,7 @@ export function VideoWorkspace({
             <AnimatePresence>
               {videoPreview && !videoUploading && (
                 <motion.div
-                  key="video-preview"
+                  key={`video-preview-${videoPreview.originalSrc}-${videoPreview.compressedSrc}`}
                   initial={{ opacity: 0 }}
                   animate={{ opacity: 1 }}
                   exit={{ opacity: 0 }}
@@ -85,6 +89,7 @@ export function VideoWorkspace({
                   <VideoPreview
                     originalSrc={videoPreview.originalSrc}
                     compressedSrc={videoPreview.compressedSrc}
+                    startOffsetSeconds={videoPreview.startOffsetSeconds}
                   />
                   <Button
                     size="icon"

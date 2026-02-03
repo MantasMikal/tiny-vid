@@ -16,6 +16,7 @@ import {
 } from "@/components/ui/accordion";
 import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
+import { ClampedNumberInput } from "@/components/ui/clamped-number-input";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -432,17 +433,13 @@ export function VideoSettings({
                 <TooltipLabel tooltip="Output frame rate (-r): target FPS. Encoder duplicates or drops frames to hit this rate. Common: 24 (film), 30 (NTSC), 60 (smooth). Lower values reduce file size.">
                   Frame Rate (FPS)
                 </TooltipLabel>
-                <Input
+                <ClampedNumberInput
                   disabled={isDisabled}
-                  type="number"
                   min={1}
                   max={120}
                   value={cOptions.fps}
-                  onChange={(e) => {
-                    onOptionsChange({
-                      ...cOptions,
-                      fps: parseInt(e.target.value) || 30,
-                    });
+                  onChange={(fps) => {
+                    onOptionsChange({ ...cOptions, fps });
                   }}
                 />
               </div>

@@ -1,117 +1,73 @@
-import { AnimatePresence, motion } from "motion/react";
-import { useEffect, useRef } from "react";
+import { useRef } from "react";
 import { ReactCompareSlider } from "react-compare-slider";
 
+import { useVideoSync } from "@/hooks/useVideoSync";
 import { cn } from "@/lib/utils";
 
 interface PreviewProps {
   originalSrc: string;
   compressedSrc: string;
+  startOffsetSeconds?: number;
 }
 
-export function VideoPreview({ originalSrc, compressedSrc }: PreviewProps) {
+function getVideoType(src: string): string {
+  return src.includes(".webm") ? "video/webm" : "video/mp4";
+}
+
+export function VideoPreview({
+  originalSrc,
+  compressedSrc,
+  startOffsetSeconds,
+}: PreviewProps) {
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const compressedVideoRef = useRef<HTMLVideoElement>(null);
 
-  useEffect(() => {
-    const originalVideo = originalVideoRef.current;
-    const compressedVideo = compressedVideoRef.current;
-    let originalEnded = false;
-    let compressedEnded = false;
-
-    if (originalVideo && compressedVideo) {
-      const handleReady = () => {
-        if (
-          originalVideo.readyState === 4 &&
-          compressedVideo.readyState === 4
-        ) {
-          void originalVideo.play();
-          void compressedVideo.play();
-        }
-      };
-
-      originalVideo.addEventListener("loadeddata", handleReady);
-      compressedVideo.addEventListener("loadeddata", handleReady);
-
-      const tryToPlay = () => {
-        if (!originalEnded || !compressedEnded) return;
-        void originalVideo.play();
-        void compressedVideo.play();
-        originalEnded = false;
-        compressedEnded = false;
-      };
-
-      const handleFirstEnded = () => {
-        originalEnded = true;
-        tryToPlay();
-      };
-
-      const handleSecondEnded = () => {
-        compressedEnded = true;
-        tryToPlay();
-      };
-
-      originalVideo.addEventListener("ended", handleFirstEnded);
-      compressedVideo.addEventListener("ended", handleSecondEnded);
-
-      return () => {
-        originalVideo.removeEventListener("loadeddata", handleReady);
-        compressedVideo.removeEventListener("loadeddata", handleReady);
-        originalVideo.removeEventListener("ended", handleFirstEnded);
-        compressedVideo.removeEventListener("ended", handleSecondEnded);
-      };
-    }
-  }, [originalSrc, compressedSrc]);
+  useVideoSync(originalVideoRef, compressedVideoRef, startOffsetSeconds ?? 0, [
+    originalSrc,
+    compressedSrc,
+    startOffsetSeconds,
+  ]);
 
   return (
-    <ReactCompareSlider
-      className={cn("size-full")}
-      itemOne={
-        <div className="relative size-full">
-          <AnimatePresence mode="sync">
-            <motion.div
-              key={originalSrc}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute inset-0"
-            >
-              <video
-                ref={originalVideoRef}
-                muted
-                playsInline
-                preload="auto"
-                className={cn("size-full object-contain")}
-                src={originalSrc}
-              />
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      }
-      itemTwo={
-        <div className="relative size-full">
-          <AnimatePresence mode="sync">
-            <motion.div
-              key={compressedSrc}
-              initial={{ opacity: 0 }}
-              animate={{ opacity: 1 }}
-              exit={{ opacity: 0 }}
-              transition={{ duration: 0.2 }}
-              className="absolute inset-0"
-            >
-              <video
-                ref={compressedVideoRef}
-                muted
-                playsInline
-                preload="auto"
-                className={cn("size-full object-contain")}
-                src={compressedSrc}
-              />
-            </motion.div>
-          </AnimatePresence>
-        </div>
-      }
-    />
+    <div className={cn("relative size-full")}>
+      <div className={cn("absolute inset-0")}>
+        <ReactCompareSlider
+          className={cn("size-full")}
+          itemOne={
+            <div className="relative size-full">
+              <div className="absolute inset-0">
+                <video
+                  ref={originalVideoRef}
+                  muted
+                  playsInline
+                  preload="none"
+                  className={cn("size-full object-contain")}
+                >
+                  <source src={originalSrc} type="video/mp4" />
+                </video>
+              </div>
+            </div>
+          }
+          itemTwo={
+            <div className="relative size-full">
+              <div className="absolute inset-0">
+                <video
+                  ref={compressedVideoRef}
+                  muted
+                  playsInline
+                  preload="none"
+                  className={cn("size-full object-contain")}
+                >
+                  <source
+                    src={compressedSrc}
+                    type={getVideoType(compressedSrc)}
+                  />
+                </video>
+              </div>
+            </div>
+          }
+        />
+      </div>
+    </div>
   );
 }

@@ -201,7 +201,8 @@ export function qualityToCrf(quality: number, codec: string): number {
 
 function crfToQuality(crf: number, codec: string): number {
   const c = codec.toLowerCase();
-  if (c.includes("videotoolbox")) return Math.round(Math.max(0, Math.min(100, crf)));
+  if (c.includes("videotoolbox"))
+    return Math.round(Math.max(0, Math.min(100, crf)));
   const { low, high } = getCrfRange(codec);
   const q = (high - crf) / (high - low);
   return Math.round(Math.max(0, Math.min(100, q * 100)));
@@ -235,7 +236,10 @@ export const FORMAT_METADATA = {
 
 export type FormatKey = keyof typeof FORMAT_METADATA;
 
-export function getCodecsForFormat(format: string, codecs: CodecInfo[]): CodecInfo[] {
+export function getCodecsForFormat(
+  format: string,
+  codecs: CodecInfo[]
+): CodecInfo[] {
   return codecs.filter((c) => c.formats.includes(format));
 }
 
@@ -243,6 +247,9 @@ export function getAvailableFormats(codecs: CodecInfo[]): string[] {
   return [...new Set(codecs.flatMap((c) => c.formats))];
 }
 
-export function getCodecInfo(value: string, codecs: CodecInfo[]): CodecInfo | undefined {
+export function getCodecInfo(
+  value: string,
+  codecs: CodecInfo[]
+): CodecInfo | undefined {
   return codecs.find((c) => c.value === value);
 }
