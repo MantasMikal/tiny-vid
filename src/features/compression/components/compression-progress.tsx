@@ -15,10 +15,7 @@ export function CompressionProgress({
 }: CompressionProgressProps) {
   return (
     <div
-      className={cn(
-        "flex flex-col gap-1 rounded-md border bg-background p-2 px-3 py-2",
-        className
-      )}
+      className={cn("flex flex-col gap-1 rounded-md border bg-background p-2 px-3 py-2", className)}
     >
       <span className={cn("flex items-center gap-1 text-xs text-white/90")}>
         <Spinner className={cn("size-3")} />

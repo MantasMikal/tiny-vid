@@ -35,10 +35,7 @@ export interface VideoPreview {
   startOffsetSeconds?: number;
 }
 
-function toRustOptions(
-  opts: CompressionOptions,
-  durationSecs?: number
-): TranscodeOptions {
+function toRustOptions(opts: CompressionOptions, durationSecs?: number): TranscodeOptions {
   return {
     codec: opts.codec,
     quality: opts.quality,
@@ -69,12 +66,9 @@ function clampPreviewStartSeconds(
   duration?: number | null,
   previewDuration?: number | null
 ) {
-  const safeDuration =
-    typeof duration === "number" && Number.isFinite(duration) ? duration : 0;
+  const safeDuration = typeof duration === "number" && Number.isFinite(duration) ? duration : 0;
   const safePreviewDuration =
-    typeof previewDuration === "number" && Number.isFinite(previewDuration)
-      ? previewDuration
-      : 0;
+    typeof previewDuration === "number" && Number.isFinite(previewDuration) ? previewDuration : 0;
   const maxStart = Math.max(0, safeDuration - safePreviewDuration);
   const safeStart = Number.isFinite(startSeconds) ? startSeconds : 0;
   return Math.min(Math.max(0, safeStart), maxStart);
@@ -111,10 +105,7 @@ export interface CompressionState {
     opts?: { includeEstimate?: boolean; previewStartSeconds?: number }
   ) => Promise<void>;
   setPreviewRegionStart: (startSeconds: number) => void;
-  setCompressionOptions: (
-    options: CompressionOptions,
-    opts?: { triggerPreview?: boolean }
-  ) => void;
+  setCompressionOptions: (options: CompressionOptions, opts?: { triggerPreview?: boolean }) => void;
   refreshFfmpegCommandPreview: () => Promise<void>;
   terminate: () => Promise<void>;
 }
@@ -144,10 +135,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       set({
         availableCodecs: result.codecs,
         initError: null,
-        compressionOptions: createInitialOptions(
-          result.codecs,
-          DEFAULT_PRESET_ID
-        ),
+        compressionOptions: createInitialOptions(result.codecs, DEFAULT_PRESET_ID),
       });
     } catch (error) {
       const message = error instanceof Error ? error.message : String(error);
@@ -200,10 +188,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       videoPreview: null,
       previewStartSeconds: 0,
     });
-    const metadataResult = await tryCatch(
-      () => getVideoMetadataFromPath(path),
-      "Metadata Error"
-    );
+    const metadataResult = await tryCatch(() => getVideoMetadataFromPath(path), "Metadata Error");
     if (!metadataResult.ok) {
       if (!metadataResult.aborted) {
         set({ error: metadataResult.error });
@@ -295,17 +280,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       filters: [
         {
           name: "Video",
-          extensions: [
-            "mp4",
-            "mpeg",
-            "webm",
-            "mov",
-            "3gp",
-            "avi",
-            "flv",
-            "mkv",
-            "ogg",
-          ],
+          extensions: ["mp4", "mpeg", "webm", "mov", "3gp", "avi", "flv", "mkv", "ogg"],
         },
       ],
     });
@@ -357,10 +332,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         });
 
         if (!outputPath) {
-          await tryCatch(
-            () => invoke("cleanup_temp_file", { path: tempPath }),
-            "Cleanup Error"
-          );
+          await tryCatch(() => invoke("cleanup_temp_file", { path: tempPath }), "Cleanup Error");
           return;
         }
 
@@ -376,10 +348,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           if (!moveResult.aborted) {
             set({ error: moveResult.error });
           }
-          await tryCatch(
-            () => invoke("cleanup_temp_file", { path: tempPath }),
-            "Cleanup Error"
-          );
+          await tryCatch(() => invoke("cleanup_temp_file", { path: tempPath }), "Cleanup Error");
         }
       },
       "Save Error",
@@ -467,10 +436,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     }
   },
 
-  setCompressionOptions: (
-    options: CompressionOptions,
-    opts?: { triggerPreview?: boolean }
-  ) => {
+  setCompressionOptions: (options: CompressionOptions, opts?: { triggerPreview?: boolean }) => {
     const { availableCodecs } = get();
     if (availableCodecs.length === 0) return;
     const resolved = resolve(options, availableCodecs);

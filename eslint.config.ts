@@ -138,6 +138,16 @@ export default defineConfig([
         entryPoint: "src/styles/app.css",
       },
     },
+    rules: {
+      "better-tailwindcss/enforce-consistent-line-wrapping": [
+        "error",
+        {
+          group: "newLine",
+          preferSingleLine: true,
+          printWidth: 120,
+        },
+      ],
+    },
   },
 
   // 7b. WindowFrame uses custom window-content class for scrollbar – allow unknown classes

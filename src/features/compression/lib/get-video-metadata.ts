@@ -18,9 +18,7 @@ export interface VideoMetadata {
   nbStreams?: number;
 }
 
-export async function getVideoMetadataFromPath(
-  filePath: string
-): Promise<VideoMetadata> {
+export async function getVideoMetadataFromPath(filePath: string): Promise<VideoMetadata> {
   const meta = await invoke<GetVideoMetadataResult>("get_video_metadata", {
     path: filePath,
   });

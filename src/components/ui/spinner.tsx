@@ -8,10 +8,7 @@ interface SpinnerProps {
 
 export function Spinner({ className }: SpinnerProps) {
   return (
-    <div
-      className={cn(`inline-block size-8 text-foreground`, className)}
-      role="status"
-    >
+    <div className={cn(`inline-block size-8 text-foreground`, className)} role="status">
       <LoaderPinwheel
         className={cn(
           "size-full animate-spin",

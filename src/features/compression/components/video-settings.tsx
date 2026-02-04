@@ -1,10 +1,4 @@
-import {
-  BikeIcon,
-  CarFrontIcon,
-  CookingPotIcon,
-  InfoIcon,
-  RocketIcon,
-} from "lucide-react";
+import { BikeIcon, CarFrontIcon, CookingPotIcon, InfoIcon, RocketIcon } from "lucide-react";
 import { AnimatePresence, motion, usePresenceData } from "motion/react";
 import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
@@ -31,12 +25,7 @@ import {
 import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipProvider,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
   FORMAT_METADATA,
   getAvailableFormats,
@@ -139,8 +128,7 @@ export function VideoSettings() {
     direction: number;
   }>({ activeTab: "basic", direction: 0 });
   const { activeTab, direction } = tabState;
-  const [basicPreset, setBasicPreset] =
-    useState<BasicPresetId>(DEFAULT_PRESET_ID);
+  const [basicPreset, setBasicPreset] = useState<BasicPresetId>(DEFAULT_PRESET_ID);
   const {
     compressionOptions: cOptions,
     availableCodecs,
@@ -188,22 +176,14 @@ export function VideoSettings() {
           <AlertDescription>{initError}</AlertDescription>
         </Alert>
       )}
-      <Tabs
-        value={activeTab}
-        className={cn("w-full min-w-0")}
-        onValueChange={handleTabChange}
-      >
+      <Tabs value={activeTab} className={cn("w-full min-w-0")} onValueChange={handleTabChange}>
         <TabsList className={cn("mb-4 grid w-full grid-cols-2")}>
           <TabsTrigger value="basic">Basic</TabsTrigger>
           <TabsTrigger value="advanced">Advanced</TabsTrigger>
         </TabsList>
         <AnimatePresence initial={false} custom={direction}>
           {activeTab === "basic" && (
-            <AnimatedTabPanel
-              key="basic"
-              value="basic"
-              className={cn("flex flex-col gap-4")}
-            >
+            <AnimatedTabPanel key="basic" value="basic" className={cn("flex flex-col gap-4")}>
               <div className={cn("flex flex-col gap-2")}>
                 <h3 className={cn("text-base font-bold")}>Preset</h3>
                 <ToggleGroup
@@ -223,23 +203,14 @@ export function VideoSettings() {
                       key={config.value}
                       variant="outline"
                       className={cn(
-                        `
-                          flex h-16 w-full min-w-0 flex-row items-center
-                          justify-start gap-3 whitespace-normal
-                        `
+                        `flex h-16 w-full min-w-0 flex-row items-center justify-start gap-3 whitespace-normal`
                       )}
                       value={config.value}
                     >
                       <config.icon className={cn("size-7 shrink-0")} />
-                      <div
-                        className={cn("flex min-w-0 flex-1 flex-col text-left")}
-                      >
-                        <div className={cn("text-sm font-semibold")}>
-                          {config.title}
-                        </div>
-                        <p className={cn("text-xs wrap-break-word")}>
-                          {config.description}
-                        </p>
+                      <div className={cn("flex min-w-0 flex-1 flex-col text-left")}>
+                        <div className={cn("text-sm font-semibold")}>{config.title}</div>
+                        <p className={cn("text-xs wrap-break-word")}>{config.description}</p>
                       </div>
                     </ToggleGroupItem>
                   ))}
@@ -264,11 +235,7 @@ export function VideoSettings() {
             </AnimatedTabPanel>
           )}
           {activeTab === "advanced" && (
-            <AnimatedTabPanel
-              key="advanced"
-              value="advanced"
-              className={cn("flex flex-col gap-4")}
-            >
+            <AnimatedTabPanel key="advanced" value="advanced" className={cn("flex flex-col gap-4")}>
               <div className={cn("flex flex-col gap-2")}>
                 <TooltipLabel tooltip="Output container format. MP4: widest support. WebM: open format; VP9 (Safari-friendly) or AV1.">
                   Format
@@ -278,9 +245,7 @@ export function VideoSettings() {
                   disabled={isDisabled}
                   onValueChange={(v) => {
                     if (!isFormat(v)) return;
-                    setOptions(
-                      resolve({ ...cOptions, outputFormat: v }, availableCodecs)
-                    );
+                    setOptions(resolve({ ...cOptions, outputFormat: v }, availableCodecs));
                   }}
                 >
                   <SelectTrigger className={cn("w-full")}>
@@ -310,19 +275,14 @@ export function VideoSettings() {
                   disabled={isDisabled}
                   onValueChange={(v) => {
                     if (!isCodec(v)) return;
-                    setOptions(
-                      resolve({ ...cOptions, codec: v }, availableCodecs)
-                    );
+                    setOptions(resolve({ ...cOptions, codec: v }, availableCodecs));
                   }}
                 >
                   <SelectTrigger className={cn("w-full")}>
                     <SelectValue />
                   </SelectTrigger>
                   <SelectContent>
-                    {getCodecsForFormat(
-                      cOptions.outputFormat,
-                      availableCodecs
-                    ).map((codec) => (
+                    {getCodecsForFormat(cOptions.outputFormat, availableCodecs).map((codec) => (
                       <SelectItem key={codec.value} value={codec.value}>
                         {codec.name}
                       </SelectItem>
@@ -342,10 +302,7 @@ export function VideoSettings() {
                   value={[cOptions.quality]}
                   showValueOnThumb
                   onValueChange={([v]) => {
-                    setOptions(
-                      { ...cOptions, quality: v },
-                      { triggerPreview: false }
-                    );
+                    setOptions({ ...cOptions, quality: v }, { triggerPreview: false });
                   }}
                   onValueCommit={([v]) => {
                     setOptions({ ...cOptions, quality: v });
@@ -419,10 +376,7 @@ export function VideoSettings() {
                   showValueOnThumb
                   formatThumbValue={(v) => `${String(Math.round(v * 100))}%`}
                   onValueChange={([v]) => {
-                    setOptions(
-                      { ...cOptions, scale: v },
-                      { triggerPreview: false }
-                    );
+                    setOptions({ ...cOptions, scale: v }, { triggerPreview: false });
                   }}
                   onValueCommit={([v]) => {
                     setOptions({ ...cOptions, scale: v });
@@ -459,9 +413,7 @@ export function VideoSettings() {
                       });
                     }}
                   />
-                  <Label htmlFor="generatePreview">
-                    Generate preview automatically
-                  </Label>
+                  <Label htmlFor="generatePreview">Generate preview automatically</Label>
                 </div>
                 <Input
                   disabled={isDisabled}
@@ -484,15 +436,9 @@ export function VideoSettings() {
                 </p>
               </div>
               <Accordion type="single" collapsible className={cn("w-full")}>
-                <AccordionItem
-                  value="ffmpeg-command"
-                  className={cn("border-none")}
-                >
+                <AccordionItem value="ffmpeg-command" className={cn("border-none")}>
                   <AccordionTrigger
-                    className={cn(
-                      "py-2 text-base font-bold",
-                      "hover:no-underline"
-                    )}
+                    className={cn("py-2 text-base font-bold", "hover:no-underline")}
                   >
                     FFmpeg command
                   </AccordionTrigger>
@@ -506,15 +452,11 @@ export function VideoSettings() {
                       {ffmpegCommandPreviewLoading ? (
                         <p className={cn("text-muted-foreground")}>Loading…</p>
                       ) : ffmpegCommandPreview ? (
-                        <pre
-                          className={cn("m-0 whitespace-pre-wrap select-text")}
-                        >
+                        <pre className={cn("m-0 whitespace-pre-wrap select-text")}>
                           {ffmpegCommandPreview}
                         </pre>
                       ) : (
-                        <p className={cn("text-muted-foreground")}>
-                          Could not generate command
-                        </p>
+                        <p className={cn("text-muted-foreground")}>Could not generate command</p>
                       )}
                     </ScrollArea>
                   </AccordionContent>
@@ -528,13 +470,7 @@ export function VideoSettings() {
   );
 }
 
-function TooltipLabel({
-  children,
-  tooltip,
-}: {
-  children: React.ReactNode;
-  tooltip: string;
-}) {
+function TooltipLabel({ children, tooltip }: { children: React.ReactNode; tooltip: string }) {
   return (
     <div className={cn("flex items-center gap-2")}>
       <Label className={cn("text-base font-bold")}>{children}</Label>

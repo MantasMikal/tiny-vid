@@ -9,9 +9,7 @@ import { cn } from "@/lib/utils";
 
 export function VideoDropZone() {
   const ref = useRef<HTMLDivElement>(null);
-  const disabled = useCompressionStore(
-    useShallow((s) => !selectIsInitialized(s))
-  );
+  const disabled = useCompressionStore(useShallow((s) => !selectIsInitialized(s)));
 
   useEffect(() => {
     let mounted = true;
@@ -30,11 +28,7 @@ export function VideoDropZone() {
         const x = event.payload.position.x / scale;
         const y = event.payload.position.y / scale;
 
-        const isInside =
-          x >= rect.left &&
-          x <= rect.right &&
-          y >= rect.top &&
-          y <= rect.bottom;
+        const isInside = x >= rect.left && x <= rect.right && y >= rect.top && y <= rect.bottom;
 
         if (isInside) {
           const path = event.payload.paths[0];
@@ -69,9 +63,7 @@ export function VideoDropZone() {
       disabled={disabled}
       onClick={() => void useCompressionStore.getState().browseAndSelectFile()}
     >
-      <p className={cn("text-center text-muted-foreground")}>
-        Drop video or click to browse
-      </p>
+      <p className={cn("text-center text-muted-foreground")}>Drop video or click to browse</p>
     </DropZone>
   );
 }

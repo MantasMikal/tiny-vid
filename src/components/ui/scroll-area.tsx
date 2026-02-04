@@ -20,10 +20,8 @@ function ScrollArea({
         data-slot="scroll-area-viewport"
         className={cn(
           `
-            size-full rounded-[inherit] transition-[color,box-shadow]
-            outline-none
-            focus-visible:ring-[3px] focus-visible:ring-ring/50
-            focus-visible:outline-1
+            size-full rounded-[inherit] transition-[color,box-shadow] outline-none
+            focus-visible:ring-[3px] focus-visible:ring-ring/50 focus-visible:outline-1
           `
         )}
       >
@@ -46,10 +44,8 @@ function ScrollBar({
       orientation={orientation}
       className={cn(
         "flex touch-none p-px transition-colors select-none",
-        orientation === "vertical" &&
-          "h-full w-2.5 border-l border-l-transparent",
-        orientation === "horizontal" &&
-          "h-2.5 flex-col border-t border-t-transparent",
+        orientation === "vertical" && "h-full w-2.5 border-l border-l-transparent",
+        orientation === "horizontal" && "h-2.5 flex-col border-t border-t-transparent",
         className
       )}
       {...props}

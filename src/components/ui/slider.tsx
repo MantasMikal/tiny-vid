@@ -3,9 +3,7 @@ import * as React from "react";
 
 import { cn } from "@/lib/utils";
 
-interface SliderProps extends React.ComponentProps<
-  typeof SliderPrimitive.Root
-> {
+interface SliderProps extends React.ComponentProps<typeof SliderPrimitive.Root> {
   /** When true, shows the current value inside the thumb */
   showValueOnThumb?: boolean;
   /** Format the value for the thumb label. Defaults to String(value) */
@@ -23,12 +21,7 @@ function Slider({
   ...props
 }: SliderProps) {
   const _values = React.useMemo(
-    () =>
-      Array.isArray(value)
-        ? value
-        : Array.isArray(defaultValue)
-          ? defaultValue
-          : [min, max],
+    () => (Array.isArray(value) ? value : Array.isArray(defaultValue) ? defaultValue : [min, max]),
     [value, defaultValue, min, max]
   );
 
@@ -43,9 +36,7 @@ function Slider({
         `
           relative flex w-full touch-none items-center select-none
           data-disabled:opacity-50
-          data-[orientation=vertical]:h-full
-          data-[orientation=vertical]:min-h-44
-          data-[orientation=vertical]:w-auto
+          data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto
           data-[orientation=vertical]:flex-col
         `,
         className
@@ -57,8 +48,7 @@ function Slider({
         className={cn(
           `
             relative grow overflow-hidden rounded-full bg-secondary
-            data-[orientation=horizontal]:h-2
-            data-[orientation=horizontal]:w-full
+            data-[orientation=horizontal]:h-2 data-[orientation=horizontal]:w-full
             data-[orientation=vertical]:h-full data-[orientation=vertical]:w-1.5
           `
         )}
@@ -66,11 +56,7 @@ function Slider({
         <SliderPrimitive.Range
           data-slot="slider-range"
           className={cn(
-            `
-              absolute bg-primary
-              data-[orientation=horizontal]:h-full
-              data-[orientation=vertical]:w-full
-            `
+            `absolute bg-primary data-[orientation=horizontal]:h-full data-[orientation=vertical]:w-full`
           )}
         />
       </SliderPrimitive.Track>
@@ -80,12 +66,10 @@ function Slider({
           key={index}
           className={cn(
             `
-              relative flex h-6 w-9 shrink-0 cursor-pointer items-center
-              justify-center rounded-full border-2 border-primary bg-background
-              ring-offset-background transition-colors
+              relative flex h-6 w-9 shrink-0 cursor-pointer items-center justify-center rounded-full border-2
+              border-primary bg-background ring-offset-background transition-colors
               hover:bg-background
-              focus-visible:ring-2 focus-visible:ring-ring
-              focus-visible:ring-offset-2 focus-visible:outline-none
+              focus-visible:ring-2 focus-visible:ring-ring focus-visible:ring-offset-2 focus-visible:outline-none
               disabled:pointer-events-none disabled:opacity-50
             `
           )}

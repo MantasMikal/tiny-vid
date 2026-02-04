@@ -27,14 +27,10 @@ export function VideoMetadataDisplay({
   cOptions,
   estimatedSize,
 }: VideoMetadataDisplayProps) {
-  const estimatedSizeMB =
-    estimatedSize != null ? estimatedSize / (1024 * 1024) : null;
+  const estimatedSizeMB = estimatedSize != null ? estimatedSize / (1024 * 1024) : null;
   const percent =
     estimatedSizeMB != null && videoMetadata.sizeMB !== 0
-      ? (
-          ((videoMetadata.sizeMB - estimatedSizeMB) / videoMetadata.sizeMB) *
-          100
-        ).toFixed(2)
+      ? (((videoMetadata.sizeMB - estimatedSizeMB) / videoMetadata.sizeMB) * 100).toFixed(2)
       : null;
 
   const hasExtendedDetails =
@@ -73,9 +69,7 @@ export function VideoMetadataDisplay({
         <b>File size:</b>{" "}
         {estimatedSizeMB != null ? (
           <>
-            <span className={cn("line-through")}>
-              {videoMetadata.sizeMB.toFixed(2)} MB
-            </span>{" "}
+            <span className={cn("line-through")}>{videoMetadata.sizeMB.toFixed(2)} MB</span>{" "}
             <span>{estimatedSizeMB.toFixed(2)} MB</span>{" "}
             {percent != null && <span>({percent}% reduction)</span>}
           </>
@@ -92,9 +86,7 @@ export function VideoMetadataDisplay({
               Show all details
             </AccordionTrigger>
             <AccordionContent className={cn("pt-0 pb-2")}>
-              <div
-                className={cn("flex flex-col gap-1 text-sm text-foreground")}
-              >
+              <div className={cn("flex flex-col gap-1 text-sm text-foreground")}>
                 {videoMetadata.fps > 0 && (
                   <p>
                     <b>Frame rate:</b> {videoMetadata.fps} fps
@@ -104,8 +96,7 @@ export function VideoMetadataDisplay({
                   <p>
                     <b>Codec:</b> {videoMetadata.codecName}
                     {videoMetadata.codecLongName != null &&
-                      videoMetadata.codecLongName !==
-                        videoMetadata.codecName && (
+                      videoMetadata.codecLongName !== videoMetadata.codecName && (
                         <span className={cn("text-muted-foreground")}>
                           {" "}
                           ({videoMetadata.codecLongName})
@@ -115,20 +106,17 @@ export function VideoMetadataDisplay({
                 )}
                 {videoMetadata.videoBitRate != null && (
                   <p>
-                    <b>Video bitrate:</b>{" "}
-                    {formatBitrateMbps(videoMetadata.videoBitRate)}
+                    <b>Video bitrate:</b> {formatBitrateMbps(videoMetadata.videoBitRate)}
                   </p>
                 )}
                 {videoMetadata.formatBitRate != null && (
                   <p>
-                    <b>Format bitrate:</b>{" "}
-                    {formatBitrateMbps(videoMetadata.formatBitRate)}
+                    <b>Format bitrate:</b> {formatBitrateMbps(videoMetadata.formatBitRate)}
                   </p>
                 )}
                 {videoMetadata.formatName != null && (
                   <p>
-                    <b>Container:</b>{" "}
-                    {videoMetadata.formatLongName ?? videoMetadata.formatName}
+                    <b>Container:</b> {videoMetadata.formatLongName ?? videoMetadata.formatName}
                   </p>
                 )}
                 {videoMetadata.nbStreams != null && (

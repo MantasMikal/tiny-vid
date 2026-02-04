@@ -6,10 +6,7 @@ import { FadeIn } from "@/components/ui/animations";
 import { Button } from "@/components/ui/button";
 import { VideoMetadataDisplay } from "@/features/compression/components/video-metadata-display";
 import { selectIsActionsDisabled } from "@/features/compression/store/compression-selectors";
-import {
-  useCompressionStore,
-  WorkerState,
-} from "@/features/compression/store/compression-store";
+import { useCompressionStore, WorkerState } from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
 
 export function CompressionDetailsCard() {
@@ -56,9 +53,7 @@ export function CompressionDetailsCard() {
   return (
     <AnimatePresence>
       {inputPath && (
-        <FadeIn
-          className={cn("flex flex-col gap-2 rounded-md border bg-card p-4")}
-        >
+        <FadeIn className={cn("flex flex-col gap-2 rounded-md border bg-card p-4")}>
           <div className={cn("flex items-center justify-between")}>
             <h2 className={cn("text-xl font-semibold")}>Details</h2>
             <Button

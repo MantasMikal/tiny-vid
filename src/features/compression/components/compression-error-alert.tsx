@@ -19,10 +19,7 @@ export function CompressionErrorAlert({ error }: CompressionErrorAlertProps) {
         onClick={() => {
           getCompressionState().dismissError();
         }}
-        className={cn(
-          "absolute top-2 right-2 size-8 text-current",
-          "hover:bg-white/20"
-        )}
+        className={cn("absolute top-2 right-2 size-8 text-current", "hover:bg-white/20")}
       >
         <XIcon className={cn("size-4")} />
       </Button>
@@ -31,9 +28,7 @@ export function CompressionErrorAlert({ error }: CompressionErrorAlertProps) {
         {error.message}
         {error.detail && error.detail !== error.message && (
           <details className={cn("mt-2")}>
-            <summary className={cn("cursor-pointer text-sm opacity-80")}>
-              Show details
-            </summary>
+            <summary className={cn("cursor-pointer text-sm opacity-80")}>Show details</summary>
             <pre
               className={cn(
                 "mt-1 max-h-32 overflow-auto text-xs wrap-anywhere",

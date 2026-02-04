@@ -18,10 +18,7 @@ function toResultError(error: unknown, type: string): ResultError {
 }
 
 function isAbortError(error: unknown): boolean {
-  return (
-    error instanceof Error &&
-    (error.name === "AbortError" || error.message === "Aborted")
-  );
+  return error instanceof Error && (error.name === "AbortError" || error.message === "Aborted");
 }
 
 export async function tryCatch<T>(

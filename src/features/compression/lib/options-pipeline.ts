@@ -83,9 +83,7 @@ export function resolve(
     format = (formats[0] ?? "mp4") as Format;
   }
 
-  const allowedForFormat = getCodecsForFormat(format, codecs).map(
-    (c) => c.value
-  );
+  const allowedForFormat = getCodecsForFormat(format, codecs).map((c) => c.value);
   let codec: Codec = (partial.codec ?? allowedForFormat[0]) as Codec;
   const oldCodec = codec;
   if (!allowedForFormat.includes(codec)) {
@@ -98,11 +96,7 @@ export function resolve(
 
   const quality =
     oldCodec !== codec
-      ? convertQualityForCodecSwitch(
-          partial.quality ?? DEFAULT_OPTIONS.quality,
-          oldCodec,
-          codec
-        )
+      ? convertQualityForCodecSwitch(partial.quality ?? DEFAULT_OPTIONS.quality, oldCodec, codec)
       : (partial.quality ?? DEFAULT_OPTIONS.quality);
 
   return {

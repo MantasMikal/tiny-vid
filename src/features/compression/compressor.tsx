@@ -13,12 +13,7 @@ export default function Compressor() {
       )}
     >
       <VideoWorkspace />
-      <aside
-        className={cn(
-          "flex h-full min-w-0 flex-col gap-4",
-          "md:overflow-hidden"
-        )}
-      >
+      <aside className={cn("flex h-full min-w-0 flex-col gap-4", "md:overflow-hidden")}>
         <div
           className={cn(
             "flex min-w-0 flex-col rounded-md border bg-card p-1",

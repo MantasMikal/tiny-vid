@@ -12,14 +12,8 @@ interface PreviewRegionTimelineProps {
   onStartChange: (startSeconds: number) => void;
 }
 
-function formatRangeLabel(
-  startSeconds: number,
-  endSeconds: number,
-  rangeSeconds: number
-) {
-  const range = `${secondsToTimestamp(startSeconds)} – ${secondsToTimestamp(
-    endSeconds
-  )}`;
+function formatRangeLabel(startSeconds: number, endSeconds: number, rangeSeconds: number) {
+  const range = `${secondsToTimestamp(startSeconds)} – ${secondsToTimestamp(endSeconds)}`;
   const secondsLabel = `${String(Math.max(1, Math.round(rangeSeconds)))}s`;
   return `${range} (${secondsLabel})`;
 }
@@ -32,52 +26,35 @@ export function PreviewRegionTimeline({
   onStartChange,
 }: PreviewRegionTimelineProps) {
   const safeDuration = Number.isFinite(duration) ? Math.max(0, duration) : 0;
-  const safePreviewDuration = Number.isFinite(previewDuration)
-    ? Math.max(0, previewDuration)
-    : 0;
+  const safePreviewDuration = Number.isFinite(previewDuration) ? Math.max(0, previewDuration) : 0;
   const maxStart = Math.max(0, safeDuration - safePreviewDuration);
   const clampedStart = Math.min(Math.max(0, startSeconds), maxStart);
-  const regionWidth =
-    safeDuration > 0 ? Math.min(1, safePreviewDuration / safeDuration) : 0;
+  const regionWidth = safeDuration > 0 ? Math.min(1, safePreviewDuration / safeDuration) : 0;
   const regionLeft = safeDuration > 0 ? clampedStart / safeDuration : 0;
   const endSeconds = Math.min(safeDuration, clampedStart + safePreviewDuration);
   const rangeSeconds = Math.max(0, endSeconds - clampedStart);
   const isDisabled =
-    (disabled ?? false) ||
-    safeDuration <= 0 ||
-    safeDuration <= safePreviewDuration;
+    (disabled ?? false) || safeDuration <= 0 || safeDuration <= safePreviewDuration;
   const regionLeftPercent = `${String(regionLeft * 100)}%`;
   const regionWidthPercent = `${String(regionWidth * 100)}%`;
 
   return (
     <div
       className={cn(
-        `
-          pointer-events-auto rounded-md border border-white/10 bg-black/65 p-2
-          text-white shadow-lg backdrop-blur-sm
-        `,
+        `pointer-events-auto rounded-md border border-white/10 bg-black/65 p-2 text-white shadow-lg backdrop-blur-sm`,
         isDisabled && "opacity-70"
       )}
     >
-      <div
-        className={cn("grid grid-cols-[1fr_auto_1fr] items-center text-[11px]")}
-      >
-        <span className={cn("text-left text-white/70")}>
-          {secondsToTimestamp(0)}
-        </span>
+      <div className={cn("grid grid-cols-[1fr_auto_1fr] items-center text-[11px]")}>
+        <span className={cn("text-left text-white/70")}>{secondsToTimestamp(0)}</span>
         <span className={cn("px-2 font-medium text-white")}>
           {formatRangeLabel(clampedStart, endSeconds, rangeSeconds)}
         </span>
-        <span className={cn("text-right text-white/70")}>
-          {secondsToTimestamp(safeDuration)}
-        </span>
+        <span className={cn("text-right text-white/70")}>{secondsToTimestamp(safeDuration)}</span>
       </div>
       <SliderPrimitive.Root
         className={cn(
-          `
-            relative mt-2 flex w-full touch-none items-center select-none
-            data-disabled:opacity-60
-          `
+          `relative mt-2 flex w-full touch-none items-center select-none data-disabled:opacity-60`
         )}
         min={0}
         max={maxStart}
@@ -91,9 +68,7 @@ export function PreviewRegionTimeline({
         aria-label="Preview region start"
       >
         <SliderPrimitive.Track
-          className={cn(
-            "relative h-2 w-full overflow-hidden rounded-full bg-white/15"
-          )}
+          className={cn("relative h-2 w-full overflow-hidden rounded-full bg-white/15")}
         >
           <div
             className={cn(`absolute inset-y-0 rounded-full bg-primary/50`)}
@@ -102,17 +77,11 @@ export function PreviewRegionTimeline({
               width: regionWidthPercent,
             }}
           />
-          <SliderPrimitive.Range
-            className={cn("absolute h-full bg-transparent")}
-          />
+          <SliderPrimitive.Range className={cn("absolute h-full bg-transparent")} />
         </SliderPrimitive.Track>
         <SliderPrimitive.Thumb
           className={cn(
-            `
-              flex size-5 cursor-pointer items-center justify-center
-              rounded-full bg-primary
-              hover:bg-primary/80
-            `
+            `flex size-5 cursor-pointer items-center justify-center rounded-full bg-primary hover:bg-primary/80`
           )}
         >
           <GripVertical className={cn("size-3 text-white")} />

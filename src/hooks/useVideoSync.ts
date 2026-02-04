@@ -47,11 +47,7 @@ export function useVideoSync(
 
     const initAt = performance.now();
 
-    const writeLog = (
-      level: "info" | "debug",
-      event: string,
-      data?: unknown
-    ) => {
+    const writeLog = (level: "info" | "debug", event: string, data?: unknown) => {
       if (DEBUG) {
         const now = performance.now();
         const sinceInitMs = Math.round(now - initAt);
@@ -88,9 +84,7 @@ export function useVideoSync(
     let lastResyncAt = 0;
     let secondaryFrameCallbackId: number | null = null;
 
-    const offset = Number.isFinite(startOffsetSeconds)
-      ? Math.max(0, startOffsetSeconds)
-      : 0;
+    const offset = Number.isFinite(startOffsetSeconds) ? Math.max(0, startOffsetSeconds) : 0;
 
     const getPrimaryLoopStart = () => {
       if (offset <= 0) return 0;
@@ -175,17 +169,10 @@ export function useVideoSync(
 
       const sanitizedPrimaryTime = Math.max(0, primaryTime);
       const primaryDuration = primary.duration;
-      const hasPrimaryDuration =
-        Number.isFinite(primaryDuration) && primaryDuration > 0;
-      const loopThreshold = Math.max(
-        primaryFrame.estimate,
-        FRAME_DURATION_FALLBACK
-      );
+      const hasPrimaryDuration = Number.isFinite(primaryDuration) && primaryDuration > 0;
+      const loopThreshold = Math.max(primaryFrame.estimate, FRAME_DURATION_FALLBACK);
 
-      if (
-        hasPrimaryDuration &&
-        primaryDuration - sanitizedPrimaryTime <= loopThreshold
-      ) {
+      if (hasPrimaryDuration && primaryDuration - sanitizedPrimaryTime <= loopThreshold) {
         setWaiting(true);
         primaryFrame.lastMediaTime = null;
         const didSeek = seekPrimaryToOffset("loop");
@@ -202,8 +189,7 @@ export function useVideoSync(
 
       // Detect looping fallback when duration is unknown.
       const looped =
-        !hasPrimaryDuration &&
-        sanitizedPrimaryTime + LOOP_RESET_EPSILON < lastPrimaryTime;
+        !hasPrimaryDuration && sanitizedPrimaryTime + LOOP_RESET_EPSILON < lastPrimaryTime;
 
       if (looped) {
         setWaiting(true);
@@ -285,15 +271,11 @@ export function useVideoSync(
 
       // Positive drift means secondary is ahead of target.
       const drift = secondary.currentTime - targetTime;
-      const maxFrameDuration = Math.max(
-        primaryFrame.estimate,
-        secondaryFrame.estimate
-      );
+      const maxFrameDuration = Math.max(primaryFrame.estimate, secondaryFrame.estimate);
       const allowedDrift = Math.max(maxFrameDuration * 1.5, MIN_DRIFT_SECONDS);
       const holdThreshold = allowedDrift * HOLD_THRESHOLD_MULTIPLIER;
       const resumeThreshold = allowedDrift * RESUME_THRESHOLD_MULTIPLIER;
-      const canHardResync =
-        lastResyncAt === 0 || now - lastResyncAt >= RESYNC_COOLDOWN_MS;
+      const canHardResync = lastResyncAt === 0 || now - lastResyncAt >= RESYNC_COOLDOWN_MS;
 
       // If ahead too far, pause until primary catches up.
       if (drift > holdThreshold) {
@@ -356,12 +338,10 @@ export function useVideoSync(
         if (typeof metadata.mediaTime === "number") {
           updateFrameEstimate(secondaryFrame, metadata.mediaTime);
         }
-        secondaryFrameCallbackId =
-          secondary.requestVideoFrameCallback(onSecondaryFrame);
+        secondaryFrameCallbackId = secondary.requestVideoFrameCallback(onSecondaryFrame);
       };
 
-      secondaryFrameCallbackId =
-        secondary.requestVideoFrameCallback(onSecondaryFrame);
+      secondaryFrameCallbackId = secondary.requestVideoFrameCallback(onSecondaryFrame);
     };
 
     const stopSecondaryFrameLoop = () => {
@@ -402,10 +382,7 @@ export function useVideoSync(
     const stopLoop = () => {
       isLooping = false;
       logInfo("sync-loop-stop");
-      if (
-        frameCallbackId !== null &&
-        typeof primary.cancelVideoFrameCallback === "function"
-      ) {
+      if (frameCallbackId !== null && typeof primary.cancelVideoFrameCallback === "function") {
         primary.cancelVideoFrameCallback(frameCallbackId);
         frameCallbackId = null;
       }

@@ -18,9 +18,7 @@ function TooltipProvider({
   );
 }
 
-function Tooltip({
-  ...props
-}: React.ComponentProps<typeof TooltipPrimitive.Root>) {
+function Tooltip({ ...props }: React.ComponentProps<typeof TooltipPrimitive.Root>) {
   return (
     <TooltipProvider>
       <TooltipPrimitive.Root data-slot="tooltip" {...props} />
@@ -36,11 +34,7 @@ function TooltipTrigger({
     <TooltipPrimitive.Trigger
       data-slot="tooltip-trigger"
       className={cn(
-        `
-          rounded-md outline-none
-          focus-visible:border-ring focus-visible:ring-[3px]
-          focus-visible:ring-ring/50
-        `,
+        `rounded-md outline-none focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/50`,
         className
       )}
       {...props}
@@ -61,8 +55,8 @@ function TooltipContent({
         sideOffset={sideOffset}
         className={cn(
           `
-            z-50 w-fit origin-(--radix-tooltip-content-transform-origin)
-            rounded-md bg-primary px-3 py-1.5 text-xs text-primary-foreground
+            z-50 w-fit origin-(--radix-tooltip-content-transform-origin) rounded-md bg-primary px-3 py-1.5 text-xs
+            text-primary-foreground
           `,
           className
         )}

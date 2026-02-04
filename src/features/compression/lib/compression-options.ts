@@ -51,13 +51,7 @@ const FORMAT_REGISTRY = {
   mp4: {
     name: "MP4",
     extension: "mp4",
-    codecs: [
-      "libx264",
-      "libx265",
-      "libsvtav1",
-      "h264_videotoolbox",
-      "hevc_videotoolbox",
-    ],
+    codecs: ["libx264", "libx265", "libsvtav1", "h264_videotoolbox", "hevc_videotoolbox"],
     defaultCodec: "libx264",
   },
   webm: {
@@ -95,10 +89,7 @@ export const codecs = (
 ).map(([value, def]) => ({ name: def.name, value }));
 
 export const outputFormats = (
-  Object.entries(FORMAT_REGISTRY) as [
-    Format,
-    (typeof FORMAT_REGISTRY)[Format],
-  ][]
+  Object.entries(FORMAT_REGISTRY) as [Format, (typeof FORMAT_REGISTRY)[Format]][]
 ).map(([value, def]) => ({ name: def.name, value, extension: def.extension }));
 
 export function getCodecCapabilities(codec: Codec) {
@@ -110,12 +101,7 @@ export function getFormatCapabilities(format: Format) {
 }
 
 export function getCompatibleFormats(codec: Codec): Format[] {
-  return (
-    Object.entries(FORMAT_REGISTRY) as [
-      Format,
-      (typeof FORMAT_REGISTRY)[Format],
-    ][]
-  )
+  return (Object.entries(FORMAT_REGISTRY) as [Format, (typeof FORMAT_REGISTRY)[Format]][])
     .filter(([, def]) => (def.codecs as readonly Codec[]).includes(codec))
     .map(([f]) => f);
 }
@@ -152,9 +138,7 @@ export const tuneOptions = [
   { name: "SSIM", value: "ssim" },
 ] as const;
 
-export function getTuneOptionsForCodec(
-  codec: Codec
-): readonly { name: string; value: string }[] {
+export function getTuneOptionsForCodec(codec: Codec): readonly { name: string; value: string }[] {
   return CODEC_REGISTRY[codec].supportsTune ? tuneOptions : [];
 }
 
@@ -201,8 +185,7 @@ export function qualityToCrf(quality: number, codec: string): number {
 
 function crfToQuality(crf: number, codec: string): number {
   const c = codec.toLowerCase();
-  if (c.includes("videotoolbox"))
-    return Math.round(Math.max(0, Math.min(100, crf)));
+  if (c.includes("videotoolbox")) return Math.round(Math.max(0, Math.min(100, crf)));
   const { low, high } = getCrfRange(codec);
   const q = (high - crf) / (high - low);
   return Math.round(Math.max(0, Math.min(100, q * 100)));
@@ -236,10 +219,7 @@ export const FORMAT_METADATA = {
 
 export type FormatKey = keyof typeof FORMAT_METADATA;
 
-export function getCodecsForFormat(
-  format: string,
-  codecs: CodecInfo[]
-): CodecInfo[] {
+export function getCodecsForFormat(format: string, codecs: CodecInfo[]): CodecInfo[] {
   return codecs.filter((c) => c.formats.includes(format));
 }
 
@@ -247,9 +227,6 @@ export function getAvailableFormats(codecs: CodecInfo[]): string[] {
   return [...new Set(codecs.flatMap((c) => c.formats))];
 }
 
-export function getCodecInfo(
-  value: string,
-  codecs: CodecInfo[]
-): CodecInfo | undefined {
+export function getCodecInfo(value: string, codecs: CodecInfo[]): CodecInfo | undefined {
   return codecs.find((c) => c.value === value);
 }

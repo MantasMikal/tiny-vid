@@ -82,9 +82,7 @@ export function VideoPreview() {
                 </video>
               </div>
               {showFpsBadges && (
-                <Badge className={cn("absolute top-2 left-2 z-10")}>
-                  {sourceFps} FPS
-                </Badge>
+                <Badge className={cn("absolute top-2 left-2 z-10")}>{sourceFps} FPS</Badge>
               )}
             </div>
           }
@@ -98,16 +96,11 @@ export function VideoPreview() {
                   preload="none"
                   className={cn("size-full object-contain")}
                 >
-                  <source
-                    src={compressedSrc}
-                    type={getVideoType(compressedSrc)}
-                  />
+                  <source src={compressedSrc} type={getVideoType(compressedSrc)} />
                 </video>
               </div>
               {showFpsBadges && (
-                <Badge className={cn("absolute top-2 right-2 z-10")}>
-                  {previewFps} FPS
-                </Badge>
+                <Badge className={cn("absolute top-2 right-2 z-10")}>{previewFps} FPS</Badge>
               )}
             </div>
           }

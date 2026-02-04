@@ -1,7 +1,4 @@
-import {
-  type CompressionState,
-  WorkerState,
-} from "@/features/compression/store/compression-store";
+import { type CompressionState, WorkerState } from "@/features/compression/store/compression-store";
 
 export const selectIsInitialized = (s: CompressionState): boolean =>
   s.availableCodecs.length > 0 && s.listenersReady;
