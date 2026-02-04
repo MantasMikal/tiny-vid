@@ -14,8 +14,8 @@ pub use builder::{
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
 pub use runner::{run_ffmpeg_blocking, terminate_all_ffmpeg};
 pub use cache::{
-    cleanup_preview_transcode_cache, file_signature, get_all_cached_paths, get_cached_preview,
-    get_cached_segments, set_cached_preview, FileSignature,
+    cleanup_preview_transcode_cache, file_signature, get_all_cached_paths, get_cached_estimate,
+    get_cached_preview, get_cached_segments, set_cached_estimate, set_cached_preview, FileSignature,
 };
 pub use temp::{
     cleanup_old_temp_files, cleanup_previous_preview_paths, cleanup_transcode_temp,

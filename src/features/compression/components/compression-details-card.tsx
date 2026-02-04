@@ -1,40 +1,48 @@
-import { SquareStop } from "lucide-react";
+import { SquareStop, TrashIcon } from "lucide-react";
 import { AnimatePresence, motion } from "motion/react";
+import { useShallow } from "zustand/react/shallow";
 
 import { Button } from "@/components/ui/button";
 import { Spinner } from "@/components/ui/spinner";
 import { VideoMetadataDisplay } from "@/features/compression/components/video-metadata-display";
-import type { CompressionOptions } from "@/features/compression/lib/compression-options";
-import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
-import { WorkerState } from "@/features/compression/store/compression-store";
+import { selectIsActionsDisabled } from "@/features/compression/store/compression-selectors";
+import {
+  useCompressionStore,
+  WorkerState,
+} from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
 
-export interface CompressionDetailsCardProps {
-  inputPath: string | null;
-  videoMetadata: VideoMetadata | null;
-  cOptions: CompressionOptions | null;
-  estimatedSize: number | null;
-  isDisabled: boolean;
-  workerState: WorkerState;
-  onTranscode: () => void;
-  onTerminate: () => void;
-  onGeneratePreview: () => void;
-}
-
-export function CompressionDetailsCard({
-  inputPath,
-  videoMetadata,
-  cOptions,
-  estimatedSize,
-  isDisabled,
-  workerState,
-  onTranscode,
-  onTerminate,
-  onGeneratePreview,
-}: CompressionDetailsCardProps) {
+export function CompressionDetailsCard() {
+  const {
+    inputPath,
+    videoMetadata,
+    compressionOptions: cOptions,
+    estimatedSize,
+    workerState,
+    isDisabled,
+  } = useCompressionStore(
+    useShallow((s) => ({
+      inputPath: s.inputPath,
+      videoMetadata: s.videoMetadata,
+      compressionOptions: s.compressionOptions,
+      estimatedSize: s.estimatedSize,
+      workerState: s.workerState,
+      isDisabled: selectIsActionsDisabled(s),
+    }))
+  );
   const isWorking = workerState !== WorkerState.Idle;
   const isTranscoding = workerState === WorkerState.Transcoding;
   const isGeneratingPreview = workerState === WorkerState.GeneratingPreview;
+
+  const handleCompressOrStop = () => {
+    const { terminate, transcodeAndSave } = useCompressionStore.getState();
+    if (isWorking) {
+      void terminate();
+    } else {
+      void transcodeAndSave();
+    }
+  };
+
   return (
     <AnimatePresence>
       {inputPath && (
@@ -44,7 +52,19 @@ export function CompressionDetailsCard({
           exit={{ opacity: 0 }}
           className={cn("flex flex-col gap-2 rounded-md border bg-card p-4")}
         >
-          <h2 className={cn("text-xl font-semibold")}>Details</h2>
+          <div className={cn("flex items-center justify-between")}>
+            <h2 className={cn("text-xl font-semibold")}>Details</h2>
+            <Button
+              size="icon"
+              variant="secondary"
+              onClick={() => {
+                useCompressionStore.getState().clear();
+              }}
+              className={cn("size-8")}
+            >
+              <TrashIcon className={cn("size-4")} />
+            </Button>
+          </div>
           {videoMetadata && cOptions && (
             <VideoMetadataDisplay
               videoMetadata={videoMetadata}
@@ -57,14 +77,8 @@ export function CompressionDetailsCard({
           >
             <Button
               className={cn("flex-1")}
-              disabled={!inputPath || (isDisabled && !isTranscoding)}
-              onClick={() => {
-                if (isWorking) {
-                  onTerminate();
-                } else {
-                  onTranscode();
-                }
-              }}
+              disabled={isDisabled && !isTranscoding}
+              onClick={handleCompressOrStop}
             >
               {isWorking && <SquareStop className={cn("size-4")} />}
               {isWorking ? "Stop" : "Compress"}
@@ -73,7 +87,9 @@ export function CompressionDetailsCard({
               <Button
                 className={cn("flex-1")}
                 variant="secondary"
-                onClick={onGeneratePreview}
+                onClick={() =>
+                  void useCompressionStore.getState().generatePreview()
+                }
                 disabled={isDisabled || isGeneratingPreview}
               >
                 {isGeneratingPreview && <Spinner className={cn("size-4")} />}

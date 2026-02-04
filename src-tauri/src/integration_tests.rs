@@ -324,16 +324,19 @@ fn ffmpeg_preview_single_segment_integration() {
         input_path,
         preview_options(3),
         None,
+        true,
+        None,
     ))
     .expect("run_preview_core");
 
     assert!(std::path::Path::new(&result.original_path).exists());
     assert!(std::path::Path::new(&result.compressed_path).exists());
-    assert!(result.estimated_size > 0);
+    let estimated_size = result.estimated_size.expect("expected estimate");
+    assert!(estimated_size > 0);
     assert!(
-        result.estimated_size <= input_size * 2,
+        estimated_size <= input_size * 2,
         "estimated_size should be reasonable (not >> input): {} > {}",
-        result.estimated_size,
+        estimated_size,
         input_size * 2
     );
 }
@@ -353,16 +356,19 @@ fn ffmpeg_preview_multi_segment_integration() {
         input_path,
         preview_options(3),
         None,
+        true,
+        None,
     ))
     .expect("run_preview_core");
 
     assert!(std::path::Path::new(&result.original_path).exists());
     assert!(std::path::Path::new(&result.compressed_path).exists());
-    assert!(result.estimated_size > 0);
+    let estimated_size = result.estimated_size.expect("expected estimate");
+    assert!(estimated_size > 0);
     assert!(
-        result.estimated_size <= input_size * 2,
+        estimated_size <= input_size * 2,
         "estimated_size should be reasonable: {} > {}",
-        result.estimated_size,
+        estimated_size,
         input_size * 2
     );
 }
@@ -382,16 +388,68 @@ fn ffmpeg_preview_estimation_sanity_integration() {
         input_path,
         preview_options(3),
         None,
+        true,
+        None,
     ))
     .expect("run_preview_core");
 
-    assert!(result.estimated_size > 0, "estimated_size should be positive");
+    let estimated_size = result.estimated_size.expect("expected estimate");
+    assert!(estimated_size > 0, "estimated_size should be positive");
     assert!(
-        result.estimated_size <= input_size * 2,
+        estimated_size <= input_size * 2,
         "estimated_size ({}) should be reasonable (not >> input_size {})",
-        result.estimated_size,
+        estimated_size,
         input_size
     );
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_region_no_estimate_integration -- --ignored --test-threads=1"]
+fn ffmpeg_preview_region_no_estimate_integration() {
+    let ffmpeg = find_ffmpeg_and_set_env();
+
+    let dir = tempfile::tempdir().unwrap();
+    let input_path = dir.path().join("input.mp4");
+    let status = create_test_video(&ffmpeg, &input_path, 10.0).expect("failed to create test video");
+    assert!(status.success(), "ffmpeg failed to create test video");
+
+    let result = tauri::async_runtime::block_on(run_preview_core(
+        input_path,
+        preview_options(3),
+        Some(2.0),
+        false,
+        None,
+    ))
+    .expect("run_preview_core");
+
+    assert!(std::path::Path::new(&result.original_path).exists());
+    assert!(std::path::Path::new(&result.compressed_path).exists());
+    assert!(result.estimated_size.is_none(), "estimate should be omitted");
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_region_with_estimate_integration -- --ignored --test-threads=1"]
+fn ffmpeg_preview_region_with_estimate_integration() {
+    let ffmpeg = find_ffmpeg_and_set_env();
+
+    let dir = tempfile::tempdir().unwrap();
+    let input_path = dir.path().join("input.mp4");
+    let status = create_test_video(&ffmpeg, &input_path, 10.0).expect("failed to create test video");
+    assert!(status.success(), "ffmpeg failed to create test video");
+
+    let result = tauri::async_runtime::block_on(run_preview_core(
+        input_path,
+        preview_options(3),
+        Some(2.0),
+        true,
+        None,
+    ))
+    .expect("run_preview_core");
+
+    assert!(std::path::Path::new(&result.original_path).exists());
+    assert!(std::path::Path::new(&result.compressed_path).exists());
+    let estimated_size = result.estimated_size.expect("expected estimate");
+    assert!(estimated_size > 0);
 }
 
 #[test]
@@ -407,6 +465,8 @@ fn ffmpeg_preview_output_valid_integration() {
     let result = tauri::async_runtime::block_on(run_preview_core(
         input_path.clone(),
         preview_options(3),
+        None,
+        true,
         None,
     ))
     .expect("run_preview_core");
@@ -443,12 +503,16 @@ fn ffmpeg_preview_transcode_cache_integration() {
         input_path.clone(),
         opts.clone(),
         None,
+        true,
+        None,
     ))
     .expect("run_preview_core");
 
     let result2 = tauri::async_runtime::block_on(run_preview_core(
         input_path,
         opts,
+        None,
+        true,
         None,
     ))
     .expect("run_preview_core");
@@ -504,6 +568,8 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         input_path.clone(),
         opts_a.clone(),
         None,
+        true,
+        None,
     ))
     .expect("run_preview_core");
 
@@ -511,12 +577,16 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         input_path.clone(),
         opts_b.clone(),
         None,
+        true,
+        None,
     ))
     .expect("run_preview_core");
 
     let result_a2 = tauri::async_runtime::block_on(run_preview_core(
         input_path,
         opts_a,
+        None,
+        true,
         None,
     ))
     .expect("run_preview_core");

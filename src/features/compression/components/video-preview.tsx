@@ -1,45 +1,67 @@
 import { useRef } from "react";
 import { ReactCompareSlider } from "react-compare-slider";
+import { useShallow } from "zustand/react/shallow";
 
 import { Badge } from "@/components/ui/badge";
+import { PreviewRegionTimeline } from "@/features/compression/components/preview-region-timeline";
+import { selectIsInitialized } from "@/features/compression/store/compression-selectors";
+import {
+  getCompressionState,
+  useCompressionStore,
+} from "@/features/compression/store/compression-store";
 import { useVideoSync } from "@/hooks/useVideoSync";
 import { cn } from "@/lib/utils";
-
-interface PreviewProps {
-  originalSrc: string;
-  compressedSrc: string;
-  startOffsetSeconds?: number;
-  /** Source video FPS. Shown on original when different from previewFps. */
-  sourceFps?: number;
-  /** Preview/compressed FPS. Shown on compressed when different from sourceFps. */
-  previewFps?: number;
-}
 
 function getVideoType(src: string): string {
   return src.includes(".webm") ? "video/webm" : "video/mp4";
 }
 
-export function VideoPreview({
-  originalSrc,
-  compressedSrc,
-  startOffsetSeconds,
-  sourceFps,
-  previewFps,
-}: PreviewProps) {
-  const showFpsBadges =
-    sourceFps != null &&
-    previewFps != null &&
-    sourceFps > 0 &&
-    previewFps > 0 &&
-    sourceFps !== previewFps;
+export function VideoPreview() {
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const compressedVideoRef = useRef<HTMLVideoElement>(null);
+
+  const {
+    videoPreview,
+    originalSrc,
+    compressedSrc,
+    startOffsetSeconds,
+    sourceFps,
+    previewFps,
+    videoDuration,
+    previewDuration,
+    previewStartSeconds,
+    isDisabled,
+  } = useCompressionStore(
+    useShallow((s) => ({
+      videoPreview: s.videoPreview,
+      originalSrc: s.videoPreview?.originalSrc ?? "",
+      compressedSrc: s.videoPreview?.compressedSrc ?? "",
+      startOffsetSeconds: s.videoPreview?.startOffsetSeconds,
+      sourceFps: s.videoMetadata?.fps,
+      previewFps: s.compressionOptions?.fps,
+      videoDuration: s.videoMetadata?.duration,
+      previewDuration: s.compressionOptions?.previewDuration,
+      previewStartSeconds: s.previewStartSeconds,
+      isDisabled: !selectIsInitialized(s),
+    }))
+  );
 
   useVideoSync(originalVideoRef, compressedVideoRef, startOffsetSeconds ?? 0, [
     originalSrc,
     compressedSrc,
     startOffsetSeconds,
   ]);
+
+  if (!videoPreview) return null;
+
+  const showFpsBadges =
+    sourceFps != null &&
+    previewFps != null &&
+    sourceFps > 0 &&
+    previewFps > 0 &&
+    sourceFps !== previewFps;
+
+  const showPreviewTimeline = previewDuration != null && videoDuration != null;
 
   return (
     <div className={cn("relative size-full")}>
@@ -60,7 +82,7 @@ export function VideoPreview({
                 </video>
               </div>
               {showFpsBadges && (
-                <Badge className={cn("absolute bottom-2 left-2 z-10")}>
+                <Badge className={cn("absolute top-2 left-2 z-10")}>
                   {sourceFps} FPS
                 </Badge>
               )}
@@ -83,7 +105,7 @@ export function VideoPreview({
                 </video>
               </div>
               {showFpsBadges && (
-                <Badge className={cn("absolute right-2 bottom-2 z-10")}>
+                <Badge className={cn("absolute top-2 right-2 z-10")}>
                   {previewFps} FPS
                 </Badge>
               )}
@@ -91,6 +113,19 @@ export function VideoPreview({
           }
         />
       </div>
+      {showPreviewTimeline && (
+        <div className={cn("absolute bottom-0 z-20 w-full")}>
+          <PreviewRegionTimeline
+            duration={videoDuration}
+            previewDuration={previewDuration}
+            startSeconds={previewStartSeconds}
+            disabled={isDisabled}
+            onStartChange={(startSeconds) => {
+              getCompressionState().setPreviewRegionStart(startSeconds);
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

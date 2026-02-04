@@ -1,7 +1,7 @@
 //! Unified preview cache: LRU 16 entries with segment reuse via ref-counting.
 //!
-//! Each preview result is (input, duration, options) -> (output_path, estimated_size).
-//! Segments are shared: (input, duration) -> (segment_paths, ref_count).
+//! Each preview result is (input, duration, preview_start_ms, options) -> (output_path, estimated_size).
+//! Segments are shared: (input, duration, preview_start_ms) -> (segment_paths, ref_count).
 //! When evicting an LRU entry, we decrement segment ref_count; when it hits 0, we delete segment files.
 
 use std::collections::{HashMap, VecDeque};
@@ -44,15 +44,26 @@ fn file_signature_from_metadata(meta: &fs::Metadata) -> Option<FileSignature> {
 struct PreviewCacheKey {
     input_path: String,
     preview_duration: u32,
+    preview_start_ms: u64,
     options_key: String,
     file_signature: FileSignature,
 }
 
-/// Key for segment store: (input_path, preview_duration).
+/// Key for segment store: (input_path, preview_duration, preview_start_ms).
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 struct SegmentKey {
     input_path: String,
     preview_duration: u32,
+    preview_start_ms: u64,
+    file_signature: FileSignature,
+}
+
+/// Key for estimate cache: (input_path, preview_duration, options_key).
+#[derive(Clone, Hash, Eq, PartialEq, Debug)]
+struct EstimateKey {
+    input_path: String,
+    preview_duration: u32,
+    options_key: String,
     file_signature: FileSignature,
 }
 
@@ -65,15 +76,17 @@ struct SegmentEntry {
 /// LRU entry: output path and estimated size. Segment paths come from segment store.
 struct PreviewEntry {
     output_path: PathBuf,
-    estimated_size: u64,
+    estimated_size: Option<u64>,
 }
 
 /// Unified preview cache: LRU for results, separate segment store with ref-counting.
 struct PreviewCache {
     /// LRU: front = least recent, back = most recent.
     lru: VecDeque<(PreviewCacheKey, PreviewEntry)>,
-    /// Segments keyed by (input, duration). Ref count = number of LRU entries using them.
+    /// Segments keyed by (input, duration, preview_start_ms). Ref count = number of LRU entries using them.
     segments: HashMap<SegmentKey, SegmentEntry>,
+    /// Estimated sizes keyed by (input, duration, options_key).
+    estimates: HashMap<EstimateKey, u64>,
 }
 
 impl PreviewCache {
@@ -81,6 +94,7 @@ impl PreviewCache {
         Self {
             lru: VecDeque::new(),
             segments: HashMap::new(),
+            estimates: HashMap::new(),
         }
     }
 
@@ -98,6 +112,7 @@ impl PreviewCache {
         let seg_key = SegmentKey {
             input_path: key.input_path,
             preview_duration: key.preview_duration,
+            preview_start_ms: key.preview_start_ms,
             file_signature: key.file_signature,
         };
         if let Some(seg) = self.segments.get_mut(&seg_key) {
@@ -121,6 +136,7 @@ impl PreviewCache {
         let seg_key = SegmentKey {
             input_path: key.input_path,
             preview_duration: key.preview_duration,
+            preview_start_ms: key.preview_start_ms,
             file_signature: key.file_signature,
         };
         if let Some(seg) = self.segments.get_mut(&seg_key) {
@@ -141,10 +157,11 @@ fn preview_cache() -> &'static Mutex<PreviewCache> {
     PREVIEW_CACHE.get_or_init(|| Mutex::new(PreviewCache::new()))
 }
 
-/// Get cached segments for (input, duration). Used to reuse extraction when only options change.
+/// Get cached segments for (input, duration, preview_start_ms). Used to reuse extraction when only options change.
 pub fn get_cached_segments(
     input_path: &str,
     preview_duration: u32,
+    preview_start_ms: u64,
     file_signature: Option<&FileSignature>,
 ) -> Option<Vec<PathBuf>> {
     let file_signature = file_signature?.clone();
@@ -152,6 +169,7 @@ pub fn get_cached_segments(
     let key = SegmentKey {
         input_path: input_path.to_string(),
         preview_duration,
+        preview_start_ms,
         file_signature,
     };
     let entry = guard.segments.get(&key)?;
@@ -168,14 +186,16 @@ pub fn get_cached_segments(
 pub fn get_cached_preview(
     input_path: &str,
     preview_duration: u32,
+    preview_start_ms: u64,
     options: &TranscodeOptions,
     file_signature: Option<&FileSignature>,
-) -> Option<(PathBuf, PathBuf, u64)> {
+) -> Option<(PathBuf, PathBuf, Option<u64>)> {
     let file_signature = file_signature?.clone();
     let options_key = options.options_cache_key();
     let key = PreviewCacheKey {
         input_path: input_path.to_string(),
         preview_duration,
+        preview_start_ms,
         options_key: options_key.clone(),
         file_signature,
     };
@@ -191,6 +211,7 @@ pub fn get_cached_preview(
     let seg_key = SegmentKey {
         input_path: key.input_path,
         preview_duration: key.preview_duration,
+        preview_start_ms: key.preview_start_ms,
         file_signature: key.file_signature,
     };
     let Some(seg_entry) = guard.segments.get(&seg_key) else {
@@ -203,9 +224,54 @@ pub fn get_cached_preview(
     }
     let first_segment = seg_entry.segment_paths.first()?.clone();
 
-    let result = (first_segment, entry.output_path.clone(), entry.estimated_size);
+    let result = (
+        first_segment,
+        entry.output_path.clone(),
+        entry.estimated_size,
+    );
     guard.lru.push_back((k, entry));
     Some(result)
+}
+
+/// Get cached estimate for (input, duration, options).
+pub fn get_cached_estimate(
+    input_path: &str,
+    preview_duration: u32,
+    options: &TranscodeOptions,
+    file_signature: Option<&FileSignature>,
+) -> Option<u64> {
+    let file_signature = file_signature?.clone();
+    let options_key = options.options_cache_key();
+    let key = EstimateKey {
+        input_path: input_path.to_string(),
+        preview_duration,
+        options_key,
+        file_signature,
+    };
+    let guard = preview_cache().lock();
+    guard.estimates.get(&key).copied()
+}
+
+/// Store cached estimate for (input, duration, options).
+pub fn set_cached_estimate(
+    input_path: String,
+    preview_duration: u32,
+    options: &TranscodeOptions,
+    estimated_size: u64,
+    file_signature: Option<&FileSignature>,
+) {
+    let Some(file_signature) = file_signature.cloned() else {
+        return;
+    };
+    let options_key = options.options_cache_key();
+    let key = EstimateKey {
+        input_path,
+        preview_duration,
+        options_key,
+        file_signature,
+    };
+    let mut guard = preview_cache().lock();
+    guard.estimates.insert(key, estimated_size);
 }
 
 /// Returns all cached paths (segments + outputs).
@@ -228,10 +294,11 @@ pub fn get_all_cached_paths() -> Vec<PathBuf> {
 pub fn set_cached_preview(
     input_path: String,
     preview_duration: u32,
+    preview_start_ms: u64,
     options: &TranscodeOptions,
     segment_paths: Vec<PathBuf>,
     output_path: PathBuf,
-    estimated_size: u64,
+    estimated_size: Option<u64>,
     file_signature: Option<&FileSignature>,
 ) {
     let Some(file_signature) = file_signature.cloned() else {
@@ -241,12 +308,14 @@ pub fn set_cached_preview(
     let key = PreviewCacheKey {
         input_path: input_path.clone(),
         preview_duration,
+        preview_start_ms,
         options_key: options_key.clone(),
         file_signature: file_signature.clone(),
     };
     let seg_key = SegmentKey {
         input_path: input_path.clone(),
         preview_duration,
+        preview_start_ms,
         file_signature,
     };
 
@@ -263,6 +332,7 @@ pub fn set_cached_preview(
         let old_seg_key = SegmentKey {
             input_path: old_key.input_path,
             preview_duration: old_key.preview_duration,
+            preview_start_ms: old_key.preview_start_ms,
             file_signature: old_key.file_signature,
         };
         if let Some(seg) = guard.segments.get_mut(&old_seg_key) {
@@ -306,9 +376,10 @@ pub fn set_cached_preview(
 
     log::debug!(
         target: "tiny_vid::ffmpeg::cache",
-        "caching preview for input={}, duration={}",
+        "caching preview for input={}, duration={}, start_ms={}",
         input_path,
-        preview_duration
+        preview_duration,
+        preview_start_ms
     );
     guard.lru.push_back((
         key,
@@ -340,6 +411,7 @@ pub fn cleanup_preview_transcode_cache() {
             let _ = fs::remove_file(&path);
         }
     }
+    guard.estimates.clear();
 }
 
 #[cfg(test)]
@@ -371,10 +443,11 @@ mod tests {
             set_cached_preview(
                 input_str.clone(),
                 3,
+                0,
                 &opts,
                 vec![seg],
                 out,
-                1000,
+                Some(1000),
                 Some(&sig),
             );
         }
@@ -408,19 +481,21 @@ mod tests {
         set_cached_preview(
             input_str.clone(),
             3,
+            0,
             &opts1,
             vec![seg.clone()],
             path1.clone(),
-            100,
+            Some(100),
             Some(&sig),
         );
         set_cached_preview(
             input_str.clone(),
             3,
+            0,
             &opts2,
             vec![seg.clone()],
             path2.clone(),
-            200,
+            Some(200),
             Some(&sig),
         );
 
@@ -451,17 +526,87 @@ mod tests {
         set_cached_preview(
             input_str.clone(),
             3,
+            0,
             &opts,
             vec![seg.clone()],
             out.clone(),
-            500,
+            Some(500),
             Some(&sig),
         );
 
-        let result = get_cached_preview(&input_str, 3, &opts, Some(&sig)).unwrap();
+        let result = get_cached_preview(&input_str, 3, 0, &opts, Some(&sig)).unwrap();
         assert_eq!(result.0, seg);
         assert_eq!(result.1, out);
-        assert_eq!(result.2, 500);
+        assert_eq!(result.2, Some(500));
+
+        cleanup_preview_transcode_cache();
+        let _ = fs::remove_file(&input);
+    }
+
+    #[test]
+    #[serial]
+    fn estimate_cache_round_trip() {
+        cleanup_preview_transcode_cache();
+
+        let input = std::env::temp_dir().join("estimate_cache_input.mp4");
+        let _ = fs::write(&input, b"fake");
+        let input_str = input.to_string_lossy().to_string();
+        let sig = file_signature(&input).unwrap();
+
+        let mut opts = TranscodeOptions::default();
+        opts.preset = Some("fast".into());
+
+        set_cached_estimate(input_str.clone(), 3, &opts, 123, Some(&sig));
+        let cached = get_cached_estimate(&input_str, 3, &opts, Some(&sig));
+        assert_eq!(cached, Some(123));
+
+        cleanup_preview_transcode_cache();
+        let _ = fs::remove_file(&input);
+    }
+
+    #[test]
+    #[serial]
+    fn preview_cache_distinguishes_start_offsets() {
+        cleanup_preview_transcode_cache();
+
+        let input = std::env::temp_dir().join("preview_start_cache_input.mp4");
+        let _ = fs::write(&input, b"fake");
+        let input_str = input.to_string_lossy().to_string();
+        let sig = file_signature(&input).unwrap();
+
+        let temp = TempFileManager::default();
+        let seg_a = temp.create("preview-start-a.mp4", Some(b"a")).unwrap();
+        let out_a = temp.create("preview-out-a.mp4", Some(b"a")).unwrap();
+        let seg_b = temp.create("preview-start-b.mp4", Some(b"b")).unwrap();
+        let out_b = temp.create("preview-out-b.mp4", Some(b"b")).unwrap();
+
+        let opts = TranscodeOptions::default();
+
+        set_cached_preview(
+            input_str.clone(),
+            3,
+            0,
+            &opts,
+            vec![seg_a.clone()],
+            out_a.clone(),
+            Some(100),
+            Some(&sig),
+        );
+        set_cached_preview(
+            input_str.clone(),
+            3,
+            1000,
+            &opts,
+            vec![seg_b.clone()],
+            out_b.clone(),
+            Some(200),
+            Some(&sig),
+        );
+
+        let result_a = get_cached_preview(&input_str, 3, 0, &opts, Some(&sig)).unwrap();
+        let result_b = get_cached_preview(&input_str, 3, 1000, &opts, Some(&sig)).unwrap();
+        assert_eq!(result_a.1, out_a);
+        assert_eq!(result_b.1, out_b);
 
         cleanup_preview_transcode_cache();
         let _ = fs::remove_file(&input);
@@ -492,10 +637,11 @@ mod tests {
         set_cached_preview(
             input_str.clone(),
             3,
+            0,
             &opts1,
             vec![seg1.clone()],
             out1.clone(),
-            100,
+            Some(100),
             Some(&sig),
         );
 
@@ -503,10 +649,11 @@ mod tests {
         set_cached_preview(
             input_str.clone(),
             3,
+            0,
             &opts2,
             vec![seg2.clone()],
             out2.clone(),
-            200,
+            Some(200),
             Some(&sig),
         );
 

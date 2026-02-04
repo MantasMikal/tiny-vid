@@ -1,7 +1,6 @@
 import { invoke } from "@tauri-apps/api/core";
 import { getCurrentWindow } from "@tauri-apps/api/window";
 import { useEffect, useRef } from "react";
-import { useShallow } from "zustand/react/shallow";
 
 import {
   useCompressionStore,
@@ -103,45 +102,4 @@ export function useCompressionStoreInit() {
       });
     };
   }, []);
-}
-
-export function useCompression() {
-  return useCompressionStore(
-    useShallow((s) => {
-      const isInitialized = s.availableCodecs.length > 0 && s.listenersReady;
-      return {
-        inputPath: s.inputPath,
-        videoPreview: s.videoPreview,
-        videoUploading: s.videoUploading,
-        error: s.error,
-        workerState: s.workerState,
-        progress: s.progress,
-        videoMetadata: s.videoMetadata,
-        estimatedSize: s.estimatedSize,
-        compressionOptions: s.compressionOptions,
-        availableCodecs: s.availableCodecs,
-        initError: s.initError,
-        listenersReady: s.listenersReady,
-        ffmpegCommandPreview: s.ffmpegCommandPreview,
-        ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,
-        isInitialized,
-        isDisabled:
-          !isInitialized ||
-          s.compressionOptions == null ||
-          !s.inputPath ||
-          s.isSaving ||
-          s.workerState === WorkerState.Transcoding,
-        isWorking: s.workerState !== WorkerState.Idle,
-        selectPath: s.selectPath,
-        browseAndSelectFile: s.browseAndSelectFile,
-        transcodeAndSave: s.transcodeAndSave,
-        clear: s.clear,
-        dismissError: s.dismissError,
-        generatePreview: s.generatePreview,
-        setCompressionOptions: s.setCompressionOptions,
-        refreshFfmpegCommandPreview: s.refreshFfmpegCommandPreview,
-        terminate: s.terminate,
-      };
-    })
-  );
 }

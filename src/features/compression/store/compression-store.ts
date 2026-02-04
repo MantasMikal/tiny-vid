@@ -55,16 +55,38 @@ function toRustOptions(
 }
 
 let debouncePreviewTimer: ReturnType<typeof setTimeout> | null = null;
+let debounceScrubPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let previewRequestId = 0;
 let commandPreviewRequestId = 0;
 let debounceCommandPreviewTimer: ReturnType<typeof setTimeout> | null = null;
+let selectPathRequestId = 0;
 
-interface CompressionState {
+const SCRUB_PREVIEW_DEBOUNCE_MS = 200;
+const OPTIONS_PREVIEW_DEBOUNCE_MS = 300;
+
+function clampPreviewStartSeconds(
+  startSeconds: number,
+  duration?: number | null,
+  previewDuration?: number | null
+) {
+  const safeDuration =
+    typeof duration === "number" && Number.isFinite(duration) ? duration : 0;
+  const safePreviewDuration =
+    typeof previewDuration === "number" && Number.isFinite(previewDuration)
+      ? previewDuration
+      : 0;
+  const maxStart = Math.max(0, safeDuration - safePreviewDuration);
+  const safeStart = Number.isFinite(startSeconds) ? startSeconds : 0;
+  return Math.min(Math.max(0, safeStart), maxStart);
+}
+
+export interface CompressionState {
   inputPath: string | null;
   videoPreview: VideoPreview | null;
   videoUploading: boolean;
   estimatedSize: number | null;
   videoMetadata: VideoMetadata | null;
+  previewStartSeconds: number;
   isSaving: boolean;
   compressionOptions: CompressionOptions | null;
   availableCodecs: CodecInfo[];
@@ -82,7 +104,11 @@ interface CompressionState {
   transcodeAndSave: () => Promise<void>;
   clear: () => void;
   dismissError: () => void;
-  generatePreview: (requestId?: number) => Promise<void>;
+  generatePreview: (
+    requestId?: number,
+    opts?: { includeEstimate?: boolean; previewStartSeconds?: number }
+  ) => Promise<void>;
+  setPreviewRegionStart: (startSeconds: number) => void;
   setCompressionOptions: (
     options: CompressionOptions,
     opts?: { triggerPreview?: boolean }
@@ -97,6 +123,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   videoUploading: false,
   estimatedSize: null,
   videoMetadata: null,
+  previewStartSeconds: 0,
   isSaving: false,
   compressionOptions: null,
   availableCodecs: [],
@@ -158,6 +185,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   },
 
   selectPath: async (path: string) => {
+    const requestId = ++selectPathRequestId;
     const { workerState } = get();
     if (workerState === WorkerState.GeneratingPreview) {
       await get().terminate();
@@ -167,6 +195,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       inputPath: path,
       videoUploading: true,
       videoPreview: null,
+      previewStartSeconds: 0,
     });
     const metadataResult = await tryCatch(
       () => getVideoMetadataFromPath(path),
@@ -176,9 +205,12 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       if (!metadataResult.aborted) {
         set({ error: metadataResult.error });
       }
-      set({ videoUploading: false });
+      if (selectPathRequestId === requestId) {
+        set({ videoUploading: false });
+      }
       return;
     }
+    if (selectPathRequestId !== requestId) return;
     set({ videoMetadata: metadataResult.value });
 
     const { compressionOptions } = get();
@@ -194,21 +226,33 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
     await tryCatch(
       async () => {
+        if (selectPathRequestId !== requestId) return;
         const { compressionOptions } = get();
         if (compressionOptions?.generatePreview) {
           set({ workerState: WorkerState.GeneratingPreview, error: null });
+          const previewStartSeconds = clampPreviewStartSeconds(
+            get().previewStartSeconds,
+            metadataResult.value.duration,
+            compressionOptions.previewDuration
+          );
           const result = await tryCatch(
             () =>
               invoke<FfmpegPreviewResult>("ffmpeg_preview", {
                 inputPath: path,
                 options: toRustOptions(compressionOptions),
+                previewStartSeconds,
+                includeEstimate: true,
               }),
             "Preview Error"
           );
 
+          if (selectPathRequestId !== requestId) return;
           if (result.ok) {
+            if (result.value.estimatedSize != null) {
+              set({ estimatedSize: result.value.estimatedSize });
+            }
             set({
-              estimatedSize: result.value.estimatedSize,
+              previewStartSeconds,
               videoPreview: {
                 originalSrc: convertFileSrc(result.value.originalPath),
                 compressedSrc: convertFileSrc(result.value.compressedPath),
@@ -228,7 +272,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       "Preview Error",
       {
         onFinally: () => {
-          if (get().inputPath === path) {
+          if (get().inputPath === path && selectPathRequestId === requestId) {
             set({ videoUploading: false });
           }
         },
@@ -345,6 +389,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       videoPreview: null,
       videoMetadata: null,
       estimatedSize: null,
+      previewStartSeconds: 0,
       error: null,
     });
     void get().refreshFfmpegCommandPreview();
@@ -354,7 +399,10 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     set({ error: null });
   },
 
-  generatePreview: async (requestId?: number) => {
+  generatePreview: async (
+    requestId?: number,
+    opts?: { includeEstimate?: boolean; previewStartSeconds?: number }
+  ) => {
     const { inputPath, compressionOptions, workerState } = get();
     if (!inputPath || !compressionOptions) return;
 
@@ -364,11 +412,20 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
     set({ workerState: WorkerState.GeneratingPreview, error: null });
 
+    const previewStartSeconds = clampPreviewStartSeconds(
+      opts?.previewStartSeconds ?? get().previewStartSeconds,
+      get().videoMetadata?.duration,
+      compressionOptions.previewDuration
+    );
+    const includeEstimate = opts?.includeEstimate ?? true;
+
     const result = await tryCatch(
       () =>
         invoke<FfmpegPreviewResult>("ffmpeg_preview", {
           inputPath,
           options: toRustOptions(compressionOptions),
+          previewStartSeconds,
+          includeEstimate,
         }),
       "Preview Error"
     );
@@ -376,8 +433,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (requestId !== undefined && requestId !== previewRequestId) return;
 
     if (result.ok) {
+      if (result.value.estimatedSize != null) {
+        set({ estimatedSize: result.value.estimatedSize });
+      }
       set({
-        estimatedSize: result.value.estimatedSize,
+        previewStartSeconds,
         videoPreview: {
           originalSrc: convertFileSrc(result.value.originalPath),
           compressedSrc: convertFileSrc(result.value.compressedPath),
@@ -402,6 +462,14 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (availableCodecs.length === 0) return;
     const resolved = resolve(options, availableCodecs);
     set({ compressionOptions: resolved });
+    const clampedPreviewStart = clampPreviewStartSeconds(
+      get().previewStartSeconds,
+      get().videoMetadata?.duration,
+      resolved.previewDuration
+    );
+    if (clampedPreviewStart !== get().previewStartSeconds) {
+      set({ previewStartSeconds: clampedPreviewStart });
+    }
     if (debounceCommandPreviewTimer) {
       clearTimeout(debounceCommandPreviewTimer);
     }
@@ -410,7 +478,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       void get().refreshFfmpegCommandPreview();
     }, 250);
     if (opts?.triggerPreview === false) return;
-    if (!options.generatePreview) return;
+    if (!resolved.generatePreview) return;
 
     const { inputPath } = get();
     if (!inputPath) return;
@@ -422,8 +490,35 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     debouncePreviewTimer = setTimeout(() => {
       debouncePreviewTimer = null;
       previewRequestId++;
-      void get().generatePreview(previewRequestId);
-    }, 300);
+      void get().generatePreview(previewRequestId, {
+        includeEstimate: true,
+        previewStartSeconds: clampedPreviewStart,
+      });
+    }, OPTIONS_PREVIEW_DEBOUNCE_MS);
+  },
+
+  setPreviewRegionStart: (startSeconds: number) => {
+    const { compressionOptions, inputPath, workerState } = get();
+    const clampedStart = clampPreviewStartSeconds(
+      startSeconds,
+      get().videoMetadata?.duration,
+      compressionOptions?.previewDuration
+    );
+    set({ previewStartSeconds: clampedStart });
+
+    if (!inputPath || !compressionOptions) return;
+    if (workerState === WorkerState.Transcoding) return;
+    if (debounceScrubPreviewTimer) {
+      clearTimeout(debounceScrubPreviewTimer);
+    }
+    debounceScrubPreviewTimer = setTimeout(() => {
+      debounceScrubPreviewTimer = null;
+      previewRequestId++;
+      void get().generatePreview(previewRequestId, {
+        includeEstimate: false,
+        previewStartSeconds: clampedStart,
+      });
+    }, SCRUB_PREVIEW_DEBOUNCE_MS);
   },
 
   terminate: async () => {
@@ -434,3 +529,5 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     });
   },
 }));
+
+export const getCompressionState = () => useCompressionStore.getState();

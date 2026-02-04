@@ -7,6 +7,7 @@ import {
 } from "lucide-react";
 import { AnimatePresence, motion, usePresenceData } from "motion/react";
 import { useEffect, useState } from "react";
+import { useShallow } from "zustand/react/shallow";
 
 import {
   Accordion,
@@ -36,7 +37,6 @@ import {
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
-import type { CompressionOptions } from "@/features/compression/lib/compression-options";
 import {
   FORMAT_METADATA,
   getAvailableFormats,
@@ -55,9 +55,12 @@ import {
   isBasicPresetId,
   resolve,
 } from "@/features/compression/lib/options-pipeline";
-import { useCompression } from "@/features/compression/store/use-compression";
+import { selectIsActionsDisabled } from "@/features/compression/store/compression-selectors";
+import {
+  getCompressionState,
+  useCompressionStore,
+} from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
-import type { CodecInfo } from "@/types/tauri";
 
 type TabOptions = "basic" | "advanced";
 
@@ -130,24 +133,7 @@ function AnimatedTabPanel({
   );
 }
 
-interface VideoSettingsProps {
-  isDisabled: boolean;
-  availableCodecs: CodecInfo[];
-  initError: string | null;
-  cOptions: CompressionOptions | null;
-  onOptionsChange: (
-    options: CompressionOptions,
-    opts?: { triggerPreview?: boolean }
-  ) => void;
-}
-
-export function VideoSettings({
-  isDisabled,
-  availableCodecs,
-  initError,
-  cOptions,
-  onOptionsChange,
-}: VideoSettingsProps) {
+export function VideoSettings() {
   const [tabState, setTabState] = useState<{
     activeTab: TabOptions;
     direction: number;
@@ -156,16 +142,30 @@ export function VideoSettings({
   const [basicPreset, setBasicPreset] =
     useState<BasicPresetId>(DEFAULT_PRESET_ID);
   const {
+    compressionOptions: cOptions,
+    availableCodecs,
+    initError,
+    isDisabled,
     ffmpegCommandPreview,
     ffmpegCommandPreviewLoading,
-    refreshFfmpegCommandPreview,
-  } = useCompression();
+  } = useCompressionStore(
+    useShallow((s) => ({
+      compressionOptions: s.compressionOptions,
+      availableCodecs: s.availableCodecs,
+      initError: s.initError,
+      isDisabled: selectIsActionsDisabled(s),
+      ffmpegCommandPreview: s.ffmpegCommandPreview,
+      ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,
+    }))
+  );
+
+  const setOptions = getCompressionState().setCompressionOptions;
 
   useEffect(() => {
     if (activeTab === "advanced" && ffmpegCommandPreview === null) {
-      void refreshFfmpegCommandPreview();
+      void getCompressionState().refreshFfmpegCommandPreview();
     }
-  }, [activeTab, ffmpegCommandPreview, refreshFfmpegCommandPreview]);
+  }, [activeTab, ffmpegCommandPreview]);
 
   const handleTabChange = (value: string) => {
     const newTab: TabOptions = value === "advanced" ? "advanced" : "basic";
@@ -212,7 +212,7 @@ export function VideoSettings({
                   onValueChange={(v) => {
                     if (!v || !isBasicPresetId(v)) return;
                     setBasicPreset(v);
-                    onOptionsChange(applyPreset(cOptions, v, availableCodecs));
+                    setOptions(applyPreset(cOptions, v, availableCodecs));
                   }}
                   disabled={isDisabled}
                   className={cn("w-full min-w-0 flex-col items-start")}
@@ -255,7 +255,7 @@ export function VideoSettings({
                     disabled={isDisabled}
                     checked={cOptions.removeAudio}
                     onCheckedChange={(c) => {
-                      onOptionsChange({ ...cOptions, removeAudio: !!c });
+                      setOptions({ ...cOptions, removeAudio: !!c });
                     }}
                   />
                   <Label htmlFor="removeAudio">Remove soundtrack</Label>
@@ -278,7 +278,7 @@ export function VideoSettings({
                   disabled={isDisabled}
                   onValueChange={(v) => {
                     if (!isFormat(v)) return;
-                    onOptionsChange(
+                    setOptions(
                       resolve({ ...cOptions, outputFormat: v }, availableCodecs)
                     );
                   }}
@@ -310,7 +310,7 @@ export function VideoSettings({
                   disabled={isDisabled}
                   onValueChange={(v) => {
                     if (!isCodec(v)) return;
-                    onOptionsChange(
+                    setOptions(
                       resolve({ ...cOptions, codec: v }, availableCodecs)
                     );
                   }}
@@ -342,13 +342,13 @@ export function VideoSettings({
                   value={[cOptions.quality]}
                   showValueOnThumb
                   onValueChange={([v]) => {
-                    onOptionsChange(
+                    setOptions(
                       { ...cOptions, quality: v },
                       { triggerPreview: false }
                     );
                   }}
                   onValueCommit={([v]) => {
-                    onOptionsChange({ ...cOptions, quality: v });
+                    setOptions({ ...cOptions, quality: v });
                   }}
                 />
               </div>
@@ -362,7 +362,7 @@ export function VideoSettings({
                     disabled={isDisabled}
                     onValueChange={(v) => {
                       if (!isPresetValue(v)) return;
-                      onOptionsChange({ ...cOptions, preset: v });
+                      setOptions({ ...cOptions, preset: v });
                     }}
                   >
                     <SelectTrigger className={cn("w-full")}>
@@ -387,7 +387,7 @@ export function VideoSettings({
                     value={cOptions.tune ?? "none"}
                     disabled={isDisabled}
                     onValueChange={(v) => {
-                      onOptionsChange({
+                      setOptions({
                         ...cOptions,
                         tune: v === "none" ? undefined : v,
                       });
@@ -419,13 +419,13 @@ export function VideoSettings({
                   showValueOnThumb
                   formatThumbValue={(v) => `${String(Math.round(v * 100))}%`}
                   onValueChange={([v]) => {
-                    onOptionsChange(
+                    setOptions(
                       { ...cOptions, scale: v },
                       { triggerPreview: false }
                     );
                   }}
                   onValueCommit={([v]) => {
-                    onOptionsChange({ ...cOptions, scale: v });
+                    setOptions({ ...cOptions, scale: v });
                   }}
                 />
               </div>
@@ -439,7 +439,7 @@ export function VideoSettings({
                   max={120}
                   value={cOptions.fps}
                   onChange={(fps) => {
-                    onOptionsChange({ ...cOptions, fps });
+                    setOptions({ ...cOptions, fps });
                   }}
                 />
               </div>
@@ -453,7 +453,7 @@ export function VideoSettings({
                     disabled={isDisabled}
                     checked={cOptions.generatePreview ?? true}
                     onCheckedChange={(c) => {
-                      onOptionsChange({
+                      setOptions({
                         ...cOptions,
                         generatePreview: !!c,
                       });
@@ -470,9 +470,12 @@ export function VideoSettings({
                   max={30}
                   value={cOptions.previewDuration ?? 3}
                   onChange={(e) => {
-                    onOptionsChange({
+                    const parsed = Number.parseInt(e.target.value, 10);
+                    const safeValue = Number.isFinite(parsed) ? parsed : 3;
+                    const clamped = Math.min(30, Math.max(1, safeValue));
+                    setOptions({
                       ...cOptions,
-                      previewDuration: parseInt(e.target.value) || 3,
+                      previewDuration: clamped,
                     });
                   }}
                 />
