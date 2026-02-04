@@ -39,7 +39,7 @@ fn run_transcode_integration(
     )
     .expect("build_ffmpeg_command");
 
-    let result = run_ffmpeg_blocking(args, None, None, None, None);
+    let result = run_ffmpeg_blocking(args, None, None, None, None, None);
     if let Err(ref e) = result {
         if skip_if_encoder_missing {
             let stderr = format!("{}", e);
@@ -208,6 +208,7 @@ fn ffmpeg_progress_emission_integration() {
         None,
         Some(duration_secs as f64),
         Some(Arc::clone(&progress_collector)),
+        None,
     );
 
     assert!(
@@ -285,6 +286,7 @@ fn ffmpeg_cancel_cleanup_integration() {
         None,
         None,
         Some(duration_secs as f64),
+        None,
         None,
     );
 

@@ -11,6 +11,11 @@ export interface FfmpegPreviewResult {
   startOffsetSeconds?: number;
 }
 
+export interface FfmpegProgressPayload {
+  progress: number;
+  step?: string;
+}
+
 export interface GetVideoMetadataResult {
   duration: number;
   width: number;

@@ -37,6 +37,8 @@ struct ReadStreamConfig {
     app: Option<tauri::AppHandle>,
     window_label: Option<String>,
     progress_collector: Option<Arc<Mutex<Vec<f64>>>>,
+    /// When set, called instead of emitting ffmpeg-progress (used for preview aggregate progress).
+    progress_callback: Option<Arc<dyn Fn(f64) + Send + Sync>>,
 }
 
 fn read_stream<R: std::io::Read + Send + 'static>(
@@ -80,14 +82,16 @@ fn read_stream<R: std::io::Read + Send + 'static>(
                     let mut guard = collector.lock();
                     guard.push(p);
                 }
-                if let Some(handle) = config.app.as_ref() {
-                    let now = Instant::now();
-                    let should_emit = now.duration_since(last_emit) >= PROGRESS_EMIT_INTERVAL
-                        || (p - last_progress).abs() >= 0.01
-                        || p >= 1.0;
-                    if should_emit {
-                        last_emit = now;
-                        last_progress = p;
+                let now = Instant::now();
+                let should_emit = now.duration_since(last_emit) >= PROGRESS_EMIT_INTERVAL
+                    || (p - last_progress).abs() >= 0.01
+                    || p >= 1.0;
+                if should_emit {
+                    last_emit = now;
+                    last_progress = p;
+                    if let Some(ref cb) = config.progress_callback {
+                        cb(p);
+                    } else if let Some(handle) = config.app.as_ref() {
                         let _ = if let Some(ref lbl) = config.window_label {
                             handle.emit_to(lbl, "ffmpeg-progress", p)
                         } else {
@@ -102,16 +106,18 @@ fn read_stream<R: std::io::Read + Send + 'static>(
 }
 
 /// Run FFmpeg and block until completion. Used when we need to wait (e.g. preview, transcode).
-/// Optionally emit progress events to the frontend via app and window_label.
+/// Optionally emit progress events to the frontend via app and window_label, or via progress_callback.
 /// duration_secs: if provided, initializes the shared duration so progress can be computed
 /// immediately from out_time_ms (avoids race with Duration line on stderr).
 /// progress_collector: when provided (e.g. in tests), collects all progress values for verification.
+/// progress_callback: when provided (e.g. for preview), called with 0-1 progress instead of emitting ffmpeg-progress.
 pub fn run_ffmpeg_blocking(
     args: Vec<String>,
     app: Option<&tauri::AppHandle>,
     window_label: Option<&str>,
     duration_secs: Option<f64>,
     progress_collector: Option<Arc<Mutex<Vec<f64>>>>,
+    progress_callback: Option<Arc<dyn Fn(f64) + Send + Sync>>,
 ) -> Result<(), AppError> {
     let ffmpeg_path = get_ffmpeg_path()?;
     let path_str = ffmpeg_path.to_string_lossy();
@@ -148,9 +154,13 @@ pub fn run_ffmpeg_blocking(
             .unwrap_or(NONE_DURATION_BITS),
     ));
     let stderr_buffer = Arc::new(Mutex::new(Vec::new()));
-    let app_stdout = app.cloned();
-    let app_stderr = app.cloned();
-    let label = window_label.map(String::from);
+    let (app_stdout, app_stderr, label) = if progress_callback.is_none() {
+        (app.cloned(), app.cloned(), window_label.map(String::from))
+    } else {
+        (None, None, None)
+    };
+    let progress_cb_stdout = progress_callback.clone();
+    let progress_cb_stderr = progress_callback;
 
     let stdout_handle = read_stream(
         stdout,
@@ -160,6 +170,7 @@ pub fn run_ffmpeg_blocking(
             app: app_stdout,
             window_label: label.clone(),
             progress_collector,
+            progress_callback: progress_cb_stdout,
         },
     );
     let stderr_handle = read_stream(
@@ -170,6 +181,7 @@ pub fn run_ffmpeg_blocking(
             app: app_stderr,
             window_label: label,
             progress_collector: None,
+            progress_callback: progress_cb_stderr,
         },
     );
 

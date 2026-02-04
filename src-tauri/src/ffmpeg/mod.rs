@@ -12,6 +12,15 @@ pub use builder::{
     build_extract_args, build_ffmpeg_command, format_args_for_display_multiline,
 };
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
+
+/// Payload for ffmpeg-progress event. Used by both preview and transcoding.
+#[derive(Debug, Clone, serde::Serialize)]
+#[serde(rename_all = "camelCase")]
+pub struct FfmpegProgressPayload {
+    pub progress: f64,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub step: Option<String>,
+}
 pub use runner::{run_ffmpeg_blocking, terminate_all_ffmpeg};
 pub use cache::{
     cleanup_preview_transcode_cache, file_signature, get_all_cached_paths, get_cached_estimate,

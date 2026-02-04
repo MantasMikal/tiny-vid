@@ -1,9 +1,9 @@
 import { SquareStop, TrashIcon } from "lucide-react";
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { useShallow } from "zustand/react/shallow";
 
+import { FadeIn } from "@/components/ui/animations";
 import { Button } from "@/components/ui/button";
-import { Spinner } from "@/components/ui/spinner";
 import { VideoMetadataDisplay } from "@/features/compression/components/video-metadata-display";
 import { selectIsActionsDisabled } from "@/features/compression/store/compression-selectors";
 import {
@@ -30,33 +30,40 @@ export function CompressionDetailsCard() {
       isDisabled: selectIsActionsDisabled(s),
     }))
   );
-  const isWorking = workerState !== WorkerState.Idle;
   const isTranscoding = workerState === WorkerState.Transcoding;
   const isGeneratingPreview = workerState === WorkerState.GeneratingPreview;
 
   const handleCompressOrStop = () => {
     const { terminate, transcodeAndSave } = useCompressionStore.getState();
-    if (isWorking) {
+    if (isTranscoding) {
       void terminate();
     } else {
       void transcodeAndSave();
     }
   };
 
+  const handleGeneratePreviewOrStop = () => {
+    const { terminate, generatePreview } = useCompressionStore.getState();
+    if (isGeneratingPreview) {
+      void terminate();
+    } else {
+      void generatePreview();
+    }
+  };
+
+  const isManualPreview = cOptions && !cOptions.generatePreview;
+
   return (
     <AnimatePresence>
       {inputPath && (
-        <motion.div
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          exit={{ opacity: 0 }}
+        <FadeIn
           className={cn("flex flex-col gap-2 rounded-md border bg-card p-4")}
         >
           <div className={cn("flex items-center justify-between")}>
             <h2 className={cn("text-xl font-semibold")}>Details</h2>
             <Button
               size="icon"
-              variant="secondary"
+              variant="destructive"
               onClick={() => {
                 useCompressionStore.getState().clear();
               }}
@@ -72,32 +79,28 @@ export function CompressionDetailsCard() {
               estimatedSize={estimatedSize}
             />
           )}
-          <div
-            className={cn("mt-2 flex w-full flex-wrap justify-evenly gap-2")}
-          >
+          <div className={cn("mt-2 flex w-full gap-2")}>
             <Button
-              className={cn("flex-1")}
-              disabled={isDisabled && !isTranscoding}
+              className={cn("grow")}
+              disabled={isGeneratingPreview || (isDisabled && !isTranscoding)}
               onClick={handleCompressOrStop}
             >
-              {isWorking && <SquareStop className={cn("size-4")} />}
-              {isWorking ? "Stop" : "Compress"}
+              {isTranscoding && <SquareStop className={cn("size-4")} />}
+              {isTranscoding ? "Stop" : "Compress"}
             </Button>
-            {cOptions && !cOptions.generatePreview && (
+            {isManualPreview && (
               <Button
-                className={cn("flex-1")}
+                className={cn("min-w-[100px]")}
                 variant="secondary"
-                onClick={() =>
-                  void useCompressionStore.getState().generatePreview()
-                }
-                disabled={isDisabled || isGeneratingPreview}
+                onClick={handleGeneratePreviewOrStop}
+                disabled={isDisabled}
               >
-                {isGeneratingPreview && <Spinner className={cn("size-4")} />}
-                {isGeneratingPreview ? "Processing" : "Generate Preview"}
+                {isGeneratingPreview && <SquareStop className={cn("size-4")} />}
+                {isGeneratingPreview ? "Stop" : "Preview"}
               </Button>
             )}
           </div>
-        </motion.div>
+        </FadeIn>
       )}
     </AnimatePresence>
   );

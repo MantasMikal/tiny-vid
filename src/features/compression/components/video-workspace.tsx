@@ -1,12 +1,13 @@
-import { AnimatePresence, motion } from "motion/react";
+import { AnimatePresence } from "motion/react";
 import { useShallow } from "zustand/react/shallow";
 
-import { DropZone } from "@/components/ui/drop-zone";
-import { Progress } from "@/components/ui/progress";
+import { FadeIn } from "@/components/ui/animations";
 import { Spinner } from "@/components/ui/spinner";
 import { CompressionErrorAlert } from "@/features/compression/components/compression-error-alert";
+import { CompressionProgress } from "@/features/compression/components/compression-progress";
+import { VideoDropZone } from "@/features/compression/components/video-drop-zone";
 import { VideoPreview } from "@/features/compression/components/video-preview";
-import { selectIsInitialized } from "@/features/compression/store/compression-selectors";
+import { getProgressStepLabel } from "@/features/compression/lib/preview-progress";
 import {
   useCompressionStore,
   WorkerState,
@@ -21,7 +22,7 @@ export function VideoWorkspace() {
     error,
     workerState,
     progress,
-    isDisabled,
+    progressStep,
   } = useCompressionStore(
     useShallow((s) => ({
       inputPath: s.inputPath,
@@ -30,9 +31,15 @@ export function VideoWorkspace() {
       error: s.error,
       workerState: s.workerState,
       progress: s.progress,
-      isDisabled: !selectIsInitialized(s),
+      progressStep: s.progressStep,
     }))
   );
+
+  const progressStepLabel = getProgressStepLabel(progressStep);
+
+  const showProgressOverlay =
+    workerState === WorkerState.Transcoding ||
+    workerState === WorkerState.GeneratingPreview;
   return (
     <div
       className={cn(
@@ -43,23 +50,8 @@ export function VideoWorkspace() {
       )}
     >
       <div className={cn("relative flex h-full items-center justify-center")}>
-        {!inputPath ? (
-          <DropZone
-            disabled={isDisabled}
-            onDrop={(paths) => {
-              const path = paths[0];
-              if (typeof path === "string")
-                void useCompressionStore.getState().selectPath(path);
-            }}
-            onClick={() =>
-              void useCompressionStore.getState().browseAndSelectFile()
-            }
-          >
-            <p className={cn("text-center text-muted-foreground")}>
-              Drop video or click to browse
-            </p>
-          </DropZone>
-        ) : (
+        {!inputPath && <VideoDropZone />}
+        {inputPath && (
           <div
             className={cn(
               `
@@ -73,52 +65,32 @@ export function VideoWorkspace() {
             )}
             <AnimatePresence>
               {videoPreview && !videoUploading && (
-                <motion.div
-                  initial={{ opacity: 0 }}
-                  animate={{ opacity: 1 }}
-                  exit={{ opacity: 0 }}
-                  transition={{ duration: 0.2 }}
-                  className="absolute inset-0"
-                >
+                <FadeIn className="absolute inset-0">
                   <VideoPreview />
-                </motion.div>
+                </FadeIn>
               )}
             </AnimatePresence>
-            {workerState === WorkerState.GeneratingPreview && videoPreview && (
-              <motion.div
-                className={cn(
-                  `
-                    absolute bottom-4 left-1 z-20 flex items-center gap-2
-                    rounded-md bg-black/70 p-1 px-2
-                  `
-                )}
-                initial={{ opacity: 0 }}
-                animate={{ opacity: 1 }}
-                exit={{ opacity: 0 }}
-              >
-                <Spinner className={cn("size-4")} />
-              </motion.div>
-            )}
-            {workerState === WorkerState.Transcoding && (
-              <Progress
-                className={cn("absolute bottom-0 z-10 w-full")}
-                value={progress * 100}
-              />
-            )}
+            <AnimatePresence>
+              {showProgressOverlay && (
+                <FadeIn
+                  className={cn("absolute top-0 left-0 z-20 w-full max-w-xs")}
+                >
+                  <CompressionProgress
+                    progress={progress}
+                    progressStepLabel={progressStepLabel}
+                    className="w-full max-w-xs"
+                  />
+                </FadeIn>
+              )}
+            </AnimatePresence>
           </div>
         )}
       </div>
       <AnimatePresence>
         {error && (
-          <motion.div
-            key={`error-${error.message}`}
-            className={cn("absolute bottom-0 left-0 z-20 w-full p-3")}
-            initial={{ opacity: 0 }}
-            animate={{ opacity: 1 }}
-            exit={{ opacity: 0 }}
-          >
+          <FadeIn className={cn("absolute bottom-0 left-0 z-20 w-full p-3")}>
             <CompressionErrorAlert error={error} />
-          </motion.div>
+          </FadeIn>
         )}
       </AnimatePresence>
     </div>

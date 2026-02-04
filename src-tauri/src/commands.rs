@@ -7,8 +7,9 @@ use std::path::PathBuf;
 use crate::codec::BuildVariantResult;
 use crate::error::AppError;
 use crate::ffmpeg::{
-    build_ffmpeg_command, cleanup_transcode_temp, format_args_for_display_multiline, path_to_string,
-    set_transcode_temp, terminate_all_ffmpeg, TempFileManager, TranscodeOptions,
+    build_ffmpeg_command, cleanup_transcode_temp, format_args_for_display_multiline,
+    path_to_string, set_transcode_temp, terminate_all_ffmpeg, FfmpegProgressPayload,
+    TempFileManager, TranscodeOptions,
 };
 use crate::ffmpeg::ffprobe::get_video_metadata_impl;
 use crate::preview::{run_preview_core, PreviewResult};
@@ -88,7 +89,27 @@ pub async fn ffmpeg_transcode_to_temp(
     let duration_secs = options.duration_secs;
     let window_label = window.label().to_string();
 
-    match crate::preview::run_ffmpeg_step(args, &app, &window_label, duration_secs).await {
+    let progress_callback = {
+        let app = app.clone();
+        let label = window_label.clone();
+        std::sync::Arc::new(move |p: f64| {
+            let payload = FfmpegProgressPayload {
+                progress: p,
+                step: Some("transcode".to_string()),
+            };
+            let _ = app.emit_to(&label, "ffmpeg-progress", payload);
+        })
+    };
+
+    match crate::preview::run_ffmpeg_step(
+        args,
+        &app,
+        &window_label,
+        duration_secs,
+        Some(progress_callback),
+    )
+    .await
+    {
         Ok(()) => {
             log::info!(
                 target: "tiny_vid::commands",

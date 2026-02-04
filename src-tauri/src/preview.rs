@@ -2,13 +2,16 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
+use std::sync::atomic::{AtomicUsize, Ordering};
+use std::sync::Arc;
 
 use crate::error::AppError;
 use crate::ffmpeg::{
     build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
-    file_signature, get_cached_estimate, get_cached_preview, get_cached_segments, path_to_string,
-    run_ffmpeg_blocking, set_cached_estimate, set_cached_preview, store_preview_paths_for_cleanup,
-    FileSignature, TempFileManager, TranscodeOptions,
+    file_signature, get_cached_estimate, get_cached_preview, get_cached_segments,
+    path_to_string, run_ffmpeg_blocking, set_cached_estimate, set_cached_preview,
+    store_preview_paths_for_cleanup, FfmpegProgressPayload, FileSignature, TempFileManager,
+    TranscodeOptions,
 };
 use crate::ffmpeg::ffprobe::{get_video_metadata_impl, VideoMetadata};
 use crate::ffmpeg::parse_ffmpeg_error;
@@ -17,18 +20,68 @@ use tauri::Emitter;
 /// Optional emit context for progress events: (AppHandle, window label).
 pub(crate) type PreviewEmit = Option<(tauri::AppHandle, String)>;
 
+/// Context for aggregating preview progress across multiple FFmpeg steps.
+struct PreviewProgressCtx {
+    app: tauri::AppHandle,
+    label: String,
+    step_index: AtomicUsize,
+    total_steps: usize,
+}
+
+impl PreviewProgressCtx {
+    fn new(app: tauri::AppHandle, label: String, total_steps: usize) -> Self {
+        Self {
+            app,
+            label,
+            step_index: AtomicUsize::new(0),
+            total_steps,
+        }
+    }
+
+    fn make_callback(&self, step: &'static str) -> Arc<dyn Fn(f64) + Send + Sync> {
+        let idx = self.step_index.load(Ordering::Relaxed);
+        let app = self.app.clone();
+        let label = self.label.clone();
+        let total = self.total_steps;
+        let step_owned = step.to_string();
+        Arc::new(move |p: f64| {
+            let overall = (idx as f64 + p) / total as f64;
+            let payload = FfmpegProgressPayload {
+                progress: overall,
+                step: Some(step_owned.clone()),
+            };
+            let _ = app.emit_to(&label, "ffmpeg-progress", payload);
+        })
+    }
+
+    fn advance(&self) {
+        self.step_index.fetch_add(1, Ordering::Relaxed);
+    }
+}
+
 /// Runs FFmpeg with optional progress emission. pub(crate) for use by commands.
+/// progress_callback: when Some, used instead of emitting ffmpeg-progress (for preview aggregate).
 pub(crate) async fn run_ffmpeg_step(
     args: Vec<String>,
     app: &tauri::AppHandle,
     window_label: &str,
     duration_secs: Option<f64>,
+    progress_callback: Option<std::sync::Arc<dyn Fn(f64) + Send + Sync>>,
 ) -> Result<(), AppError> {
     let app_for_blocking = app.clone();
     let window_label_owned = window_label.to_string();
     let result = tauri::async_runtime::spawn_blocking({
         let label = window_label_owned.clone();
-        move || run_ffmpeg_blocking(args, Some(&app_for_blocking), Some(&label), duration_secs, None)
+        move || {
+            run_ffmpeg_blocking(
+                args,
+                Some(&app_for_blocking),
+                Some(&label),
+                duration_secs,
+                None,
+                progress_callback,
+            )
+        }
     })
     .await;
 
@@ -51,6 +104,34 @@ pub(crate) async fn run_ffmpeg_step(
             Err(e)
         }
     }
+}
+
+/// Runs FFmpeg with optional progress emission. Handles both emit (with app) and no-emit (silent) paths.
+async fn run_ffmpeg_with_progress(
+    args: Vec<String>,
+    duration_secs: Option<f64>,
+    emit: Option<(&tauri::AppHandle, &str)>,
+    progress_ctx: Option<&PreviewProgressCtx>,
+    step_label: &'static str,
+) -> Result<(), AppError> {
+    let progress_cb = progress_ctx.map(|ctx| ctx.make_callback(step_label));
+    match emit {
+        Some((app, label)) => {
+            run_ffmpeg_step(args, app, label, duration_secs, progress_cb).await?;
+            if let Some(ctx) = progress_ctx {
+                ctx.advance();
+            }
+        }
+        None => {
+            let dur = duration_secs;
+            tauri::async_runtime::spawn_blocking(move || {
+                run_ffmpeg_blocking(args, None, None, dur, None, None)
+            })
+            .await
+            .map_err(|e| AppError::ffmpeg_failed(-1, e.to_string()))??;
+        }
+    }
+    Ok(())
 }
 
 fn clamp_preview_start_seconds(
@@ -121,6 +202,7 @@ async fn get_video_metadata_async(path: &Path) -> Result<VideoMetadata, AppError
 }
 
 /// Extracts preview segments from input, or returns cached segment paths if available.
+/// step_label: when progress_ctx is Some, label for progress ("extract" or "estimate").
 async fn extract_segments_or_use_cache(
     input_str: &str,
     preview_duration_u32: u32,
@@ -129,6 +211,8 @@ async fn extract_segments_or_use_cache(
     temp: &TempFileManager,
     file_signature: Option<&FileSignature>,
     emit: Option<(&tauri::AppHandle, &str)>,
+    progress_ctx: Option<&PreviewProgressCtx>,
+    step_label: &'static str,
 ) -> Result<SegmentSet, AppError> {
     match get_cached_segments(
         input_str,
@@ -159,16 +243,14 @@ async fn extract_segments_or_use_cache(
 
             for ((start, dur), path) in segments.iter().zip(paths.iter()) {
                 let args = build_extract_args(input_str, *start, *dur, &path_to_string(path));
-                match emit {
-                    Some((app, label)) => run_ffmpeg_step(args, app, label, None).await?,
-                    None => {
-                        tauri::async_runtime::spawn_blocking(move || {
-                            run_ffmpeg_blocking(args, None, None, None, None)
-                        })
-                        .await
-                        .map_err(|e| AppError::ffmpeg_failed(-1, e.to_string()))??;
-                    }
-                }
+                run_ffmpeg_with_progress(
+                    args,
+                    Some(*dur),
+                    emit,
+                    progress_ctx,
+                    step_label,
+                )
+                .await?;
             }
             Ok(SegmentSet {
                 paths,
@@ -184,6 +266,7 @@ async fn transcode_preview_segment(
     output_path: &PathBuf,
     options: &TranscodeOptions,
     emit: Option<(&tauri::AppHandle, &str)>,
+    progress_ctx: Option<&PreviewProgressCtx>,
 ) -> Result<(), AppError> {
     let output_duration = get_video_metadata_async(segment_path)
         .await
@@ -197,18 +280,17 @@ async fn transcode_preview_segment(
         output_duration,
     )?;
 
-    match emit {
-        Some((app, label)) => run_ffmpeg_step(args, app, label, None).await?,
-        None => {
-            tauri::async_runtime::spawn_blocking(move || {
-                run_ffmpeg_blocking(args, None, None, None, None)
-            })
-            .await
-            .map_err(|e| AppError::ffmpeg_failed(-1, e.to_string()))??;
-        }
-    }
+    run_ffmpeg_with_progress(
+        args,
+        output_duration,
+        emit,
+        progress_ctx,
+        "preview_transcode",
+    )
+    .await?;
     Ok(())
 }
+
 
 /// Transcodes estimation segments (begin/mid/end) and computes size estimate.
 async fn estimate_size_from_segments(
@@ -217,6 +299,7 @@ async fn estimate_size_from_segments(
     options: &TranscodeOptions,
     cleanup: &mut TempCleanup,
     emit: Option<(&tauri::AppHandle, &str)>,
+    progress_ctx: Option<&PreviewProgressCtx>,
 ) -> Result<u64, AppError> {
     if segment_paths.is_empty() {
         return Ok(0);
@@ -251,16 +334,14 @@ async fn estimate_size_from_segments(
             options,
             output_duration,
         )?;
-        match emit {
-            Some((app, label)) => run_ffmpeg_step(args, app, label, None).await?,
-            None => {
-                tauri::async_runtime::spawn_blocking(move || {
-                    run_ffmpeg_blocking(args, None, None, None, None)
-                })
-                .await
-                .map_err(|e| AppError::ffmpeg_failed(-1, e.to_string()))??;
-            }
-        }
+        run_ffmpeg_with_progress(
+            args,
+            output_duration,
+            emit,
+            progress_ctx,
+            "preview_estimate",
+        )
+        .await?;
     }
 
     let input_size = fs::metadata(input_path)?.len();
@@ -290,6 +371,7 @@ async fn compute_estimate_size(
     video_duration: f64,
     options: &TranscodeOptions,
     emit: Option<(&tauri::AppHandle, &str)>,
+    progress_ctx: Option<&PreviewProgressCtx>,
 ) -> Result<u64, AppError> {
     let segments = compute_preview_segments(video_duration, preview_duration);
     let temp = TempFileManager;
@@ -302,13 +384,22 @@ async fn compute_estimate_size(
         &temp,
         None,
         emit,
+        progress_ctx,
+        "preview_estimate",
     )
     .await?;
     for path in &segment_set.paths {
         cleanup.add(path.clone());
     }
-    estimate_size_from_segments(input_path, &segment_set.paths, options, &mut cleanup, emit)
-        .await
+    estimate_size_from_segments(
+        input_path,
+        &segment_set.paths,
+        options,
+        &mut cleanup,
+        emit,
+        progress_ctx,
+    )
+    .await
 }
 
 /// Segment positions for estimation: (start_offset_secs, duration_secs).
@@ -359,6 +450,17 @@ pub(crate) async fn run_preview_core(
     let file_sig = file_signature(&input_path);
     let emit_ref = emit.as_ref().map(|(a, l)| (a, l.as_str()));
 
+    if let Some((app, label)) = emit.as_ref() {
+        let _ = app.emit_to(
+            label,
+            "ffmpeg-progress",
+            FfmpegProgressPayload {
+                progress: 0.0,
+                step: Some("generating_preview".to_string()),
+            },
+        );
+    }
+
     log::info!(
         target: "tiny_vid::preview",
         "run_preview_core: input={}",
@@ -401,6 +503,9 @@ pub(crate) async fn run_preview_core(
                     )
                 });
             if estimate.is_none() {
+                let progress_ctx = emit_ref.map(|(app, label)| {
+                    PreviewProgressCtx::new(app.clone(), label.to_string(), 6)
+                });
                 let fresh = compute_estimate_size(
                     &input_path,
                     &input_str,
@@ -409,6 +514,7 @@ pub(crate) async fn run_preview_core(
                     video_duration,
                     &options,
                     emit_ref,
+                    progress_ctx.as_ref(),
                 )
                 .await?;
                 set_cached_estimate(
@@ -447,6 +553,11 @@ pub(crate) async fn run_preview_core(
     let mut cleanup = TempCleanup::new();
     cleanup.add(output_path.clone());
 
+    let total_steps = 2 + if include_estimate { 6 } else { 0 };
+    let progress_ctx = emit_ref.map(|(app, label)| {
+        PreviewProgressCtx::new(app.clone(), label.to_string(), total_steps)
+    });
+
     let preview_segments = vec![(preview_start_seconds, preview_duration)];
     let segment_set = extract_segments_or_use_cache(
         &input_str,
@@ -456,6 +567,8 @@ pub(crate) async fn run_preview_core(
         &temp,
         file_sig.as_ref(),
         emit_ref,
+        progress_ctx.as_ref(),
+        "preview_extract",
     )
     .await?;
     if segment_set.created {
@@ -464,7 +577,14 @@ pub(crate) async fn run_preview_core(
         }
     }
 
-    transcode_preview_segment(&segment_set.paths[0], &output_path, &options, emit_ref).await?;
+    transcode_preview_segment(
+        &segment_set.paths[0],
+        &output_path,
+        &options,
+        emit_ref,
+        progress_ctx.as_ref(),
+    )
+    .await?;
 
     let estimated_size = if include_estimate {
         let mut estimate = get_cached_estimate(
@@ -482,6 +602,7 @@ pub(crate) async fn run_preview_core(
                 video_duration,
                 &options,
                 emit_ref,
+                progress_ctx.as_ref(),
             )
             .await?;
             set_cached_estimate(

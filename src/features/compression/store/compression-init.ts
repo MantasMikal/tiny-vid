@@ -6,7 +6,20 @@ import {
   useCompressionStore,
   WorkerState,
 } from "@/features/compression/store/compression-store";
-import type { FfmpegErrorPayload } from "@/types/tauri";
+import type { FfmpegErrorPayload, FfmpegProgressPayload } from "@/types/tauri";
+
+function handleProgressUpdate(payload: FfmpegProgressPayload) {
+  const s = useCompressionStore.getState();
+  if (
+    s.workerState === WorkerState.Transcoding ||
+    s.workerState === WorkerState.GeneratingPreview
+  ) {
+    useCompressionStore.setState({
+      progress: payload.progress,
+      progressStep: payload.step ?? null,
+    });
+  }
+}
 
 export function useCompressionStoreInit() {
   const effectIdRef = useRef(0);
@@ -21,8 +34,8 @@ export function useCompressionStoreInit() {
       await useCompressionStore.getState().initBuildVariant();
       const [unProgress, unError, unComplete, unOpenFile, unMenuOpenFile] =
         await Promise.all([
-          win.listen<number>("ffmpeg-progress", (e) => {
-            useCompressionStore.setState({ progress: e.payload });
+          win.listen<FfmpegProgressPayload>("ffmpeg-progress", (e) => {
+            handleProgressUpdate(e.payload);
           }),
           win.listen<FfmpegErrorPayload>("ffmpeg-error", (e) => {
             const { summary, detail } = e.payload;

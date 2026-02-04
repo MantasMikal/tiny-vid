@@ -195,6 +195,8 @@ pub fn build_extract_args(
         start_secs.to_string(),
         "-t".to_string(),
         duration_secs.to_string(),
+        "-progress".to_string(),
+        "pipe:1".to_string(),
         "-i".to_string(),
         input_path.to_string(),
         "-c".to_string(),

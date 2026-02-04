@@ -94,6 +94,8 @@ export interface CompressionState {
   error: ResultError | null;
   workerState: WorkerState;
   progress: number;
+  /** Step label during preview or transcoding (e.g. "extract", "transcode", "estimate"). */
+  progressStep: string | null;
   listenersReady: boolean;
   ffmpegCommandPreview: string | null;
   ffmpegCommandPreviewLoading: boolean;
@@ -131,6 +133,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   error: null,
   workerState: WorkerState.Idle,
   progress: 0,
+  progressStep: null,
   listenersReady: false,
   ffmpegCommandPreview: null,
   ffmpegCommandPreviewLoading: false,
@@ -229,7 +232,12 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         if (selectPathRequestId !== requestId) return;
         const { compressionOptions } = get();
         if (compressionOptions?.generatePreview) {
-          set({ workerState: WorkerState.GeneratingPreview, error: null });
+          set({
+            workerState: WorkerState.GeneratingPreview,
+            progress: 0,
+            progressStep: null,
+            error: null,
+          });
           const previewStartSeconds = clampPreviewStartSeconds(
             get().previewStartSeconds,
             metadataResult.value.duration,
@@ -410,7 +418,12 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       await get().terminate();
     }
 
-    set({ workerState: WorkerState.GeneratingPreview, error: null });
+    set({
+      workerState: WorkerState.GeneratingPreview,
+      progress: 0,
+      progressStep: null,
+      error: null,
+    });
 
     const previewStartSeconds = clampPreviewStartSeconds(
       opts?.previewStartSeconds ?? get().previewStartSeconds,
@@ -508,6 +521,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
     if (!inputPath || !compressionOptions) return;
     if (workerState === WorkerState.Transcoding) return;
+    if (!compressionOptions.generatePreview) return;
     if (debounceScrubPreviewTimer) {
       clearTimeout(debounceScrubPreviewTimer);
     }
@@ -526,6 +540,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     set({
       workerState: WorkerState.Idle,
       progress: 0,
+      progressStep: null,
     });
   },
 }));
