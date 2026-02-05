@@ -2,7 +2,7 @@
  * Prepares FFmpeg binaries for bundling. Run before `tauri build` for macOS/Windows.
  *
  * - Linux / default: No-op (platform overrides set externalBin to [])
- * - Windows: Downloads BtbN win64-gpl, extracts to src-tauri/binaries/
+ * - Windows: Downloads BtbN win64-gpl or winarm64-gpl (x86_64/aarch64), extracts to src-tauri/binaries/
  * - macOS standalone: Expects output from build-ffmpeg-standalone-macos.sh; fails if missing
  * - macOS lgpl-macos: Expects output from build-ffmpeg-lgpl-macos.sh; fails if missing
  *
@@ -24,6 +24,7 @@ import {
   mkdirSync,
   readdirSync,
   rmSync,
+  statSync,
   writeFileSync,
 } from "node:fs";
 import { homedir, platform } from "node:os";
@@ -79,8 +80,10 @@ function isMacOs(target: string): boolean {
 }
 
 function getBtbNAsset(target: string): BtbNAsset | null {
-  if (target.includes("x86_64") && target.includes("windows")) {
-    const filename = "ffmpeg-master-latest-win64-gpl.zip";
+  if (target.includes("windows")) {
+    const filename = target.includes("aarch64")
+      ? "ffmpeg-master-latest-winarm64-gpl.zip"
+      : "ffmpeg-master-latest-win64-gpl.zip";
     return {
       url: `${BtbN_BASE}/${filename}`,
       filename,
@@ -139,15 +142,28 @@ function sha256File(path: string): Promise<string> {
 }
 
 async function download(url: string, dest: string): Promise<void> {
-  const res = await fetch(url, { redirect: "follow" });
+  const res = await fetch(url, {
+    redirect: "follow",
+    signal: AbortSignal.timeout(5 * 60_000), // 5 min for large files
+  });
   if (!res.ok) throw new Error(`Download failed: ${String(res.status)} ${url}`);
-  const buf = Buffer.from(await res.arrayBuffer());
+  const body = res.body;
+  if (!body) throw new Error(`No response body: ${url}`);
   mkdirSync(dirname(dest), { recursive: true });
   const ws = createWriteStream(dest);
-  ws.write(buf);
+  const reader = body.getReader();
+  try {
+    while (true) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      ws.write(Buffer.from(value));
+    }
+  } finally {
+    reader.releaseLock();
+  }
   ws.end();
   await new Promise<void>((resolve, reject) => {
-    ws.on("finish", () => { resolve(); });
+    ws.on("finish", resolve);
     ws.on("error", reject);
   });
 }
@@ -237,6 +253,13 @@ async function prepareBtbN(target: string): Promise<void> {
     await download(asset.url, archivePath);
   } else {
     console.log(`Using cached ${asset.filename}`);
+  }
+  const size = statSync(archivePath).size;
+  if (size < 1_000_000) {
+    rmSync(archivePath, { force: true });
+    throw new Error(
+      `Download incomplete (${size} bytes). Deleted corrupted cache. Retry: yarn prepare-ffmpeg`
+    );
   }
   await verify(archivePath);
 
