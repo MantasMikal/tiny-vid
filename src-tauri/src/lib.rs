@@ -10,6 +10,7 @@ use std::path::PathBuf;
 
 use tauri::Emitter;
 
+#[cfg(target_os = "macos")]
 fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
     use tauri::menu::{AboutMetadata, MenuBuilder, PredefinedMenuItem, SubmenuBuilder};
     let pkg = app.package_info();
@@ -127,7 +128,9 @@ pub fn run() {
                 }
             }
 
-            setup_menu(app).map_err(Into::into)
+            #[cfg(target_os = "macos")]
+            setup_menu(app).map_err(Into::into)?;
+            Ok(())
         })
         .invoke_handler(tauri::generate_handler![
             commands::ffmpeg_transcode_to_temp,
