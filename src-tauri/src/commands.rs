@@ -8,11 +8,12 @@ use crate::codec::BuildVariantResult;
 use crate::error::AppError;
 use crate::ffmpeg::{
     build_ffmpeg_command, cleanup_transcode_temp, format_args_for_display_multiline,
-    path_to_string, set_transcode_temp, terminate_all_ffmpeg, FfmpegProgressPayload,
-    TempFileManager, TranscodeOptions,
+    path_to_string, set_transcode_temp, terminate_all_ffmpeg, TempFileManager, TranscodeOptions,
 };
 use crate::ffmpeg::ffprobe::get_video_metadata_impl;
-use crate::preview::{run_preview_core, run_preview_estimate_core, PreviewResult};
+use crate::preview::{
+    run_preview_core, run_preview_with_estimate_core, PreviewWithEstimateResult,
+};
 use crate::AppState;
 use tauri::{Emitter, Manager};
 
@@ -88,23 +89,12 @@ pub async fn ffmpeg_transcode_to_temp(
     )?;
     let duration_secs = options.duration_secs;
     let window_label = window.label().to_string();
-
-    let progress_callback = {
-        let app = app.clone();
-        let label = window_label.clone();
-        std::sync::Arc::new(move |p: f64| {
-            let payload = FfmpegProgressPayload {
-                progress: p,
-                step: Some("transcode".to_string()),
-            };
-            let _ = app.emit_to(&label, "ffmpeg-progress", payload);
-        })
-    };
+    let progress_callback =
+        crate::preview::make_progress_emitter(app.clone(), window_label.clone(), "transcode");
 
     match crate::preview::run_ffmpeg_step(
         args,
-        &app,
-        &window_label,
+        Some((&app, &window_label)),
         duration_secs,
         Some(progress_callback),
     )
@@ -131,31 +121,35 @@ pub async fn ffmpeg_preview(
     input_path: PathBuf,
     options: TranscodeOptions,
     preview_start_seconds: Option<f64>,
+    include_estimate: bool,
     app: tauri::AppHandle,
     window: tauri::Window,
-) -> Result<PreviewResult, AppError> {
-    run_preview_core(
-        input_path,
-        options,
-        preview_start_seconds,
-        Some((app, window.label().to_string())),
-    )
-    .await
-}
-
-#[tauri::command(rename_all = "camelCase")]
-pub async fn ffmpeg_preview_estimate(
-    input_path: PathBuf,
-    options: TranscodeOptions,
-    app: tauri::AppHandle,
-    window: tauri::Window,
-) -> Result<u64, AppError> {
-    run_preview_estimate_core(
-        input_path,
-        options,
-        Some((app, window.label().to_string())),
-    )
-    .await
+) -> Result<PreviewWithEstimateResult, AppError> {
+    let emit = Some((app, window.label().to_string()));
+    if include_estimate {
+        let result = run_preview_with_estimate_core(
+            &input_path,
+            &options,
+            preview_start_seconds,
+            emit,
+        )
+        .await?;
+        Ok(result)
+    } else {
+        let result = run_preview_core(
+            &input_path,
+            &options,
+            preview_start_seconds,
+            emit,
+            None,
+            None,
+        )
+        .await?;
+        Ok(PreviewWithEstimateResult {
+            preview: result,
+            estimated_size: None,
+        })
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]

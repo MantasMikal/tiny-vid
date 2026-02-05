@@ -7,12 +7,12 @@ fn main() {
             tauri_build::AppManifest::new().commands(&[
                 "ffmpeg_transcode_to_temp",
                 "ffmpeg_preview",
-                "ffmpeg_preview_estimate",
                 "preview_ffmpeg_command",
                 "ffmpeg_terminate",
                 "get_file_size",
                 "get_video_metadata",
                 "get_build_variant",
+                "get_pending_opened_files",
                 "move_compressed_file",
                 "cleanup_temp_file",
             ]),

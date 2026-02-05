@@ -7,7 +7,7 @@ use crate::ffmpeg::{
     build_ffmpeg_command, cleanup_transcode_temp, run_ffmpeg_blocking, set_transcode_temp,
     verify_video, TempFileManager,
 };
-use crate::preview::{run_preview_core, run_preview_estimate_core};
+use crate::preview::{run_preview_core, run_preview_with_estimate_core};
 use crate::test_util::{create_test_video, find_ffmpeg_and_set_env, opts_with, preview_options};
 use std::fs;
 use std::sync::Arc;
@@ -207,8 +207,8 @@ fn ffmpeg_progress_emission_integration() {
         None,
         None,
         Some(duration_secs as f64),
-        Some(Arc::clone(&progress_collector)),
         None,
+        Some(Arc::clone(&progress_collector)),
     );
 
     assert!(
@@ -322,8 +322,10 @@ fn ffmpeg_preview_single_segment_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let result = tauri::async_runtime::block_on(run_preview_core(
-        input_path,
-        preview_options(3),
+        &input_path,
+        &preview_options(3),
+        None,
+        None,
         None,
         None,
     ))
@@ -344,8 +346,10 @@ fn ffmpeg_preview_multi_segment_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let result = tauri::async_runtime::block_on(run_preview_core(
-        input_path,
-        preview_options(3),
+        &input_path,
+        &preview_options(3),
+        None,
+        None,
         None,
         None,
     ))
@@ -366,13 +370,15 @@ fn ffmpeg_preview_estimation_sanity_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let input_size = fs::metadata(&input_path).unwrap().len();
-    let estimated_size = tauri::async_runtime::block_on(run_preview_estimate_core(
-        input_path,
-        preview_options(3),
+    let result = tauri::async_runtime::block_on(run_preview_with_estimate_core(
+        &input_path,
+        &preview_options(3),
+        None,
         None,
     ))
-    .expect("run_preview_estimate_core");
+    .expect("run_preview_with_estimate_core");
 
+    let estimated_size = result.estimated_size.unwrap();
     assert!(estimated_size > 0, "estimated_size should be positive");
     assert!(
         estimated_size <= input_size * 2,
@@ -393,9 +399,11 @@ fn ffmpeg_preview_region_no_estimate_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let result = tauri::async_runtime::block_on(run_preview_core(
-        input_path,
-        preview_options(3),
+        &input_path,
+        &preview_options(3),
         Some(2.0),
+        None,
+        None,
         None,
     ))
     .expect("run_preview_core");
@@ -414,23 +422,17 @@ fn ffmpeg_preview_region_with_estimate_integration() {
     let status = create_test_video(&ffmpeg, &input_path, 10.0).expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
-    let result = tauri::async_runtime::block_on(run_preview_core(
-        input_path.clone(),
-        preview_options(3),
+    let result = tauri::async_runtime::block_on(run_preview_with_estimate_core(
+        &input_path,
+        &preview_options(3),
         Some(2.0),
         None,
     ))
-    .expect("run_preview_core");
+    .expect("run_preview_with_estimate_core");
 
-    assert!(std::path::Path::new(&result.original_path).exists());
-    assert!(std::path::Path::new(&result.compressed_path).exists());
-    let estimated_size = tauri::async_runtime::block_on(run_preview_estimate_core(
-        input_path,
-        preview_options(3),
-        None,
-    ))
-    .expect("run_preview_estimate_core");
-    assert!(estimated_size > 0);
+    assert!(std::path::Path::new(&result.preview.original_path).exists());
+    assert!(std::path::Path::new(&result.preview.compressed_path).exists());
+    assert!(result.estimated_size.unwrap() > 0);
 }
 
 #[test]
@@ -444,8 +446,10 @@ fn ffmpeg_preview_output_valid_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let result = tauri::async_runtime::block_on(run_preview_core(
-        input_path.clone(),
-        preview_options(3),
+        &input_path,
+        &preview_options(3),
+        None,
+        None,
         None,
         None,
     ))
@@ -480,16 +484,20 @@ fn ffmpeg_preview_transcode_cache_integration() {
     let opts = preview_options(3);
 
     let result1 = tauri::async_runtime::block_on(run_preview_core(
-        input_path.clone(),
-        opts.clone(),
+        &input_path,
+        &opts,
+        None,
+        None,
         None,
         None,
     ))
     .expect("run_preview_core");
 
     let result2 = tauri::async_runtime::block_on(run_preview_core(
-        input_path,
-        opts,
+        &input_path,
+        &opts,
+        None,
+        None,
         None,
         None,
     ))
@@ -538,24 +546,30 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
     });
 
     let result_a1 = tauri::async_runtime::block_on(run_preview_core(
-        input_path.clone(),
-        opts_a.clone(),
+        &input_path,
+        &opts_a,
+        None,
+        None,
         None,
         None,
     ))
     .expect("run_preview_core");
 
     let result_b = tauri::async_runtime::block_on(run_preview_core(
-        input_path.clone(),
-        opts_b.clone(),
+        &input_path,
+        &opts_b,
+        None,
+        None,
         None,
         None,
     ))
     .expect("run_preview_core");
 
     let result_a2 = tauri::async_runtime::block_on(run_preview_core(
-        input_path,
-        opts_a,
+        &input_path,
+        &opts_a,
+        None,
+        None,
         None,
         None,
     ))

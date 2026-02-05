@@ -308,7 +308,7 @@ pub fn format_args_for_display_multiline(args: &[String]) -> String {
         let line = if arg.starts_with('-')
             && iter.peek().is_some_and(|next| !next.starts_with('-'))
         {
-            let value = iter.next().expect("peeked value exists");
+            let value = iter.next().unwrap_or_else(|| unreachable!("peek confirmed next arg exists"));
             format!("  {} {}", arg, value)
         } else {
             format!("  {}", arg)

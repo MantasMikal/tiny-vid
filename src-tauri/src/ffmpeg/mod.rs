@@ -13,7 +13,7 @@ pub use builder::{
 };
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
 
-/// Payload for ffmpeg-progress event. Used by both preview and transcoding.
+/// Used by both preview and transcoding.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FfmpegProgressPayload {
@@ -127,7 +127,7 @@ impl TranscodeOptions {
     }
 }
 
-/// Converts a path to a String. Use for PathBuf/Path when passing to FFmpeg or logging.
+/// Use for PathBuf/Path when passing to FFmpeg or logging.
 pub fn path_to_string(path: &impl AsRef<std::path::Path>) -> String {
     path.as_ref().to_string_lossy().to_string()
 }

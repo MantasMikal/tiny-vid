@@ -8,6 +8,8 @@ export interface FfmpegPreviewResult {
   compressedPath: string;
   /** Start offset (seconds) of original. Delay compressed playback by this to sync. */
   startOffsetSeconds?: number;
+  /** Present when includeEstimate was true. */
+  estimatedSize?: number;
 }
 
 export interface FfmpegProgressPayload {

@@ -123,7 +123,8 @@ pub fn run() {
                     }
                 }
                 if !files.is_empty() {
-                    commands::buffer_opened_files(&app.handle().clone(), files);
+                    let handle = app.handle();
+                    commands::buffer_opened_files(&handle, files);
                 }
             }
 
@@ -134,7 +135,6 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![
             commands::ffmpeg_transcode_to_temp,
             commands::ffmpeg_preview,
-            commands::ffmpeg_preview_estimate,
             commands::preview_ffmpeg_command,
             commands::ffmpeg_terminate,
             commands::get_file_size,

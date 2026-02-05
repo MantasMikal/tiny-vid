@@ -39,7 +39,7 @@ fn file_signature_from_metadata(meta: &fs::Metadata) -> Option<FileSignature> {
     })
 }
 
-/// Key for a full preview: (input_path, preview_duration, options_key).
+/// Key for a full preview: (input_path, preview_duration, preview_start_ms, options_key, file_signature).
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 struct PreviewCacheKey {
     input_path: String,
@@ -49,7 +49,7 @@ struct PreviewCacheKey {
     file_signature: FileSignature,
 }
 
-/// Key for segment store: (input_path, preview_duration, preview_start_ms).
+/// Key for segment store: (input_path, preview_duration, preview_start_ms, file_signature).
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 struct SegmentKey {
     input_path: String,
@@ -58,7 +58,7 @@ struct SegmentKey {
     file_signature: FileSignature,
 }
 
-/// Key for estimate cache: (input_path, preview_duration, options_key).
+/// Key for estimate cache: (input_path, preview_duration, options_key, file_signature).
 #[derive(Clone, Hash, Eq, PartialEq, Debug)]
 struct EstimateKey {
     input_path: String,
@@ -249,7 +249,7 @@ pub fn get_cached_estimate(
 
 /// Store cached estimate for (input, duration, options).
 pub fn set_cached_estimate(
-    input_path: String,
+    input_path: &str,
     preview_duration: u32,
     options: &TranscodeOptions,
     estimated_size: u64,
@@ -260,7 +260,7 @@ pub fn set_cached_estimate(
     };
     let options_key = options.options_cache_key();
     let key = EstimateKey {
-        input_path,
+        input_path: input_path.to_string(),
         preview_duration,
         options_key,
         file_signature,
@@ -287,7 +287,7 @@ pub fn get_all_cached_paths() -> Vec<PathBuf> {
 
 /// Store preview in cache. Reuses segments if (input, duration) already exists.
 pub fn set_cached_preview(
-    input_path: String,
+    input_path: &str,
     preview_duration: u32,
     preview_start_ms: u64,
     options: &TranscodeOptions,
@@ -298,16 +298,17 @@ pub fn set_cached_preview(
     let Some(file_signature) = file_signature.cloned() else {
         return;
     };
+    let input_path_owned = input_path.to_string();
     let options_key = options.options_cache_key();
     let key = PreviewCacheKey {
-        input_path: input_path.clone(),
+        input_path: input_path_owned.clone(),
         preview_duration,
         preview_start_ms,
         options_key: options_key.clone(),
         file_signature: file_signature.clone(),
     };
     let seg_key = SegmentKey {
-        input_path: input_path.clone(),
+        input_path: input_path_owned,
         preview_duration,
         preview_start_ms,
         file_signature,
@@ -432,7 +433,7 @@ mod tests {
             let mut opts = TranscodeOptions::default();
             opts.preset = Some(format!("preset_{}", i));
             set_cached_preview(
-                input_str.clone(),
+                &input_str,
                 3,
                 0,
                 &opts,
@@ -469,7 +470,7 @@ mod tests {
         opts2.preset = Some("p2".into());
 
         set_cached_preview(
-            input_str.clone(),
+            &input_str,
             3,
             0,
             &opts1,
@@ -478,7 +479,7 @@ mod tests {
             Some(&sig),
         );
         set_cached_preview(
-            input_str.clone(),
+            &input_str,
             3,
             0,
             &opts2,
@@ -512,7 +513,7 @@ mod tests {
 
         let opts = TranscodeOptions::default();
         set_cached_preview(
-            input_str.clone(),
+            &input_str,
             3,
             0,
             &opts,
@@ -542,7 +543,7 @@ mod tests {
         let mut opts = TranscodeOptions::default();
         opts.preset = Some("fast".into());
 
-        set_cached_estimate(input_str.clone(), 3, &opts, 123, Some(&sig));
+        set_cached_estimate(&input_str, 3, &opts, 123, Some(&sig));
         let cached = get_cached_estimate(&input_str, 3, &opts, Some(&sig));
         assert_eq!(cached, Some(123));
 
@@ -569,7 +570,7 @@ mod tests {
         let opts = TranscodeOptions::default();
 
         set_cached_preview(
-            input_str.clone(),
+            &input_str,
             3,
             0,
             &opts,
@@ -578,7 +579,7 @@ mod tests {
             Some(&sig),
         );
         set_cached_preview(
-            input_str.clone(),
+            &input_str,
             3,
             1000,
             &opts,
@@ -619,7 +620,7 @@ mod tests {
 
         // First: store seg1
         set_cached_preview(
-            input_str.clone(),
+            &input_str,
             3,
             0,
             &opts1,
@@ -630,7 +631,7 @@ mod tests {
 
         // Second: same (input, duration), different segment paths (race scenario)
         set_cached_preview(
-            input_str.clone(),
+            &input_str,
             3,
             0,
             &opts2,

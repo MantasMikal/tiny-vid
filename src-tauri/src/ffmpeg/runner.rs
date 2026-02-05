@@ -17,6 +17,7 @@ use tauri::Emitter;
 use crate::error::AppError;
 use super::discovery::get_ffmpeg_path;
 use super::progress::parse_ffmpeg_progress;
+use super::FfmpegProgressPayload;
 
 /// Sentinel for "duration not yet known". AtomicU64 cannot hold Option<f64>,
 /// so we encode duration as f64 bits; u64::MAX means "not yet known".
@@ -92,10 +93,14 @@ fn read_stream<R: std::io::Read + Send + 'static>(
                     if let Some(ref cb) = config.progress_callback {
                         cb(p);
                     } else if let Some(handle) = config.app.as_ref() {
+                        let payload = FfmpegProgressPayload {
+                            progress: p,
+                            step: None,
+                        };
                         let _ = if let Some(ref lbl) = config.window_label {
-                            handle.emit_to(lbl, "ffmpeg-progress", p)
+                            handle.emit_to(lbl, "ffmpeg-progress", payload)
                         } else {
-                            handle.emit("ffmpeg-progress", p)
+                            handle.emit("ffmpeg-progress", payload)
                         };
                     }
                 }
@@ -106,18 +111,24 @@ fn read_stream<R: std::io::Read + Send + 'static>(
 }
 
 /// Run FFmpeg and block until completion. Used when we need to wait (e.g. preview, transcode).
-/// Optionally emit progress events to the frontend via app and window_label, or via progress_callback.
-/// duration_secs: if provided, initializes the shared duration so progress can be computed
-/// immediately from out_time_ms (avoids race with Duration line on stderr).
-/// progress_collector: when provided (e.g. in tests), collects all progress values for verification.
-/// progress_callback: when provided (e.g. for preview), called with 0-1 progress instead of emitting ffmpeg-progress.
+///
+/// Progress emission:
+/// - If `progress_callback` is Some: calls the callback with 0-1 progress; `app`/`window_label`
+///   are ignored for progress (used when caller aggregates progress, e.g. preview multi-step).
+/// - If `progress_callback` is None: emits ffmpeg-progress via `app` and `window_label`.
+///
+/// Error emission is handled by the caller (run_ffmpeg_step); this function does not emit events.
+///
+/// - `duration_secs`: If provided, initializes shared duration so progress can be computed
+///   immediately from out_time_ms (avoids race with Duration line on stderr).
+/// - `progress_collector`: When provided (e.g. in tests), collects all progress values.
 pub fn run_ffmpeg_blocking(
     args: Vec<String>,
     app: Option<&tauri::AppHandle>,
     window_label: Option<&str>,
     duration_secs: Option<f64>,
-    progress_collector: Option<Arc<Mutex<Vec<f64>>>>,
     progress_callback: Option<Arc<dyn Fn(f64) + Send + Sync>>,
+    progress_collector: Option<Arc<Mutex<Vec<f64>>>>,
 ) -> Result<(), AppError> {
     let ffmpeg_path = get_ffmpeg_path()?;
     let path_str = ffmpeg_path.to_string_lossy();
@@ -139,8 +150,22 @@ pub fn run_ffmpeg_blocking(
         .spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
 
-    let stdout = child.stdout.take().ok_or("Failed to capture stdout")?;
-    let stderr = child.stderr.take().ok_or("Failed to capture stderr")?;
+    let stdout = match child.stdout.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(AppError::from("Failed to capture stdout"));
+        }
+    };
+    let stderr = match child.stderr.take() {
+        Some(s) => s,
+        None => {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(AppError::from("Failed to capture stderr"));
+        }
+    };
 
     {
         let mut guard = ACTIVE_FFMPEG_PROCESS.lock();
@@ -159,8 +184,7 @@ pub fn run_ffmpeg_blocking(
     } else {
         (None, None, None)
     };
-    let progress_cb_stdout = progress_callback.clone();
-    let progress_cb_stderr = progress_callback;
+    let progress_cb_stdout = progress_callback;
 
     let stdout_handle = read_stream(
         stdout,
@@ -181,7 +205,7 @@ pub fn run_ffmpeg_blocking(
             app: app_stderr,
             window_label: label,
             progress_collector: None,
-            progress_callback: progress_cb_stderr,
+            progress_callback: None,
         },
     );
 
