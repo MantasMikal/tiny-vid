@@ -24,10 +24,10 @@ import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
 import {
-  FORMAT_METADATA,
   getAvailableFormats,
   getCodecInfo,
   getCodecsForFormat,
+  getFormatCapabilities,
   isCodec,
   isFormat,
   isPresetValue,
@@ -254,9 +254,8 @@ export function VideoSettings() {
                   <SelectContent>
                     {availableFormats.map((format) => {
                       const name =
-                        isFormat(format) && format in FORMAT_METADATA
-                          ? FORMAT_METADATA[format].name
-                          : format.toUpperCase();
+                        (isFormat(format) ? getFormatCapabilities(format).name : null) ??
+                        format.toUpperCase();
                       return (
                         <SelectItem key={format} value={format}>
                           {name}

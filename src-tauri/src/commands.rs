@@ -86,6 +86,8 @@ pub async fn ffmpeg_transcode_to_temp(
         &output_str,
         &options,
         None,
+        None,
+        None,
     )?;
     let duration_secs = options.duration_secs;
     let window_label = window.label().to_string();
@@ -143,6 +145,7 @@ pub async fn ffmpeg_preview(
             emit,
             None,
             None,
+            None,
         )
         .await?;
         Ok(PreviewWithEstimateResult {
@@ -192,7 +195,7 @@ pub fn get_video_metadata(path: PathBuf) -> Result<VideoMetadataResult, AppError
 pub fn preview_ffmpeg_command(options: TranscodeOptions, input_path: Option<String>) -> String {
     let input_str = input_path.as_deref().unwrap_or("<input>");
     let output_str = "<output>";
-    let args = build_ffmpeg_command(input_str, output_str, &options, None)
+    let args = build_ffmpeg_command(input_str, output_str, &options, None, None, None)
         .unwrap_or_else(|e| vec!["# error".into(), e.to_string()]);
     format!("ffmpeg\n{}", format_args_for_display_multiline(&args))
 }

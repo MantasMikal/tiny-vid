@@ -11,37 +11,37 @@ const CODEC_REGISTRY = {
     name: "H.264 (Widest support)",
     supportsTune: true,
     presetType: "x264",
-    formats: ["mp4"],
+    formats: ["mp4", "mkv"],
   },
   libx265: {
     name: "H.265 (Smaller files)",
     supportsTune: false,
     presetType: "x265",
-    formats: ["mp4"],
+    formats: ["mp4", "mkv"],
   },
   libsvtav1: {
     name: "AV1 (Smallest files)",
     supportsTune: false,
     presetType: "av1",
-    formats: ["mp4", "webm"],
+    formats: ["mp4", "webm", "mkv"],
   },
   "libvpx-vp9": {
     name: "VP9 (Browser-friendly WebM)",
     supportsTune: false,
     presetType: "vp9",
-    formats: ["webm"],
+    formats: ["webm", "mkv"],
   },
   h264_videotoolbox: {
     name: "H.264 (VideoToolbox)",
     supportsTune: false,
     presetType: "vt",
-    formats: ["mp4"],
+    formats: ["mp4", "mkv"],
   },
   hevc_videotoolbox: {
     name: "H.265 (VideoToolbox)",
     supportsTune: false,
     presetType: "vt",
-    formats: ["mp4"],
+    formats: ["mp4", "mkv"],
   },
 } as const;
 
@@ -58,6 +58,19 @@ const FORMAT_REGISTRY = {
     codecs: ["libvpx-vp9", "libsvtav1"],
     defaultCodec: "libvpx-vp9",
   },
+  mkv: {
+    name: "MKV",
+    extension: "mkv",
+    codecs: [
+      "libx264",
+      "libx265",
+      "libsvtav1",
+      "libvpx-vp9",
+      "h264_videotoolbox",
+      "hevc_videotoolbox",
+    ],
+    defaultCodec: "libx264",
+  },
 } as const;
 
 export type Codec = keyof typeof CODEC_REGISTRY;
@@ -65,7 +78,7 @@ export type Format = keyof typeof FORMAT_REGISTRY;
 
 const CODECS = Object.keys(CODEC_REGISTRY) as Codec[];
 
-const FORMATS: Format[] = ["mp4", "webm"];
+const FORMATS: Format[] = ["mp4", "webm", "mkv"];
 
 /** Validates against backend codecs when provided; otherwise against known codec set. */
 export function isCodec(s: string, availableCodecs?: CodecInfo[]): s is Codec {
@@ -206,13 +219,6 @@ export function convertQualityForCodecSwitch(
   const effectiveCrfNew = perceptualRef + getPerceptualOffset(newCodec);
   return crfToQuality(effectiveCrfNew, newCodec);
 }
-
-export const FORMAT_METADATA = {
-  mp4: { name: "MP4", extension: "mp4" },
-  webm: { name: "WebM", extension: "webm" },
-} as const;
-
-export type FormatKey = keyof typeof FORMAT_METADATA;
 
 export function getCodecsForFormat(format: string, codecs: CodecInfo[]): CodecInfo[] {
   return codecs.filter((c) => c.formats.includes(format));

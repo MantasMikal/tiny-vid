@@ -36,6 +36,8 @@ fn run_transcode_integration(
         output_path.to_str().unwrap(),
         &options,
         None,
+        None,
+        None,
     )
     .expect("build_ffmpeg_command");
 
@@ -198,6 +200,8 @@ fn ffmpeg_progress_emission_integration() {
         output_path.to_str().unwrap(),
         &options,
         None,
+        None,
+        None,
     )
     .expect("build_ffmpeg_command");
 
@@ -272,6 +276,8 @@ fn ffmpeg_cancel_cleanup_integration() {
         &output_str,
         &options,
         None,
+        None,
+        None,
     )
     .expect("build_ffmpeg_command");
 
@@ -328,6 +334,7 @@ fn ffmpeg_preview_single_segment_integration() {
         None,
         None,
         None,
+        None,
     ))
     .expect("run_preview_core");
 
@@ -348,6 +355,7 @@ fn ffmpeg_preview_multi_segment_integration() {
     let result = tauri::async_runtime::block_on(run_preview_core(
         &input_path,
         &preview_options(3),
+        None,
         None,
         None,
         None,
@@ -405,6 +413,7 @@ fn ffmpeg_preview_region_no_estimate_integration() {
         None,
         None,
         None,
+        None,
     ))
     .expect("run_preview_core");
 
@@ -452,6 +461,7 @@ fn ffmpeg_preview_output_valid_integration() {
         None,
         None,
         None,
+        None,
     ))
     .expect("run_preview_core");
 
@@ -490,12 +500,14 @@ fn ffmpeg_preview_transcode_cache_integration() {
         None,
         None,
         None,
+        None,
     ))
     .expect("run_preview_core");
 
     let result2 = tauri::async_runtime::block_on(run_preview_core(
         &input_path,
         &opts,
+        None,
         None,
         None,
         None,
@@ -552,6 +564,7 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         None,
         None,
         None,
+        None,
     ))
     .expect("run_preview_core");
 
@@ -562,12 +575,14 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         None,
         None,
         None,
+        None,
     ))
     .expect("run_preview_core");
 
     let result_a2 = tauri::async_runtime::block_on(run_preview_core(
         &input_path,
         &opts_a,
+        None,
         None,
         None,
         None,

@@ -6,10 +6,6 @@ import { useCompressionStore } from "@/features/compression/store/compression-st
 import { useVideoSync } from "@/hooks/useVideoSync";
 import { cn } from "@/lib/utils";
 
-function getVideoType(src: string): string {
-  return src.includes(".webm") ? "video/webm" : "video/mp4";
-}
-
 export function VideoPreview() {
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const compressedVideoRef = useRef<HTMLVideoElement>(null);
@@ -65,7 +61,7 @@ export function VideoPreview() {
                   preload="auto"
                   className={cn("size-full object-contain")}
                 >
-                  <source src={compressedSrc} type={getVideoType(compressedSrc)} />
+                  <source src={compressedSrc} type="video/mp4" />
                 </video>
               </div>
             </div>

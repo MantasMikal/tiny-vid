@@ -35,7 +35,9 @@ cd ffmpeg
   --enable-encoder=h264_videotoolbox \
   --enable-encoder=hevc_videotoolbox \
   --enable-demuxer=mov \
+  --enable-demuxer=matroska \
   --enable-muxer=mp4 \
+  --enable-muxer=matroska \
   --disable-libx264 \
   --disable-libx265 \
   --disable-libsvtav1 \

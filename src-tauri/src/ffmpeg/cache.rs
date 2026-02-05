@@ -190,7 +190,7 @@ pub fn get_cached_preview(
     file_signature: Option<&FileSignature>,
 ) -> Option<(PathBuf, PathBuf)> {
     let file_signature = file_signature?.clone();
-    let options_key = options.options_cache_key();
+    let options_key = options.options_cache_key_for_preview();
     let key = PreviewCacheKey {
         input_path: input_path.to_string(),
         preview_duration,
@@ -236,7 +236,7 @@ pub fn get_cached_estimate(
     file_signature: Option<&FileSignature>,
 ) -> Option<u64> {
     let file_signature = file_signature?.clone();
-    let options_key = options.options_cache_key();
+    let options_key = options.options_cache_key_for_preview();
     let key = EstimateKey {
         input_path: input_path.to_string(),
         preview_duration,
@@ -258,7 +258,7 @@ pub fn set_cached_estimate(
     let Some(file_signature) = file_signature.cloned() else {
         return;
     };
-    let options_key = options.options_cache_key();
+    let options_key = options.options_cache_key_for_preview();
     let key = EstimateKey {
         input_path: input_path.to_string(),
         preview_duration,
@@ -299,7 +299,7 @@ pub fn set_cached_preview(
         return;
     };
     let input_path_owned = input_path.to_string();
-    let options_key = options.options_cache_key();
+    let options_key = options.options_cache_key_for_preview();
     let key = PreviewCacheKey {
         input_path: input_path_owned.clone(),
         preview_duration,

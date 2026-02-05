@@ -48,12 +48,12 @@ macro_rules! codec_table {
 }
 
 codec_table!(
-    ["libx264", "H.264 (Widest support)", &["mp4"], true, "x264"],
-    ["libx265", "H.265 (Smaller files)", &["mp4"], false, "x265"],
-    ["libsvtav1", "AV1 (Smallest files)", &["mp4", "webm"], false, "av1"],
-    ["libvpx-vp9", "VP9 (Browser-friendly WebM)", &["webm"], false, "vp9"],
-    ["h264_videotoolbox", "H.264 (VideoToolbox)", &["mp4"], false, "vt"],
-    ["hevc_videotoolbox", "H.265 (VideoToolbox)", &["mp4"], false, "vt"],
+    ["libx264", "H.264 (Widest support)", &["mp4", "mkv"], true, "x264"],
+    ["libx265", "H.265 (Smaller files)", &["mp4", "mkv"], false, "x265"],
+    ["libsvtav1", "AV1 (Smallest files)", &["mp4", "webm", "mkv"], false, "av1"],
+    ["libvpx-vp9", "VP9 (Browser-friendly WebM)", &["webm", "mkv"], false, "vp9"],
+    ["h264_videotoolbox", "H.264 (VideoToolbox)", &["mp4", "mkv"], false, "vt"],
+    ["hevc_videotoolbox", "H.265 (VideoToolbox)", &["mp4", "mkv"], false, "vt"],
 );
 
 /// Return CodecInfo for a known codec string. Panics on unknown codec.
@@ -117,7 +117,7 @@ mod tests {
         let info = get_codec_info("libx264");
         assert_eq!(info.value, "libx264");
         assert_eq!(info.name, "H.264 (Widest support)");
-        assert_eq!(info.formats, vec!["mp4"]);
+        assert_eq!(info.formats, vec!["mp4", "mkv"]);
         assert!(info.supports_tune);
         assert_eq!(info.preset_type, "x264");
     }
@@ -141,13 +141,13 @@ mod tests {
     #[test]
     fn get_codec_info_returns_correct_formats() {
         let x264 = get_codec_info("libx264");
-        assert_eq!(x264.formats, vec!["mp4"]);
+        assert_eq!(x264.formats, vec!["mp4", "mkv"]);
 
         let av1 = get_codec_info("libsvtav1");
-        assert_eq!(av1.formats, vec!["mp4", "webm"]);
+        assert_eq!(av1.formats, vec!["mp4", "webm", "mkv"]);
 
         let vp9 = get_codec_info("libvpx-vp9");
-        assert_eq!(vp9.formats, vec!["webm"]);
+        assert_eq!(vp9.formats, vec!["webm", "mkv"]);
     }
 
     #[test]

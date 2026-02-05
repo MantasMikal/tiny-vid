@@ -10,6 +10,7 @@ mod verify;
 
 pub use builder::{
     build_extract_args, build_ffmpeg_command, format_args_for_display_multiline,
+    is_browser_playable_codec,
 };
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
 
@@ -123,6 +124,21 @@ impl TranscodeOptions {
             self.effective_preset(),
             self.tune.as_deref().unwrap_or(""),
             self.effective_output_format(),
+        )
+    }
+
+    /// Cache key for preview/estimate: excludes output_format (preview always uses MP4).
+    pub fn options_cache_key_for_preview(&self) -> String {
+        format!(
+            "{}|{}|{}|{}|{}|{}|{}|{}",
+            self.effective_codec(),
+            self.effective_quality(),
+            self.max_bitrate.map(|b| b.to_string()).as_deref().unwrap_or(""),
+            self.effective_scale(),
+            self.effective_fps(),
+            self.effective_remove_audio(),
+            self.effective_preset(),
+            self.tune.as_deref().unwrap_or(""),
         )
     }
 }

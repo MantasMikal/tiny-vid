@@ -153,6 +153,7 @@ async function download(url: string, dest: string): Promise<void> {
   const ws = createWriteStream(dest);
   const reader = body.getReader();
   try {
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional infinite loop with break
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -258,7 +259,7 @@ async function prepareBtbN(target: string): Promise<void> {
   if (size < 1_000_000) {
     rmSync(archivePath, { force: true });
     throw new Error(
-      `Download incomplete (${size} bytes). Deleted corrupted cache. Retry: yarn prepare-ffmpeg`
+      `Download incomplete (${String(size)} bytes). Deleted corrupted cache. Retry: yarn prepare-ffmpeg`
     );
   }
   await verify(archivePath);

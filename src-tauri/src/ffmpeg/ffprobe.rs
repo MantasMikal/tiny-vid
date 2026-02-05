@@ -61,7 +61,7 @@ fn parse_bit_rate(s: &str) -> Option<u64> {
     s.trim().parse().ok()
 }
 
-#[derive(Debug, serde::Serialize)]
+#[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct VideoMetadata {
     pub duration: f64,

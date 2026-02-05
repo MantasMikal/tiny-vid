@@ -9,9 +9,9 @@ use crate::error::AppError;
 use crate::ffmpeg::{
     build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
     file_signature, get_cached_estimate, get_cached_preview, get_cached_segments,
-    path_to_string, run_ffmpeg_blocking, set_cached_estimate, set_cached_preview,
-    store_preview_paths_for_cleanup, FfmpegProgressPayload, FileSignature, TempFileManager,
-    TranscodeOptions,
+    is_browser_playable_codec, path_to_string, run_ffmpeg_blocking, set_cached_estimate,
+    set_cached_preview, store_preview_paths_for_cleanup, FfmpegProgressPayload, FileSignature,
+    TempFileManager, TranscodeOptions,
 };
 use crate::ffmpeg::ffprobe::{get_video_metadata_impl, VideoMetadata};
 use crate::ffmpeg::parse_ffmpeg_error;
@@ -177,7 +177,7 @@ fn clamp_preview_start_seconds(
         return 0.0;
     }
     if video_duration <= 0.0 || preview_duration <= 0.0 {
-        return requested.max(0.0);
+        return 0.0;
     }
     let max_start = (video_duration - preview_duration).max(0.0);
     requested.max(0.0).min(max_start)
@@ -305,19 +305,17 @@ async fn transcode_preview_segment(
     segment_path: &PathBuf,
     output_path: &PathBuf,
     options: &TranscodeOptions,
+    output_duration: Option<f64>,
     emit: Option<(&tauri::AppHandle, &str)>,
     progress_ctx: Option<&PreviewProgressCtx>,
 ) -> Result<(), AppError> {
-    let output_duration = get_video_metadata_async(segment_path)
-        .await
-        .ok()
-        .filter(|m| m.duration > 0.0)
-        .map(|m| m.duration);
     let args = build_ffmpeg_command(
         &path_to_string(segment_path),
         &path_to_string(output_path),
         options,
         output_duration,
+        Some("mp4"),
+        None,
     )?;
 
     run_ffmpeg_with_progress(
@@ -346,11 +344,10 @@ async fn estimate_size_from_segments(
     if segment_paths.is_empty() {
         return Ok(0);
     }
-    let ext = options.effective_output_format();
     let output_paths: Vec<PathBuf> = (0..segment_paths.len())
         .map(|i| {
             TempFileManager
-                .create(&format!("preview-estimate-{}.{}", i, ext), None)
+                .create(&format!("preview-estimate-{}.mp4", i), None)
                 .map_err(AppError::from)
         })
         .collect::<Result<Vec<_>, _>>()?;
@@ -368,6 +365,8 @@ async fn estimate_size_from_segments(
             &path_to_string(out),
             options,
             output_duration,
+            Some("mp4"),
+            None,
         )?;
         run_ffmpeg_with_progress(
             args,
@@ -494,7 +493,7 @@ pub(crate) async fn run_preview_with_estimate_core(
     preview_start_seconds: Option<f64>,
     emit: PreviewEmit,
 ) -> Result<PreviewWithEstimateResult, AppError> {
-    let meta = get_video_metadata_async(&input_path).await?;
+    let meta = get_video_metadata_async(input_path).await?;
     let preview_duration = options.effective_preview_duration() as f64;
     let segment_count = compute_preview_segments(meta.duration, preview_duration).len();
     let total_steps = PREVIEW_STEPS + estimate_step_count(segment_count);
@@ -525,27 +524,28 @@ pub(crate) async fn run_preview_with_estimate_core(
         emit.clone(),
         preview_ctx,
         Some(meta.duration),
+        Some(meta.clone()),
     )
     .await?;
 
     let input_str = path_to_string(&input_path);
     let preview_duration_u32 = options.effective_preview_duration();
-    let file_sig = file_signature(&input_path);
+    let file_sig = file_signature(input_path);
 
     let mut estimated_size = get_cached_estimate(
         &input_str,
         preview_duration_u32,
-        &options,
+        options,
         file_sig.as_ref(),
     );
     if estimated_size.is_none() {
         let fresh = compute_estimate_size(
-            &input_path,
+            input_path,
             &input_str,
             preview_duration_u32,
             preview_duration,
             meta.duration,
-            &options,
+            options,
             emit_ref,
             estimate_ctx.as_ref(),
         )
@@ -569,6 +569,7 @@ pub(crate) async fn run_preview_with_estimate_core(
 /// Core preview logic. When emit is Some, emits progress events; when None, runs silently (for tests).
 /// When progress_ctx_override is Some, uses it for progress emission (e.g. when part of unified preview+estimate).
 /// When video_duration_override is Some, skips ffprobe for input duration.
+/// When meta_override is Some, uses it for duration and codec (avoids extra ffprobe when caller already has it).
 pub(crate) async fn run_preview_core(
     input_path: &Path,
     options: &TranscodeOptions,
@@ -576,11 +577,12 @@ pub(crate) async fn run_preview_core(
     emit: PreviewEmit,
     progress_ctx_override: Option<PreviewProgressCtx>,
     video_duration_override: Option<f64>,
+    meta_override: Option<VideoMetadata>,
 ) -> Result<PreviewResult, AppError> {
     let input_str = path_to_string(&input_path);
     let preview_duration_u32 = options.effective_preview_duration();
     let preview_duration = preview_duration_u32 as f64;
-    let file_sig = file_signature(&input_path);
+    let file_sig = file_signature(input_path);
     let emit_ref = emit.as_ref().map(|(a, l)| (a, l.as_str()));
     let progress_ctx = match progress_ctx_override {
         Some(ctx) => Some(ctx),
@@ -606,11 +608,17 @@ pub(crate) async fn run_preview_core(
         input_path.display()
     );
 
-    let video_duration = if let Some(dur) = video_duration_override {
-        dur
+    let meta = if let Some(m) = meta_override {
+        m
     } else {
-        get_video_metadata_async(&input_path).await?.duration
+        get_video_metadata_async(input_path).await?
     };
+    let video_duration = video_duration_override.unwrap_or(meta.duration);
+    let codec_playable = meta
+        .codec_name
+        .as_deref()
+        .map(is_browser_playable_codec)
+        .unwrap_or(false);
     let preview_start_seconds = clamp_preview_start_seconds(
         preview_start_seconds.unwrap_or(0.0),
         video_duration,
@@ -622,7 +630,7 @@ pub(crate) async fn run_preview_core(
         &input_str,
         preview_duration_u32,
         preview_start_ms,
-        &options,
+        options,
         file_sig.as_ref(),
     )
     {
@@ -643,29 +651,91 @@ pub(crate) async fn run_preview_core(
 
     cleanup_previous_preview_paths(&input_str, preview_duration_u32);
 
-    let ext = options.effective_output_format();
-    let preview_suffix = format!("preview-output.{}", ext);
+    let preview_suffix = "preview-output.mp4";
 
     let temp = TempFileManager;
     let output_path = temp
-        .create(&preview_suffix, None)
+        .create(preview_suffix, None)
         .map_err(AppError::from)?;
     let mut cleanup = TempCleanup::new();
     cleanup.add(output_path.clone());
 
     let preview_segments = vec![(preview_start_seconds, preview_duration)];
-    let segment_set = extract_segments_or_use_cache(
-        &input_str,
-        preview_duration_u32,
-        preview_start_ms,
-        &preview_segments,
-        &temp,
-        file_sig.as_ref(),
-        emit_ref,
-        progress_ctx.as_ref(),
-        "preview_extract",
-    )
-    .await?;
+    let segment_set = if codec_playable {
+        extract_segments_or_use_cache(
+            &input_str,
+            preview_duration_u32,
+            preview_start_ms,
+            &preview_segments,
+            &temp,
+            file_sig.as_ref(),
+            emit_ref,
+            progress_ctx.as_ref(),
+            "preview_extract",
+        )
+        .await?
+    } else {
+        // Non-playable codec (ProRes, DNxHD, etc.): transcode segment to H.264/MP4 for display.
+        // Segment cache reuses the transcoded original when only options change.
+        match get_cached_segments(
+            &input_str,
+            preview_duration_u32,
+            preview_start_ms,
+            file_sig.as_ref(),
+        ) {
+            Some(cached) => {
+                log::info!(
+                    target: "tiny_vid::preview",
+                    "run_preview_core: non-playable segment cache hit, reusing transcoded segment"
+                );
+                if let Some(ctx) = progress_ctx.as_ref() {
+                    let cb = ctx.make_callback("preview_extract");
+                    cb(1.0);
+                    ctx.advance();
+                }
+                SegmentSet {
+                    paths: cached,
+                    created: false,
+                }
+            }
+            None => {
+                let orig_path = temp
+                    .create("preview-original-transcoded.mp4", None)
+                    .map_err(AppError::from)?;
+                cleanup.add(orig_path.clone());
+                let orig_transcode_opts = TranscodeOptions {
+                    codec: Some("libx264".to_string()),
+                    quality: Some(90),
+                    preset: Some("fast".to_string()),
+                    output_format: Some("mp4".to_string()),
+                    remove_audio: Some(options.effective_remove_audio()),
+                    scale: None, // Preserve original resolution
+                    fps: Some(if meta.fps > 0.0 { meta.fps } else { 30.0 }), // Preserve original fps
+                    ..TranscodeOptions::default()
+                };
+                let args = build_ffmpeg_command(
+                    &input_str,
+                    &path_to_string(&orig_path),
+                    &orig_transcode_opts,
+                    Some(preview_duration),
+                    Some("mp4"),
+                    Some(preview_start_seconds),
+                )?;
+                run_ffmpeg_with_progress(
+                    args,
+                    Some(preview_duration),
+                    emit_ref,
+                    progress_ctx.as_ref(),
+                    "preview_extract",
+                )
+                .await?;
+                SegmentSet {
+                    paths: vec![orig_path],
+                    created: true,
+                }
+            }
+        }
+    };
     if segment_set.created {
         for path in &segment_set.paths {
             cleanup.add(path.clone());
@@ -675,7 +745,8 @@ pub(crate) async fn run_preview_core(
     transcode_preview_segment(
         &segment_set.paths[0],
         &output_path,
-        &options,
+        options,
+        Some(preview_duration),
         emit_ref,
         progress_ctx.as_ref(),
     )
@@ -781,5 +852,13 @@ mod tests {
     fn clamp_preview_start_when_preview_longer_than_video() {
         let clamped = clamp_preview_start_seconds(2.0, 1.5, 3.0);
         assert_eq!(clamped, 0.0);
+    }
+
+    #[test]
+    fn clamp_preview_start_returns_zero_when_duration_invalid() {
+        let clamped = clamp_preview_start_seconds(5.0, 0.0, 3.0);
+        assert_eq!(clamped, 0.0, "video_duration <= 0 should return 0");
+        let clamped2 = clamp_preview_start_seconds(5.0, 10.0, 0.0);
+        assert_eq!(clamped2, 0.0, "preview_duration <= 0 should return 0");
     }
 }

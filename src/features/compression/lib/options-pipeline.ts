@@ -7,6 +7,7 @@ import {
   getCodecInfo,
   getCodecsForFormat,
   getFormatCapabilities,
+  isFormat,
 } from "@/features/compression/lib/compression-options";
 import type { CodecInfo } from "@/types/tauri";
 
@@ -77,10 +78,10 @@ export function resolve(
     throw new Error("resolve requires at least one codec");
   }
 
-  const formats = getAvailableFormats(codecs);
+  const formats = getAvailableFormats(codecs).filter(isFormat);
   let format: Format = partial.outputFormat ?? "mp4";
-  if (!formats.includes(format)) {
-    format = (formats[0] ?? "mp4") as Format;
+  if (!isFormat(format) || !formats.includes(format)) {
+    format = formats[0] ?? "mp4";
   }
 
   const allowedForFormat = getCodecsForFormat(format, codecs).map((c) => c.value);
