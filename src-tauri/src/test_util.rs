@@ -29,7 +29,7 @@ pub fn preview_options(preview_duration: u32) -> TranscodeOptions {
         o.preview_duration = Some(preview_duration);
     })
 }
-use std::process::Command;
+use std::process::{Command, Stdio};
 
 use crate::commands;
 use crate::AppState;
@@ -79,6 +79,8 @@ pub fn create_test_video(
     {
         Command::new(ffmpeg)
             .args([
+                "-loglevel",
+                "error",
                 "-y",
                 "-f",
                 "lavfi",
@@ -90,12 +92,16 @@ pub fn create_test_video(
                 "yuv420p",
                 output_path.to_str().unwrap(),
             ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
     }
     #[cfg(feature = "lgpl-macos")]
     {
         Command::new(ffmpeg)
             .args([
+                "-loglevel",
+                "error",
                 "-y",
                 "-f",
                 "lavfi",
@@ -109,6 +115,8 @@ pub fn create_test_video(
                 "25",
                 output_path.to_str().unwrap(),
             ])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
             .status()
     }
 }
