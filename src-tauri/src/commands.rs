@@ -260,5 +260,6 @@ pub fn cleanup_temp_file(path: PathBuf) -> Result<(), AppError> {
 
 #[tauri::command(rename_all = "camelCase")]
 pub fn get_build_variant() -> Result<BuildVariantResult, AppError> {
-    crate::codec::get_build_variant()
+    let available = crate::ffmpeg::discovery::get_available_codecs()?;
+    crate::codec::get_build_variant(available)
 }

@@ -613,7 +613,8 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system to detect codecs; run with: cargo test get_build_variant_returns_valid_codecs -- --ignored"]
 fn get_build_variant_returns_valid_codecs() {
-    let result = crate::codec::get_build_variant();
+    let available = crate::ffmpeg::discovery::get_available_codecs().expect("get_available_codecs");
+    let result = crate::codec::get_build_variant(available);
     assert!(result.is_ok(), "Should detect codecs: {:?}", result.err());
     let variant = result.unwrap();
     assert!(!variant.codecs.is_empty(), "Should have at least one codec");

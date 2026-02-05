@@ -1,4 +1,4 @@
-use crate::codec_names::SUPPORTED_CODEC_NAMES;
+use crate::codec::SUPPORTED_CODEC_NAMES;
 use crate::error::AppError;
 use std::path::{Path, PathBuf};
 use std::process::Command;

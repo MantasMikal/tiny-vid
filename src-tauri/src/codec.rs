@@ -1,7 +1,6 @@
 //! Codec metadata and build variant for FFmpeg.
 
 use crate::error::AppError;
-use crate::ffmpeg;
 use serde::{Deserialize, Serialize};
 
 #[derive(Serialize, Deserialize, Debug, Clone, PartialEq)]
@@ -29,50 +28,33 @@ struct CodecRow {
     preset_type: &'static str,
 }
 
-const CODEC_TABLE: &[CodecRow] = &[
-    CodecRow {
-        value: "libx264",
-        name: "H.264 (Widest support)",
-        formats: &["mp4"],
-        supports_tune: true,
-        preset_type: "x264",
-    },
-    CodecRow {
-        value: "libx265",
-        name: "H.265 (Smaller files)",
-        formats: &["mp4"],
-        supports_tune: false,
-        preset_type: "x265",
-    },
-    CodecRow {
-        value: "libsvtav1",
-        name: "AV1 (Smallest files)",
-        formats: &["mp4", "webm"],
-        supports_tune: false,
-        preset_type: "av1",
-    },
-    CodecRow {
-        value: "libvpx-vp9",
-        name: "VP9 (Browser-friendly WebM)",
-        formats: &["webm"],
-        supports_tune: false,
-        preset_type: "vp9",
-    },
-    CodecRow {
-        value: "h264_videotoolbox",
-        name: "H.264 (VideoToolbox)",
-        formats: &["mp4"],
-        supports_tune: false,
-        preset_type: "vt",
-    },
-    CodecRow {
-        value: "hevc_videotoolbox",
-        name: "H.265 (VideoToolbox)",
-        formats: &["mp4"],
-        supports_tune: false,
-        preset_type: "vt",
-    },
-];
+macro_rules! codec_table {
+    (
+        $( [$value:expr, $name:expr, $formats:expr, $tune:expr, $preset:expr] ),* $(,)?
+    ) => {
+        const CODEC_TABLE: &[CodecRow] = &[
+            $( CodecRow {
+                value: $value,
+                name: $name,
+                formats: $formats,
+                supports_tune: $tune,
+                preset_type: $preset,
+            } ),*
+        ];
+
+        /// Supported codec names, derived from CODEC_TABLE. Single source of truth.
+        pub const SUPPORTED_CODEC_NAMES: &[&str] = &[ $($value),* ];
+    };
+}
+
+codec_table!(
+    ["libx264", "H.264 (Widest support)", &["mp4"], true, "x264"],
+    ["libx265", "H.265 (Smaller files)", &["mp4"], false, "x265"],
+    ["libsvtav1", "AV1 (Smallest files)", &["mp4", "webm"], false, "av1"],
+    ["libvpx-vp9", "VP9 (Browser-friendly WebM)", &["webm"], false, "vp9"],
+    ["h264_videotoolbox", "H.264 (VideoToolbox)", &["mp4"], false, "vt"],
+    ["hevc_videotoolbox", "H.265 (VideoToolbox)", &["mp4"], false, "vt"],
+);
 
 /// Return CodecInfo for a known codec string. Panics on unknown codec.
 pub fn get_codec_info(codec: &str) -> CodecInfo {
@@ -106,8 +88,7 @@ pub fn filter_codecs_for_display(available: &[String]) -> Vec<String> {
     }
 }
 
-pub fn get_build_variant() -> Result<BuildVariantResult, AppError> {
-    let available = ffmpeg::discovery::get_available_codecs()?;
+pub fn get_build_variant(available: Vec<String>) -> Result<BuildVariantResult, AppError> {
     let codecs = filter_codecs_for_display(&available);
 
     if codecs.is_empty() {
@@ -129,8 +110,7 @@ pub fn get_build_variant() -> Result<BuildVariantResult, AppError> {
 
 #[cfg(test)]
 mod tests {
-    use super::{filter_codecs_for_display, get_codec_info, CODEC_TABLE};
-    use crate::codec_names::SUPPORTED_CODEC_NAMES;
+    use super::{filter_codecs_for_display, get_codec_info, CODEC_TABLE, SUPPORTED_CODEC_NAMES};
 
     #[test]
     fn codec_info_has_correct_metadata() {

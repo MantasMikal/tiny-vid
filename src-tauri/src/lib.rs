@@ -1,5 +1,4 @@
 mod codec;
-mod codec_names;
 mod commands;
 mod error;
 pub mod ffmpeg;
