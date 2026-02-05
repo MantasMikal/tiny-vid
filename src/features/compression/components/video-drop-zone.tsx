@@ -64,6 +64,7 @@ export function VideoDropZone() {
     <DropZone
       ref={ref}
       disabled={disabled}
+      className="size-[calc(100%-8px)] rounded-sm border"
       onClick={() => void useCompressionStore.getState().browseAndSelectFile()}
     >
       <p className={cn("text-center text-muted-foreground")}>Drop video or click to browse</p>

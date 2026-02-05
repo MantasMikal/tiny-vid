@@ -263,11 +263,15 @@ pub fn build_ffmpeg_command(
     if remove_audio {
         args.push("-an".to_string());
     } else if is_webm {
+        // Opus supports stereo/mono only. Downmix to stereo to avoid "Invalid channel layout"
+        // errors (e.g. 5.1(side) from Dolby Digital Plus / Atmos).
         args.extend([
             "-c:a".to_string(),
             "libopus".to_string(),
             "-b:a".to_string(),
             "128k".to_string(),
+            "-ac".to_string(),
+            "2".to_string(),
         ]);
     } else {
         args.extend([
@@ -562,6 +566,7 @@ mod tests {
         o.remove_audio = Some(false);
         let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None).unwrap();
         assert!(args.contains(&"libopus".to_string()));
+        assert!(args.contains(&"-ac".to_string()), "WebM+Opus should downmix to stereo (-ac 2)");
         assert!(!args.contains(&"-movflags".to_string()));
         assert!(args.last() == Some(&"/out.webm".to_string()));
     }
@@ -575,6 +580,7 @@ mod tests {
         o.remove_audio = Some(true);
         let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None).unwrap();
         assert!(args.contains(&"-an".to_string()));
+        assert!(!args.contains(&"-ac".to_string()), "No audio: -an, not -ac");
         assert!(!args.contains(&"-movflags".to_string()));
     }
 

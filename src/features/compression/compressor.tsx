@@ -2,6 +2,7 @@ import { AnimatePresence } from "motion/react";
 import { useShallow } from "zustand/react/shallow";
 
 import { FadeIn } from "@/components/ui/animations";
+import { Badge } from "@/components/ui/badge";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { Spinner } from "@/components/ui/spinner";
 import { CompressionDetailsCard } from "@/features/compression/components/compression-details-card";
@@ -35,6 +36,8 @@ export default function Compressor() {
     previewDuration,
     previewStartSeconds,
     isDisabled,
+    sourceFps,
+    previewFps,
   } = useCompressionStore(
     useShallow((s) => ({
       initError: s.initError,
@@ -49,6 +52,8 @@ export default function Compressor() {
       previewDuration: s.compressionOptions?.previewDuration,
       previewStartSeconds: s.previewStartSeconds,
       isDisabled: !selectIsInitialized(s),
+      sourceFps: s.videoMetadata?.fps,
+      previewFps: s.compressionOptions?.fps,
     }))
   );
 
@@ -57,6 +62,14 @@ export default function Compressor() {
     workerState === WorkerState.Transcoding || workerState === WorkerState.GeneratingPreview;
   const showPreviewTimeline =
     videoPreview && !videoUploading && previewDuration != null && videoDuration != null;
+  const showFpsBadges =
+    videoPreview &&
+    !videoUploading &&
+    sourceFps != null &&
+    previewFps != null &&
+    sourceFps > 0 &&
+    previewFps > 0 &&
+    sourceFps !== previewFps;
 
   return (
     <div
@@ -101,6 +114,12 @@ export default function Compressor() {
                   className={cn("absolute top-2 left-2 z-20 w-full max-w-xs")}
                 >
                   <CompressionProgress progress={progress} progressStepLabel={progressStepLabel} />
+                </FadeIn>
+              )}
+              {showFpsBadges && (
+                <FadeIn key="fps-badges">
+                  <Badge className={cn("absolute top-2 left-2 z-10")}>{sourceFps} FPS</Badge>
+                  <Badge className={cn("absolute top-2 right-2 z-10")}>{previewFps} FPS</Badge>
                 </FadeIn>
               )}
               {error && (

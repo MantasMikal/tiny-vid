@@ -2,7 +2,6 @@ import { useRef } from "react";
 import { ReactCompareSlider } from "react-compare-slider";
 import { useShallow } from "zustand/react/shallow";
 
-import { Badge } from "@/components/ui/badge";
 import { useCompressionStore } from "@/features/compression/store/compression-store";
 import { useVideoSync } from "@/hooks/useVideoSync";
 import { cn } from "@/lib/utils";
@@ -15,17 +14,14 @@ export function VideoPreview() {
   const originalVideoRef = useRef<HTMLVideoElement>(null);
   const compressedVideoRef = useRef<HTMLVideoElement>(null);
 
-  const { videoPreview, originalSrc, compressedSrc, startOffsetSeconds, sourceFps, previewFps } =
-    useCompressionStore(
-      useShallow((s) => ({
-        videoPreview: s.videoPreview,
-        originalSrc: s.videoPreview?.originalSrc ?? "",
-        compressedSrc: s.videoPreview?.compressedSrc ?? "",
-        startOffsetSeconds: s.videoPreview?.startOffsetSeconds,
-        sourceFps: s.videoMetadata?.fps,
-        previewFps: s.compressionOptions?.fps,
-      }))
-    );
+  const { videoPreview, originalSrc, compressedSrc, startOffsetSeconds } = useCompressionStore(
+    useShallow((s) => ({
+      videoPreview: s.videoPreview,
+      originalSrc: s.videoPreview?.originalSrc ?? "",
+      compressedSrc: s.videoPreview?.compressedSrc ?? "",
+      startOffsetSeconds: s.videoPreview?.startOffsetSeconds,
+    }))
+  );
 
   const isPreviewActive = Boolean(videoPreview);
 
@@ -38,13 +34,6 @@ export function VideoPreview() {
   );
 
   if (!videoPreview) return null;
-
-  const showFpsBadges =
-    sourceFps != null &&
-    previewFps != null &&
-    sourceFps > 0 &&
-    previewFps > 0 &&
-    sourceFps !== previewFps;
 
   return (
     <div className={cn("relative size-full")}>
@@ -64,9 +53,6 @@ export function VideoPreview() {
                   <source src={originalSrc} type="video/mp4" />
                 </video>
               </div>
-              {showFpsBadges && (
-                <Badge className={cn("absolute top-2 left-2 z-10")}>{sourceFps} FPS</Badge>
-              )}
             </div>
           }
           itemTwo={
@@ -82,9 +68,6 @@ export function VideoPreview() {
                   <source src={compressedSrc} type={getVideoType(compressedSrc)} />
                 </video>
               </div>
-              {showFpsBadges && (
-                <Badge className={cn("absolute top-2 right-2 z-10")}>{previewFps} FPS</Badge>
-              )}
             </div>
           }
         />
