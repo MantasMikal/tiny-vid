@@ -3,14 +3,14 @@
  * with the default config (base + platform) when using `tauri build --config <path>`.
  *
  * Usage: node scripts/merge-config.ts [--path] <variant>
- * Variants: standalone | macos-standalone | macos-lgpl | windows-standalone (default: no override)
+ * Variants: standalone | macos-standalone | lgpl | windows-standalone (default: no override)
  */
 
 import { join } from "node:path";
 
 const VALID_VARIANTS = [
   "macos-standalone",
-  "macos-lgpl",
+  "lgpl",
   "windows-standalone",
 ] as const;
 

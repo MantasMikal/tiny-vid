@@ -52,8 +52,8 @@ case "$VARIANT" in
     yarn tauri build --config "$SRC_TAURI/overrides/macos-standalone.json" || BUILD_EXIT=$?
     ;;
   lgpl)
-    TINY_VID_LGPL_MACOS=1 yarn prepare-ffmpeg
-    yarn tauri build --config "$SRC_TAURI/overrides/macos-lgpl.json" --features lgpl-macos || BUILD_EXIT=$?
+    TINY_VID_LGPL=1 yarn prepare-ffmpeg
+    yarn tauri build --config "$SRC_TAURI/overrides/lgpl.json" --features lgpl || BUILD_EXIT=$?
     ;;
   *)
     yarn tauri build || BUILD_EXIT=$?

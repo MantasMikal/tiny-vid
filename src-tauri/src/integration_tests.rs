@@ -72,7 +72,7 @@ fn run_transcode_integration(
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_integration -- --ignored"]
 fn ffmpeg_transcode_integration() {
     let option_sets: Vec<(TranscodeOptions, f32, bool)> = {
-        #[cfg(not(feature = "lgpl-macos"))]
+        #[cfg(not(feature = "lgpl"))]
         {
             vec![
                 (opts_with(|o| {
@@ -119,11 +119,11 @@ fn ffmpeg_transcode_integration() {
                 }), 1.0, false),
             ]
         }
-        #[cfg(all(feature = "lgpl-macos", not(target_os = "macos")))]
+        #[cfg(all(feature = "lgpl", not(target_os = "macos")))]
         {
-            vec![] // lgpl-macos is macOS-only; skip on other platforms
+            vec![] // lgpl build is macOS-only for now; skip on other platforms
         }
-        #[cfg(all(feature = "lgpl-macos", target_os = "macos"))]
+        #[cfg(all(feature = "lgpl", target_os = "macos"))]
         {
             vec![
                 (opts_with(|o| {
@@ -186,7 +186,7 @@ fn ffmpeg_progress_emission_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let options = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl-macos") {
+        o.codec = Some(if cfg!(feature = "lgpl") {
             "h264_videotoolbox".into()
         } else {
             "libx264".into()
@@ -253,7 +253,7 @@ fn ffmpeg_cancel_cleanup_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let options = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl-macos") {
+        o.codec = Some(if cfg!(feature = "lgpl") {
             "h264_videotoolbox".into()
         } else {
             "libx264".into()
@@ -468,7 +468,7 @@ fn ffmpeg_preview_output_valid_integration() {
     let compressed_path = std::path::Path::new(&result.compressed_path);
     assert!(compressed_path.exists());
 
-    let codec = if cfg!(feature = "lgpl-macos") {
+    let codec = if cfg!(feature = "lgpl") {
         Some("h264_videotoolbox")
     } else {
         Some("libx264")
@@ -537,7 +537,7 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
     cleanup_preview_transcode_cache();
 
     let opts_a = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl-macos") {
+        o.codec = Some(if cfg!(feature = "lgpl") {
             "h264_videotoolbox".into()
         } else {
             "libx264".into()
@@ -547,7 +547,7 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         o.preview_duration = Some(3);
     });
     let opts_b = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl-macos") {
+        o.codec = Some(if cfg!(feature = "lgpl") {
             "h264_videotoolbox".into()
         } else {
             "libx264".into()
@@ -611,10 +611,10 @@ fn get_build_variant_returns_valid_codecs() {
     let variant = result.unwrap();
     assert!(!variant.codecs.is_empty(), "Should have at least one codec");
 
-    #[cfg(feature = "lgpl-macos")]
-    assert_eq!(variant.variant, "lgpl-macos");
+    #[cfg(feature = "lgpl")]
+    assert_eq!(variant.variant, "lgpl");
 
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     assert_eq!(variant.variant, "standalone");
 
     for codec in &variant.codecs {

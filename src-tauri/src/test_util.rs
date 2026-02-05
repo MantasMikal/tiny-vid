@@ -16,10 +16,10 @@ pub fn opts_with(overrides: impl FnOnce(&mut TranscodeOptions)) -> TranscodeOpti
     o
 }
 
-/// Preview options for integration tests. Preset varies by lgpl-macos feature.
+/// Preview options for integration tests. Preset varies by lgpl feature.
 pub fn preview_options(preview_duration: u32) -> TranscodeOptions {
     opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl-macos") {
+        o.codec = Some(if cfg!(feature = "lgpl") {
             "h264_videotoolbox".into()
         } else {
             "libx264".into()
@@ -68,14 +68,14 @@ pub fn find_ffmpeg_and_set_env() -> PathBuf {
 }
 
 /// Creates a short test video at `output_path` using lavfi testsrc. Duration in seconds.
-/// Uses libx264 or h264_videotoolbox depending on lgpl-macos feature.
+/// Uses libx264 or h264_videotoolbox depending on lgpl feature.
 pub fn create_test_video(
     ffmpeg: &Path,
     output_path: &Path,
     duration_secs: f32,
 ) -> std::io::Result<std::process::ExitStatus> {
     let duration_arg = format!("{}", duration_secs);
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     {
         Command::new(ffmpeg)
             .args([
@@ -96,7 +96,7 @@ pub fn create_test_video(
             .stderr(Stdio::null())
             .status()
     }
-    #[cfg(feature = "lgpl-macos")]
+    #[cfg(feature = "lgpl")]
     {
         Command::new(ffmpeg)
             .args([

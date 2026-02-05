@@ -7,7 +7,7 @@ edition = "2024"
 
 [features]
 default = []
-lgpl-macos = []
+lgpl = []
 # Enables resettable FFmpeg path cache so discovery_bundled tests can run in any order.
 discovery-test-helpers = []
 

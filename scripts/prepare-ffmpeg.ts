@@ -4,11 +4,11 @@
  * - Linux / default: No-op (platform overrides set externalBin to [])
  * - Windows: Downloads BtbN win64-gpl or winarm64-gpl (x86_64/aarch64), extracts to src-tauri/binaries/
  * - macOS standalone: Expects output from build-ffmpeg-standalone-macos.sh; fails if missing
- * - macOS lgpl-macos: Expects output from build-ffmpeg-lgpl-macos.sh; fails if missing
+ * - macOS lgpl: Expects output from build-ffmpeg-lgpl.sh; fails if missing
  *
  * Caches BtbN downloads in ~/.cache/tiny-vid/ffmpeg (or TINY_VID_FFMPEG_CACHE). Verifies checksums when BtbN provides checksums.sha256.
  *
- * Env: TARGET, CARGO_BUILD_TARGET (target triple); TINY_VID_LGPL_MACOS (truthy = lgpl-macos)
+ * Env: TARGET, CARGO_BUILD_TARGET (target triple); TINY_VID_LGPL (truthy = lgpl)
  *       TINY_VID_FFMPEG_CACHE (optional) cache directory for downloads
  * Flags: --stub Create placeholder binaries (for build pass without download)
  */
@@ -63,8 +63,8 @@ function getTargetTriple(): string {
   );
 }
 
-function isLgplMacosBuild(): boolean {
-  return !!process.env.TINY_VID_LGPL_MACOS;
+function isLgplBuild(): boolean {
+  return !!process.env.TINY_VID_LGPL;
 }
 
 function isLinux(target: string): boolean {
@@ -308,18 +308,18 @@ function prepareStandaloneMacOs(target: string): void {
   console.log(`Using existing standalone FFmpeg binaries for ${target}`);
 }
 
-function prepareLgplMacOs(target: string): void {
+function prepareLgpl(target: string): void {
   const suffix = getSidecarSuffix(target);
   const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
   const ffprobeDest = join(BINARIES_DIR, `ffprobe-${suffix}`);
 
   if (!existsSync(ffmpegDest) || !existsSync(ffprobeDest)) {
     throw new Error(
-      `lgpl-macos build requires custom FFmpeg. Run yarn build-ffmpeg-lgpl-macos first. ` +
+      `lgpl build requires custom FFmpeg. Run yarn build-ffmpeg-lgpl first. ` +
         `Expected: ${ffmpegDest}, ${ffprobeDest}`
     );
   }
-  console.log(`Using existing lgpl-macos FFmpeg binaries for ${target}`);
+  console.log(`Using existing lgpl FFmpeg binaries for ${target}`);
 }
 
 function createStubBinaries(target: string): void {
@@ -346,7 +346,7 @@ async function main(): Promise<void> {
   const stubOnly = process.argv.includes("--stub");
   const target = getTargetTriple();
   console.log(
-    `Target: ${target}, lgpl-macos: ${String(isLgplMacosBuild())}, stub: ${String(stubOnly)}`
+    `Target: ${target}, lgpl: ${String(isLgplBuild())}, stub: ${String(stubOnly)}`
   );
 
   if (isLinux(target)) {
@@ -365,8 +365,8 @@ async function main(): Promise<void> {
   }
 
   if (isMacOs(target)) {
-    if (isLgplMacosBuild()) {
-      prepareLgplMacOs(target);
+    if (isLgplBuild()) {
+      prepareLgpl(target);
     } else {
       prepareStandaloneMacOs(target);
     }

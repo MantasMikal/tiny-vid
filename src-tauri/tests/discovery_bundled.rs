@@ -73,11 +73,11 @@ fn env_var_override_with_suffixed_binaries() {
     let _ = fs::remove_dir(dir.parent().unwrap().parent().unwrap());
 }
 
-/// Prefer bundled sidecar when not lgpl-macos. Run: cargo test --test discovery_bundled --features discovery-test-helpers
+/// Prefer bundled sidecar when not lgpl. Run: cargo test --test discovery_bundled --features discovery-test-helpers
 #[test]
 #[cfg(all(
     any(target_os = "macos", target_os = "windows"),
-    not(feature = "lgpl-macos"),
+    not(feature = "lgpl"),
     feature = "discovery-test-helpers"
 ))]
 fn prefer_bundled_sidecar_when_not_lgpl() {
@@ -122,7 +122,7 @@ fn prefer_bundled_sidecar_when_not_lgpl() {
     assert_eq!(
         got_ffmpeg,
         mock_ffmpeg.as_path(),
-        "get_ffmpeg_path should return the suffixed bundled sidecar when not lgpl-macos"
+        "get_ffmpeg_path should return the suffixed bundled sidecar when not lgpl"
     );
     assert_eq!(
         got_ffprobe,

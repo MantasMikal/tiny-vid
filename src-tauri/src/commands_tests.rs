@@ -34,12 +34,12 @@ fn get_build_variant_returns_variant_and_codecs() {
         assert!(!codec.formats.is_empty());
     }
 
-    #[cfg(feature = "lgpl-macos")]
+    #[cfg(feature = "lgpl")]
     {
-        assert_eq!(result.variant, "lgpl-macos", "lgpl-macos build should return variant lgpl-macos");
+        assert_eq!(result.variant, "lgpl", "lgpl build should return variant lgpl");
     }
 
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     {
         assert_eq!(result.variant, "standalone", "standalone build should return variant standalone");
     }

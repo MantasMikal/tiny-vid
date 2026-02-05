@@ -10,7 +10,7 @@ set -e
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 BINARIES_DIR="$ROOT/src-tauri/binaries"
-BUILD_DIR="${FFMPEG_BUILD_DIR:-/tmp/ffmpeg-lgpl-macos-build}"
+BUILD_DIR="${FFMPEG_BUILD_DIR:-/tmp/ffmpeg-lgpl-build}"
 # FFmpeg release branch (e.g. 7.1 → release/7.1). See https://git.ffmpeg.org/ffmpeg.git
 FFMPEG_VERSION="${FFMPEG_VERSION:-7.1}"
 TARGET_TRIPLE="${TARGET_TRIPLE:-$(rustc --print host-tuple 2>/dev/null || echo "aarch64-apple-darwin")}"

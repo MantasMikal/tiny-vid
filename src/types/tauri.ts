@@ -42,7 +42,7 @@ export interface CodecInfo {
 }
 
 export interface BuildVariantResult {
-  variant: "standalone" | "lgpl-macos";
+  variant: "standalone" | "lgpl";
   codecs: CodecInfo[];
 }
 

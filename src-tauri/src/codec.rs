@@ -97,9 +97,9 @@ pub fn get_build_variant(available: Vec<String>) -> Result<BuildVariantResult, A
         ));
     }
 
-    #[cfg(feature = "lgpl-macos")]
-    let variant = "lgpl-macos";
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(feature = "lgpl")]
+    let variant = "lgpl";
+    #[cfg(not(feature = "lgpl"))]
     let variant = "standalone";
 
     Ok(BuildVariantResult {

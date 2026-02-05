@@ -99,17 +99,17 @@ pub fn resolve_sidecar_path(base_name: &str) -> Option<PathBuf> {
 /// Base names for bundled sidecar (suffixed first, then plain).
 #[cfg(all(
     any(target_os = "macos", target_os = "windows"),
-    not(feature = "lgpl-macos")
+    not(feature = "lgpl")
 ))]
 fn bundled_sidecar_base_names() -> [&'static str; 2] {
     [concat!("ffmpeg-", env!("TARGET")), "ffmpeg"]
 }
 
-/// Resolve FFmpeg path. Order: bundled sidecar (if not lgpl-macos) → common paths → PATH → sidecar fallback.
+/// Resolve FFmpeg path. Order: bundled sidecar (if not lgpl) → common paths → PATH → sidecar fallback.
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
     #[cfg(all(
         any(target_os = "macos", target_os = "windows"),
-        not(feature = "lgpl-macos")
+        not(feature = "lgpl")
     ))]
     for base_name in bundled_sidecar_base_names() {
         if let Some(p) = resolve_sidecar_path(base_name) {
@@ -154,7 +154,7 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 
 /// Get FFmpeg path. Cached for process lifetime.
 /// 1. FFMPEG_PATH env (when set and path exists) – for tests/CI or bundled binaries.
-/// 2. When not lgpl-macos on macOS/Windows: bundled sidecar first (ffmpeg-{TARGET} then ffmpeg).
+/// 2. When not lgpl on macOS/Windows: bundled sidecar first (ffmpeg-{TARGET} then ffmpeg).
 /// 3. Common installation paths (Homebrew, /usr/bin, etc.).
 /// 4. PATH (via which/where).
 /// 5. Bundled sidecar fallback (macOS/Windows only; used for lgpl when nothing in path).

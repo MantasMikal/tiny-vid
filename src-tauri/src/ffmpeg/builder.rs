@@ -570,7 +570,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     fn webm_uses_libopus_no_movflags() {
         let mut o = opts();
         o.codec = Some("libsvtav1".to_string());
@@ -584,7 +584,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     fn webm_no_audio_uses_an() {
         let mut o = opts();
         o.codec = Some("libsvtav1".to_string());
@@ -597,7 +597,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     fn vp9_uses_deadline_cpu_used_bv0() {
         let mut o = opts();
         o.codec = Some("libvpx-vp9".to_string());
@@ -615,7 +615,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     fn vp9_quality_maps_to_crf() {
         let mut o = opts();
         o.codec = Some("libvpx-vp9".to_string());
@@ -674,7 +674,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     fn mkv_uses_aac_no_movflags() {
         let mut o = opts();
         o.output_format = Some("mkv".to_string());
@@ -687,7 +687,7 @@ mod tests {
     }
 
     #[test]
-    #[cfg(not(feature = "lgpl-macos"))]
+    #[cfg(not(feature = "lgpl"))]
     fn mkv_vp9_uses_opus() {
         let mut o = opts();
         o.output_format = Some("mkv".to_string());
@@ -699,13 +699,13 @@ mod tests {
     }
 
     #[test]
-    #[cfg(feature = "lgpl-macos")]
-    fn lgpl_macos_accepts_mkv_output() {
+    #[cfg(feature = "lgpl")]
+    fn lgpl_accepts_mkv_output() {
         let mut o = opts();
         o.output_format = Some("mkv".to_string());
         o.codec = Some("h264_videotoolbox".to_string());
         let result = build_ffmpeg_command("/in.mp4", "/out.mkv", &o, None, None, None);
-        assert!(result.is_ok(), "lgpl-macos build should accept MKV output: {:?}", result.err());
+        assert!(result.is_ok(), "lgpl build should accept MKV output: {:?}", result.err());
     }
 
     #[test]

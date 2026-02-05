@@ -1,6 +1,6 @@
 import type { CodecInfo } from "@/types/tauri";
 
-export type LicenseProfile = "standalone" | "lgpl-macos";
+export type LicenseProfile = "standalone" | "lgpl";
 
 /**
  * Codec metadata. Must stay in sync with backend src-tauri/src/codec.rs CODEC_TABLE.
