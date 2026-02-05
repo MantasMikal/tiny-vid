@@ -75,7 +75,7 @@ export function VideoPreview() {
                   ref={originalVideoRef}
                   muted
                   playsInline
-                  preload="none"
+                  preload="auto"
                   className={cn("size-full object-contain")}
                 >
                   <source src={originalSrc} type="video/mp4" />
@@ -93,7 +93,7 @@ export function VideoPreview() {
                   ref={compressedVideoRef}
                   muted
                   playsInline
-                  preload="none"
+                  preload="auto"
                   className={cn("size-full object-contain")}
                 >
                   <source src={compressedSrc} type={getVideoType(compressedSrc)} />
