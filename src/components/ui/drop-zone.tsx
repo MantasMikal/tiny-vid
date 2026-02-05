@@ -1,4 +1,4 @@
-import { type ComponentPropsWithoutRef, forwardRef } from "react";
+import { type ComponentPropsWithoutRef } from "react";
 
 import { cn } from "@/lib/utils";
 
@@ -8,45 +8,44 @@ export interface DropZoneProps extends Omit<ComponentPropsWithoutRef<"div">, "on
   disabled?: boolean;
 }
 
-export const DropZone = forwardRef<HTMLDivElement, DropZoneProps>(function DropZone(
-  { onDrop, onClick, disabled = false, className, children, ...props },
-  ref
-) {
+export function DropZone({
+  onDrop,
+  onClick,
+  disabled = false,
+  className,
+  children,
+  ref,
+  ...props
+}: DropZoneProps & { ref?: React.Ref<HTMLDivElement> }) {
+  const handleDragOver = (e: React.DragEvent) => {
+    e.preventDefault();
+    e.dataTransfer.dropEffect = "copy";
+  };
+
+  const handleDrop = (e: React.DragEvent) => {
+    e.preventDefault();
+    const files = e.dataTransfer.files;
+    if (files.length > 0) {
+      onDrop?.(Array.from(files));
+    }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter" || e.key === " ") {
+      e.preventDefault();
+      onClick?.();
+    }
+  };
+
   return (
     <div
       ref={ref}
       role="button"
       tabIndex={disabled ? -1 : 0}
       onClick={disabled ? undefined : onClick}
-      onDragOver={
-        onDrop && !disabled
-          ? (e) => {
-              e.preventDefault();
-              e.dataTransfer.dropEffect = "copy";
-            }
-          : undefined
-      }
-      onDrop={
-        onDrop && !disabled
-          ? (e) => {
-              e.preventDefault();
-              const files = e.dataTransfer.files;
-              if (files.length > 0) {
-                onDrop(Array.from(files));
-              }
-            }
-          : undefined
-      }
-      onKeyDown={
-        disabled
-          ? undefined
-          : (e) => {
-              if (e.key === "Enter" || e.key === " ") {
-                e.preventDefault();
-                onClick?.();
-              }
-            }
-      }
+      onDragOver={onDrop && !disabled ? handleDragOver : undefined}
+      onDrop={onDrop && !disabled ? handleDrop : undefined}
+      onKeyDown={disabled ? undefined : handleKeyDown}
       className={cn(
         `
           flex size-full cursor-pointer flex-col items-center justify-center gap-4 rounded-md border-2 border-dashed
@@ -62,4 +61,4 @@ export const DropZone = forwardRef<HTMLDivElement, DropZoneProps>(function DropZ
       {children}
     </div>
   );
-});
+}
