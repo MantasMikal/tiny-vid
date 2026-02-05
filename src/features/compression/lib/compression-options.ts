@@ -2,48 +2,46 @@ import type { CodecInfo } from "@/types/tauri";
 
 export type LicenseProfile = "standalone" | "lgpl-macos";
 
+/**
+ * Codec metadata. Must stay in sync with backend src-tauri/src/codec.rs CODEC_TABLE.
+ * presetType "vt" = VideoToolbox (hardware); others = software encoders.
+ */
 const CODEC_REGISTRY = {
   libx264: {
     name: "H.264 (Widest support)",
     supportsTune: true,
     presetType: "x264",
     formats: ["mp4"],
-    lgplMacos: false,
   },
   libx265: {
     name: "H.265 (Smaller files)",
     supportsTune: false,
     presetType: "x265",
     formats: ["mp4"],
-    lgplMacos: false,
   },
   libsvtav1: {
     name: "AV1 (Smallest files)",
     supportsTune: false,
     presetType: "av1",
     formats: ["mp4", "webm"],
-    lgplMacos: false,
   },
   "libvpx-vp9": {
     name: "VP9 (Browser-friendly WebM)",
     supportsTune: false,
     presetType: "vp9",
     formats: ["webm"],
-    lgplMacos: false,
   },
   h264_videotoolbox: {
     name: "H.264 (VideoToolbox)",
     supportsTune: false,
     presetType: "vt",
     formats: ["mp4"],
-    lgplMacos: true,
   },
   hevc_videotoolbox: {
     name: "H.265 (VideoToolbox)",
     supportsTune: false,
     presetType: "vt",
     formats: ["mp4"],
-    lgplMacos: true,
   },
 } as const;
 
@@ -65,18 +63,15 @@ const FORMAT_REGISTRY = {
 export type Codec = keyof typeof CODEC_REGISTRY;
 export type Format = keyof typeof FORMAT_REGISTRY;
 
-const CODECS: Codec[] = [
-  "libx264",
-  "libx265",
-  "libsvtav1",
-  "libvpx-vp9",
-  "h264_videotoolbox",
-  "hevc_videotoolbox",
-];
+const CODECS = Object.keys(CODEC_REGISTRY) as Codec[];
 
 const FORMATS: Format[] = ["mp4", "webm"];
 
-export function isCodec(s: string): s is Codec {
+/** Validates against backend codecs when provided; otherwise against known codec set. */
+export function isCodec(s: string, availableCodecs?: CodecInfo[]): s is Codec {
+  if (availableCodecs?.length) {
+    return availableCodecs.some((c) => c.value === s);
+  }
   return (CODECS as readonly string[]).includes(s);
 }
 

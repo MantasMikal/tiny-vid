@@ -8,31 +8,55 @@ import { CompressionDetailsCard } from "@/features/compression/components/compre
 import { CompressionErrorAlert } from "@/features/compression/components/compression-error-alert";
 import { CompressionProgress } from "@/features/compression/components/compression-progress";
 import { InitErrorDisplay } from "@/features/compression/components/init-error-display";
+import { PreviewRegionTimeline } from "@/features/compression/components/preview-region-timeline";
 import { VideoDropZone } from "@/features/compression/components/video-drop-zone";
 import { VideoPreview } from "@/features/compression/components/video-preview";
 import { VideoSettings } from "@/features/compression/components/video-settings";
 import { getProgressStepLabel } from "@/features/compression/lib/preview-progress";
-import { useCompressionStore, WorkerState } from "@/features/compression/store/compression-store";
+import { selectIsInitialized } from "@/features/compression/store/compression-selectors";
+import {
+  getCompressionState,
+  useCompressionStore,
+  WorkerState,
+} from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
 
 export default function Compressor() {
-  const initError = useCompressionStore(useShallow((s) => s.initError));
-  const { inputPath, videoPreview, videoUploading, error, workerState, progress, progressStep } =
-    useCompressionStore(
-      useShallow((s) => ({
-        inputPath: s.inputPath,
-        videoPreview: s.videoPreview,
-        videoUploading: s.videoUploading,
-        error: s.error,
-        workerState: s.workerState,
-        progress: s.progress,
-        progressStep: s.progressStep,
-      }))
-    );
+  const {
+    initError,
+    inputPath,
+    videoPreview,
+    videoUploading,
+    error,
+    workerState,
+    progress,
+    progressStep,
+    videoDuration,
+    previewDuration,
+    previewStartSeconds,
+    isDisabled,
+  } = useCompressionStore(
+    useShallow((s) => ({
+      initError: s.initError,
+      inputPath: s.inputPath,
+      videoPreview: s.videoPreview,
+      videoUploading: s.videoUploading,
+      error: s.error,
+      workerState: s.workerState,
+      progress: s.progress,
+      progressStep: s.progressStep,
+      videoDuration: s.videoMetadata?.duration,
+      previewDuration: s.compressionOptions?.previewDuration,
+      previewStartSeconds: s.previewStartSeconds,
+      isDisabled: !selectIsInitialized(s),
+    }))
+  );
 
   const progressStepLabel = getProgressStepLabel(progressStep);
   const showProgressOverlay =
     workerState === WorkerState.Transcoding || workerState === WorkerState.GeneratingPreview;
+  const showPreviewTimeline =
+    videoPreview && !videoUploading && previewDuration != null && videoDuration != null;
 
   return (
     <div
@@ -43,44 +67,50 @@ export default function Compressor() {
     >
       <div
         className={cn(
-          "relative flex h-full min-h-[300px] flex-col gap-2 rounded-md border bg-card p-2"
+          "flex h-full min-h-70 items-center justify-center gap-2 overflow-hidden rounded-md border"
         )}
       >
-        <div className={cn("relative flex h-full items-center justify-center")}>
-          {initError && !inputPath && <InitErrorDisplay message={initError} />}
-          {!initError && !inputPath && <VideoDropZone />}
-          {!initError && inputPath && (
-            <div
-              className={cn("relative flex size-full rounded-md bg-background md:overflow-hidden")}
-            >
-              {videoUploading && <Spinner className={cn("absolute inset-0 z-10 m-auto size-12")} />}
-              <AnimatePresence>
-                {videoPreview && !videoUploading && (
-                  <FadeIn className="absolute inset-0">
-                    <VideoPreview />
-                  </FadeIn>
-                )}
-              </AnimatePresence>
-              <AnimatePresence>
-                {showProgressOverlay && (
-                  <FadeIn className={cn("absolute top-0 left-0 z-20 w-full max-w-xs")}>
-                    <CompressionProgress
-                      progress={progress}
-                      progressStepLabel={progressStepLabel}
-                    />
-                  </FadeIn>
-                )}
-              </AnimatePresence>
-            </div>
-          )}
-        </div>
-        <AnimatePresence>
-          {error && (
-            <FadeIn className={cn("absolute bottom-0 left-0 z-20 w-full p-3")}>
-              <CompressionErrorAlert error={error} />
-            </FadeIn>
-          )}
-        </AnimatePresence>
+        {initError && !inputPath && <InitErrorDisplay message={initError} />}
+        {!initError && !inputPath && <VideoDropZone />}
+        {!initError && inputPath && (
+          <div className={cn("relative flex size-full rounded-md bg-background")}>
+            {videoPreview && !videoUploading && <VideoPreview />}
+            {showPreviewTimeline && (
+              <div className={cn("absolute bottom-0 z-20 w-full p-2")}>
+                <PreviewRegionTimeline
+                  duration={videoDuration}
+                  previewDuration={previewDuration}
+                  startSeconds={previewStartSeconds}
+                  disabled={isDisabled}
+                  onStartChange={(startSeconds) => {
+                    getCompressionState().setPreviewRegionStart(startSeconds);
+                  }}
+                />
+              </div>
+            )}
+            <AnimatePresence>
+              {videoUploading && (
+                <FadeIn key="uploading-spinner">
+                  <Spinner className={cn(`absolute inset-2 z-10 m-auto size-12`)} />
+                </FadeIn>
+              )}
+              {showProgressOverlay && (
+                <FadeIn
+                  key="progress-overlay"
+                  delay={0.1}
+                  className={cn("absolute top-2 left-2 z-20 w-full max-w-xs")}
+                >
+                  <CompressionProgress progress={progress} progressStepLabel={progressStepLabel} />
+                </FadeIn>
+              )}
+              {error && (
+                <FadeIn className={cn("absolute bottom-0 left-0 z-20 w-full p-3")}>
+                  <CompressionErrorAlert error={error} />
+                </FadeIn>
+              )}
+            </AnimatePresence>
+          </div>
+        )}
       </div>
       {!initError && (
         <aside className={cn("flex h-full min-w-0 flex-col gap-4", "md:overflow-hidden")}>

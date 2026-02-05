@@ -41,7 +41,7 @@ export function PreviewRegionTimeline({
   return (
     <div
       className={cn(
-        `pointer-events-auto rounded-md border border-white/10 bg-black/65 p-2 text-white shadow-lg backdrop-blur-sm`,
+        `pointer-events-auto rounded-md border bg-background/65 p-2 pb-3 shadow-lg backdrop-blur-sm`,
         isDisabled && "opacity-70"
       )}
     >

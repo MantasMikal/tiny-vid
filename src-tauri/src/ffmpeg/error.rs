@@ -55,15 +55,9 @@ fn first_line_truncated(stderr: &str, max_len: usize) -> String {
     }
 }
 
-/// For unknown codes, combine exit code with first line of stderr when available.
-fn summary_for_unknown_code(code: i32, stderr: &str) -> String {
-    let base = format!("FFmpeg failed (exit code {}).", code);
-    let first = first_line_truncated(stderr, 80);
-    if first.is_empty() {
-        base
-    } else {
-        format!("{} {}", base, first)
-    }
+/// For unknown codes, use a short summary. Full stderr is in detail.
+fn summary_for_unknown_code(code: i32, _stderr: &str) -> String {
+    format!("FFmpeg failed (exit code {}).", code)
 }
 
 fn fallback_summary(stderr: &str) -> String {
@@ -99,10 +93,10 @@ mod tests {
     }
 
     #[test]
-    fn unknown_code_uses_stderr() {
+    fn unknown_code_short_summary() {
         let p = parse_ffmpeg_error("Invalid data found when processing input", Some(42));
-        assert!(p.summary.contains("exit code 42"));
-        assert!(p.summary.contains("Invalid data"));
+        assert_eq!(p.summary, "FFmpeg failed (exit code 42).");
+        assert_eq!(p.detail, "Invalid data found when processing input");
     }
 
     #[test]

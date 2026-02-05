@@ -10,11 +10,22 @@ export type TryResult<T> =
   | { ok: false; aborted: true };
 
 function toResultError(error: unknown, type: string): ResultError {
-  if (error instanceof Error) {
-    return { type, message: error.message, detail: error.message };
+  const raw = error instanceof Error ? error.message : String(error);
+  try {
+    const parsed = JSON.parse(raw) as unknown;
+    if (
+      parsed &&
+      typeof parsed === "object" &&
+      typeof (parsed as { summary?: unknown }).summary === "string" &&
+      typeof (parsed as { detail?: unknown }).detail === "string"
+    ) {
+      const { summary, detail } = parsed as { summary: string; detail: string };
+      return { type, message: summary, detail };
+    }
+  } catch {
+    /* not JSON */
   }
-  const message = String(error);
-  return { type, message, detail: message };
+  return { type, message: raw, detail: raw };
 }
 
 function isAbortError(error: unknown): boolean {

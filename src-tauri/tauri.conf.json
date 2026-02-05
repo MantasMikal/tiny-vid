@@ -17,6 +17,8 @@
         "title": "Tiny Vid",
         "width": 900,
         "height": 670,
+        "minWidth": 375,
+        "minHeight": 640,
         "resizable": true,
         "maximizable": true,
         "decorations": true,

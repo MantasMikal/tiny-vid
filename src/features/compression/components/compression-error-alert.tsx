@@ -11,28 +11,26 @@ interface CompressionErrorAlertProps {
 
 export function CompressionErrorAlert({ error }: CompressionErrorAlertProps) {
   return (
-    <Alert variant="destructive" className={cn("relative bg-black pr-10")}>
+    <Alert variant="destructive" className={cn("relative select-auto")}>
       <TriangleAlert className={cn("size-5")} />
       <Button
         size="icon"
         variant="ghost"
-        onClick={() => {
-          getCompressionState().dismissError();
-        }}
-        className={cn("absolute top-2 right-2 size-8 text-current", "hover:bg-white/20")}
+        onClick={() => getCompressionState().dismissError()}
+        className={cn("absolute top-2 right-2 size-8")}
       >
-        <XIcon className={cn("size-4")} />
+        <XIcon />
       </Button>
       <AlertTitle>{error.type || "Error"}</AlertTitle>
-      <AlertDescription>
+      <AlertDescription className="">
         {error.message}
         {error.detail && error.detail !== error.message && (
-          <details className={cn("mt-2")}>
-            <summary className={cn("cursor-pointer text-sm opacity-80")}>Show details</summary>
+          <details className={cn("mt-1")}>
+            <summary className={cn("cursor-pointer text-sm")}>Cause</summary>
             <pre
               className={cn(
                 "mt-1 max-h-32 overflow-auto text-xs wrap-anywhere",
-                "whitespace-pre-wrap opacity-90"
+                "whitespace-pre-wrap"
               )}
             >
               {error.detail}

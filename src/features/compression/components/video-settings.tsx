@@ -1,6 +1,6 @@
 import { BikeIcon, CarFrontIcon, CookingPotIcon, InfoIcon, RocketIcon } from "lucide-react";
 import { AnimatePresence, motion, usePresenceData } from "motion/react";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
 import {
@@ -11,9 +11,7 @@ import {
 } from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClampedNumberInput } from "@/components/ui/clamped-number-input";
-import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
-import { ScrollArea } from "@/components/ui/scroll-area";
 import {
   Select,
   SelectContent,
@@ -127,20 +125,19 @@ export function VideoSettings() {
     direction: number;
   }>({ activeTab: "basic", direction: 0 });
   const { activeTab, direction } = tabState;
+  const ffmpegAccordionRef = useRef<HTMLDivElement>(null);
   const [basicPreset, setBasicPreset] = useState<BasicPresetId>(DEFAULT_PRESET_ID);
   const {
     compressionOptions: cOptions,
     availableCodecs,
     isDisabled,
     ffmpegCommandPreview,
-    ffmpegCommandPreviewLoading,
   } = useCompressionStore(
     useShallow((s) => ({
       compressionOptions: s.compressionOptions,
       availableCodecs: s.availableCodecs,
       isDisabled: selectIsActionsDisabled(s),
       ffmpegCommandPreview: s.ffmpegCommandPreview,
-      ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,
     }))
   );
 
@@ -151,6 +148,18 @@ export function VideoSettings() {
       void getCompressionState().refreshFfmpegCommandPreview();
     }
   }, [activeTab, ffmpegCommandPreview]);
+
+  const handleAccordionChange = (value: string) => {
+    if (value === "ffmpeg-command") {
+      // Delay until accordion expand animation (0.2s) completes
+      setTimeout(() => {
+        ffmpegAccordionRef.current?.scrollIntoView({
+          behavior: "smooth",
+          block: "end",
+        });
+      }, 220);
+    }
+  };
 
   const handleTabChange = (value: string) => {
     const newTab: TabOptions = value === "advanced" ? "advanced" : "basic";
@@ -228,7 +237,7 @@ export function VideoSettings() {
           {activeTab === "advanced" && (
             <AnimatedTabPanel key="advanced" value="advanced" className={cn("flex flex-col gap-4")}>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Output container format. MP4: widest support. WebM: open format; VP9 (Safari-friendly) or AV1.">
+                <TooltipLabel tooltip="Container format: the file wrapper that holds video and audio streams.">
                   Format
                 </TooltipLabel>
                 <Select
@@ -258,14 +267,14 @@ export function VideoSettings() {
                 </Select>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Video encoder (-c:v). H.264: best compatibility. H.265: ~30–50% smaller. AV1: best compression. VP9: Safari-friendly WebM.">
+                <TooltipLabel tooltip="Video codec: the algorithm that compresses the video. Different codecs offer different compression and compatibility.">
                   Codec
                 </TooltipLabel>
                 <Select
                   value={cOptions.codec}
                   disabled={isDisabled}
                   onValueChange={(v) => {
-                    if (!isCodec(v)) return;
+                    if (!isCodec(v, availableCodecs)) return;
                     setOptions(resolve({ ...cOptions, codec: v }, availableCodecs));
                   }}
                 >
@@ -282,7 +291,7 @@ export function VideoSettings() {
                 </Select>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Constant Rate Factor (CRF): keeps perceived quality steady while varying bitrate. Lower = higher quality and larger files. A change of ±6 roughly halves or doubles file size. Mapped per codec (x264: 23–51, x265: 28–51, VP9: 20–63, AV1: 24–63).">
+                <TooltipLabel tooltip="Quality vs file size. Higher = better quality, larger file.">
                   Quality
                 </TooltipLabel>
                 <Slider
@@ -406,16 +415,12 @@ export function VideoSettings() {
                   />
                   <Label htmlFor="generatePreview">Generate preview automatically</Label>
                 </div>
-                <Input
+                <ClampedNumberInput
                   disabled={isDisabled}
-                  type="number"
                   min={1}
                   max={30}
                   value={cOptions.previewDuration ?? 3}
-                  onChange={(e) => {
-                    const parsed = Number.parseInt(e.target.value, 10);
-                    const safeValue = Number.isFinite(parsed) ? parsed : 3;
-                    const clamped = Math.min(30, Math.max(1, safeValue));
+                  onChange={(clamped) => {
                     setOptions({
                       ...cOptions,
                       previewDuration: clamped,
@@ -426,7 +431,12 @@ export function VideoSettings() {
                   Duration in seconds (FFmpeg -t)
                 </p>
               </div>
-              <Accordion type="single" collapsible className={cn("w-full")}>
+              <Accordion
+                type="single"
+                collapsible
+                className={cn("w-full")}
+                onValueChange={handleAccordionChange}
+              >
                 <AccordionItem value="ffmpeg-command" className={cn("border-none")}>
                   <AccordionTrigger
                     className={cn("py-2 text-base font-bold", "hover:no-underline")}
@@ -434,22 +444,18 @@ export function VideoSettings() {
                     FFmpeg command
                   </AccordionTrigger>
                   <AccordionContent>
-                    <ScrollArea
-                      className={cn(
-                        "rounded-md border bg-muted/50 p-3 font-mono text-xs",
-                        "max-h-64 w-full break-all select-text"
-                      )}
+                    <div
+                      ref={ffmpegAccordionRef}
+                      className="rounded-md border bg-muted/50 p-3 font-mono text-xs select-text"
                     >
-                      {ffmpegCommandPreviewLoading ? (
-                        <p className={cn("text-muted-foreground")}>Loading…</p>
-                      ) : ffmpegCommandPreview ? (
+                      {ffmpegCommandPreview ? (
                         <pre className={cn("m-0 whitespace-pre-wrap select-text")}>
                           {ffmpegCommandPreview}
                         </pre>
                       ) : (
                         <p className={cn("text-muted-foreground")}>Could not generate command</p>
                       )}
-                    </ScrollArea>
+                    </div>
                   </AccordionContent>
                 </AccordionItem>
               </Accordion>

@@ -1,5 +1,7 @@
 //! App error type for Tauri commands. Implements Display and Serialize for frontend.
 
+use crate::ffmpeg::parse_ffmpeg_error;
+
 #[derive(Debug, thiserror::Error)]
 pub enum AppError {
     #[error("{0}")]
@@ -33,7 +35,15 @@ impl serde::Serialize for AppError {
     where
         S: serde::Serializer,
     {
-        serializer.serialize_str(&self.to_string())
+        match self {
+            AppError::FfmpegFailed { code, stderr } => {
+                let payload = parse_ffmpeg_error(stderr, Some(*code));
+                let json =
+                    serde_json::json!({ "summary": payload.summary, "detail": payload.detail });
+                serializer.serialize_str(&json.to_string())
+            }
+            _ => serializer.serialize_str(&self.to_string()),
+        }
     }
 }
 

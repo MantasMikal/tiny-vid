@@ -50,6 +50,9 @@ export default defineConfig([
       tseslint.configs.strictTypeChecked,
       tseslint.configs.stylisticTypeChecked,
     ],
+    rules: {
+      "@typescript-eslint/no-confusing-void-expression": "off",
+    },
     languageOptions: {
       parserOptions: {
         projectService: true,
