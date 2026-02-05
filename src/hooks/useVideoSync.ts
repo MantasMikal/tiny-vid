@@ -41,9 +41,11 @@ export function useVideoSync(
   primaryRef: RefObject<HTMLVideoElement | null>,
   secondaryRef: RefObject<HTMLVideoElement | null>,
   startOffsetSeconds = 0,
-  deps: DependencyList = []
+  deps: DependencyList = [],
+  enabled = true
 ) {
   useEffect(() => {
+    if (!enabled) return;
     let retryRafId: number | null = null;
     let innerCleanup: (() => void) | undefined;
 
@@ -607,5 +609,5 @@ export function useVideoSync(
       }
       innerCleanup?.();
     };
-  }, [primaryRef, secondaryRef, startOffsetSeconds, ...deps]);
+  }, [enabled, primaryRef, secondaryRef, startOffsetSeconds, ...deps]);
 }

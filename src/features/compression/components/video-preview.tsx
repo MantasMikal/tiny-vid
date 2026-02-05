@@ -46,11 +46,15 @@ export function VideoPreview() {
     }))
   );
 
-  useVideoSync(originalVideoRef, compressedVideoRef, startOffsetSeconds ?? 0, [
-    originalSrc,
-    compressedSrc,
-    startOffsetSeconds,
-  ]);
+  const isPreviewActive = Boolean(videoPreview);
+
+  useVideoSync(
+    originalVideoRef,
+    compressedVideoRef,
+    startOffsetSeconds ?? 0,
+    [originalSrc, compressedSrc, startOffsetSeconds],
+    isPreviewActive
+  );
 
   if (!videoPreview) return null;
 

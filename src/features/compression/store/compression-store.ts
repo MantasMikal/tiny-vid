@@ -178,7 +178,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   selectPath: async (path: string) => {
     const requestId = ++selectPathRequestId;
     const { workerState } = get();
-    if (workerState === WorkerState.GeneratingPreview) {
+    if (workerState !== WorkerState.Idle) {
       await get().terminate();
     }
 
