@@ -159,6 +159,13 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 /// 4. PATH (via which/where).
 /// 5. Bundled sidecar fallback (macOS/Windows only; used for lgpl when nothing in path).
 pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
+    // Deliberately fail when TINY_VID_FFMPEG_DISABLE=1 (for testing the "FFmpeg not found" UI).
+    if std::env::var("TINY_VID_FFMPEG_DISABLE").as_deref() == Ok("1") {
+        return Err(AppError::FfmpegNotFound(
+            "FFmpeg not found. Please install FFmpeg on your system:\n  - macOS: brew install ffmpeg\n  - Linux: sudo apt install ffmpeg\n  - Windows: Download from https://ffmpeg.org/download.html"
+                .to_string(),
+        ));
+    }
     #[cfg(feature = "discovery-test-helpers")]
     {
         let guard = TEST_FFMPEG_CACHE.lock();

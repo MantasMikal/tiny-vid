@@ -9,7 +9,6 @@ import {
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
-import { Alert, AlertDescription, AlertTitle } from "@/components/ui/alert";
 import { Checkbox } from "@/components/ui/checkbox";
 import { ClampedNumberInput } from "@/components/ui/clamped-number-input";
 import { Input } from "@/components/ui/input";
@@ -132,7 +131,6 @@ export function VideoSettings() {
   const {
     compressionOptions: cOptions,
     availableCodecs,
-    initError,
     isDisabled,
     ffmpegCommandPreview,
     ffmpegCommandPreviewLoading,
@@ -140,7 +138,6 @@ export function VideoSettings() {
     useShallow((s) => ({
       compressionOptions: s.compressionOptions,
       availableCodecs: s.availableCodecs,
-      initError: s.initError,
       isDisabled: selectIsActionsDisabled(s),
       ffmpegCommandPreview: s.ffmpegCommandPreview,
       ffmpegCommandPreviewLoading: s.ffmpegCommandPreviewLoading,
@@ -170,12 +167,6 @@ export function VideoSettings() {
 
   return (
     <TooltipProvider>
-      {initError && (
-        <Alert variant="destructive" className={cn("mb-4")}>
-          <AlertTitle>FFmpeg Configuration Error</AlertTitle>
-          <AlertDescription>{initError}</AlertDescription>
-        </Alert>
-      )}
       <Tabs value={activeTab} className={cn("w-full min-w-0")} onValueChange={handleTabChange}>
         <TabsList className={cn("mb-4 grid w-full grid-cols-2")}>
           <TabsTrigger value="basic">Basic</TabsTrigger>

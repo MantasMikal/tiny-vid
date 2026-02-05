@@ -106,7 +106,7 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
         .manage(AppState::default())
-        .setup(|app| {
+        .setup(|app: &mut tauri::App| -> Result<(), Box<dyn std::error::Error>> {
             #[cfg(any(windows, target_os = "linux"))]
             {
                 let mut files = Vec::new();
@@ -128,7 +128,7 @@ pub fn run() {
             }
 
             #[cfg(target_os = "macos")]
-            setup_menu(app).map_err(Into::into)?;
+            setup_menu(app)?;
             Ok(())
         })
         .invoke_handler(tauri::generate_handler![
