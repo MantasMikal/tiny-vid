@@ -1,6 +1,6 @@
 //! Unified preview cache: LRU 16 entries with segment reuse via ref-counting.
 //!
-//! Each preview result is (input, duration, preview_start_ms, options) -> (output_path, estimated_size).
+//! Each preview result is (input, duration, preview_start_ms, options) -> output_path.
 //! Segments are shared: (input, duration, preview_start_ms) -> (segment_paths, ref_count).
 //! When evicting an LRU entry, we decrement segment ref_count; when it hits 0, we delete segment files.
 
@@ -76,7 +76,6 @@ struct SegmentEntry {
 /// LRU entry: output path and estimated size. Segment paths come from segment store.
 struct PreviewEntry {
     output_path: PathBuf,
-    estimated_size: Option<u64>,
 }
 
 /// Unified preview cache: LRU for results, separate segment store with ref-counting.
@@ -181,7 +180,7 @@ pub fn get_cached_segments(
     }
 }
 
-/// Get full cached preview. Returns (original_segment_path, compressed_path, estimated_size).
+/// Get full cached preview. Returns (original_segment_path, compressed_path).
 /// Both paths are always present together — no extract/transcode mismatch.
 pub fn get_cached_preview(
     input_path: &str,
@@ -189,7 +188,7 @@ pub fn get_cached_preview(
     preview_start_ms: u64,
     options: &TranscodeOptions,
     file_signature: Option<&FileSignature>,
-) -> Option<(PathBuf, PathBuf, Option<u64>)> {
+) -> Option<(PathBuf, PathBuf)> {
     let file_signature = file_signature?.clone();
     let options_key = options.options_cache_key();
     let key = PreviewCacheKey {
@@ -224,11 +223,7 @@ pub fn get_cached_preview(
     }
     let first_segment = seg_entry.segment_paths.first()?.clone();
 
-    let result = (
-        first_segment,
-        entry.output_path.clone(),
-        entry.estimated_size,
-    );
+    let result = (first_segment, entry.output_path.clone());
     guard.lru.push_back((k, entry));
     Some(result)
 }
@@ -298,7 +293,6 @@ pub fn set_cached_preview(
     options: &TranscodeOptions,
     segment_paths: Vec<PathBuf>,
     output_path: PathBuf,
-    estimated_size: Option<u64>,
     file_signature: Option<&FileSignature>,
 ) {
     let Some(file_signature) = file_signature.cloned() else {
@@ -383,10 +377,7 @@ pub fn set_cached_preview(
     );
     guard.lru.push_back((
         key,
-        PreviewEntry {
-            output_path,
-            estimated_size,
-        },
+        PreviewEntry { output_path },
     ));
 }
 
@@ -447,7 +438,6 @@ mod tests {
                 &opts,
                 vec![seg],
                 out,
-                Some(1000),
                 Some(&sig),
             );
         }
@@ -485,7 +475,6 @@ mod tests {
             &opts1,
             vec![seg.clone()],
             path1.clone(),
-            Some(100),
             Some(&sig),
         );
         set_cached_preview(
@@ -495,7 +484,6 @@ mod tests {
             &opts2,
             vec![seg.clone()],
             path2.clone(),
-            Some(200),
             Some(&sig),
         );
 
@@ -530,14 +518,12 @@ mod tests {
             &opts,
             vec![seg.clone()],
             out.clone(),
-            Some(500),
             Some(&sig),
         );
 
         let result = get_cached_preview(&input_str, 3, 0, &opts, Some(&sig)).unwrap();
         assert_eq!(result.0, seg);
         assert_eq!(result.1, out);
-        assert_eq!(result.2, Some(500));
 
         cleanup_preview_transcode_cache();
         let _ = fs::remove_file(&input);
@@ -589,7 +575,6 @@ mod tests {
             &opts,
             vec![seg_a.clone()],
             out_a.clone(),
-            Some(100),
             Some(&sig),
         );
         set_cached_preview(
@@ -599,7 +584,6 @@ mod tests {
             &opts,
             vec![seg_b.clone()],
             out_b.clone(),
-            Some(200),
             Some(&sig),
         );
 
@@ -641,7 +625,6 @@ mod tests {
             &opts1,
             vec![seg1.clone()],
             out1.clone(),
-            Some(100),
             Some(&sig),
         );
 
@@ -653,7 +636,6 @@ mod tests {
             &opts2,
             vec![seg2.clone()],
             out2.clone(),
-            Some(200),
             Some(&sig),
         );
 

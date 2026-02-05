@@ -6,7 +6,6 @@ export interface FfmpegErrorPayload {
 export interface FfmpegPreviewResult {
   originalPath: string;
   compressedPath: string;
-  estimatedSize?: number;
   /** Start offset (seconds) of original. Delay compressed playback by this to sync. */
   startOffsetSeconds?: number;
 }

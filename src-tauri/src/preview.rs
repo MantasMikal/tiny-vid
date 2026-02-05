@@ -429,11 +429,57 @@ pub fn compute_preview_segments(
 pub(crate) struct PreviewResult {
     pub(crate) original_path: String,
     pub(crate) compressed_path: String,
-    #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) estimated_size: Option<u64>,
     /// Start offset (seconds) of the original. Compressed typically has 0. Used to delay compressed playback for sync.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub(crate) start_offset_seconds: Option<f64>,
+}
+
+/// Estimate compressed size without generating a preview.
+pub(crate) async fn run_preview_estimate_core(
+    input_path: PathBuf,
+    options: TranscodeOptions,
+    emit: PreviewEmit,
+) -> Result<u64, AppError> {
+    let input_str = path_to_string(&input_path);
+    let preview_duration_u32 = options.effective_preview_duration();
+    let preview_duration = preview_duration_u32 as f64;
+    let file_sig = file_signature(&input_path);
+    let emit_ref = emit.as_ref().map(|(a, l)| (a, l.as_str()));
+
+    let mut estimate = get_cached_estimate(
+        &input_str,
+        preview_duration_u32,
+        &options,
+        file_sig.as_ref(),
+    );
+    if estimate.is_none() {
+        let meta = get_video_metadata_async(&input_path).await?;
+        let video_duration = meta.duration;
+        let progress_ctx = emit_ref.map(|(app, label)| {
+            PreviewProgressCtx::new(app.clone(), label.to_string(), 6)
+        });
+        let fresh = compute_estimate_size(
+            &input_path,
+            &input_str,
+            preview_duration_u32,
+            preview_duration,
+            video_duration,
+            &options,
+            emit_ref,
+            progress_ctx.as_ref(),
+        )
+        .await?;
+        set_cached_estimate(
+            input_str.clone(),
+            preview_duration_u32,
+            &options,
+            fresh,
+            file_sig.as_ref(),
+        );
+        estimate = Some(fresh);
+    }
+
+    Ok(estimate.unwrap_or(0))
 }
 
 /// Core preview logic. When emit is Some, emits progress events; when None, runs silently (for tests).
@@ -441,7 +487,6 @@ pub(crate) async fn run_preview_core(
     input_path: PathBuf,
     options: TranscodeOptions,
     preview_start_seconds: Option<f64>,
-    include_estimate: bool,
     emit: PreviewEmit,
 ) -> Result<PreviewResult, AppError> {
     let input_str = path_to_string(&input_path);
@@ -476,7 +521,7 @@ pub(crate) async fn run_preview_core(
     );
     let preview_start_ms = preview_start_ms_from_seconds(preview_start_seconds);
 
-    if let Some((original_path, compressed_path, cached_estimate)) = get_cached_preview(
+    if let Some((original_path, compressed_path)) = get_cached_preview(
         &input_str,
         preview_duration_u32,
         preview_start_ms,
@@ -492,51 +537,9 @@ pub(crate) async fn run_preview_core(
             .await
             .ok()
             .and_then(|m| m.start_time);
-        let estimated_size = if include_estimate {
-            let mut estimate =
-                cached_estimate.or_else(|| {
-                    get_cached_estimate(
-                        &input_str,
-                        preview_duration_u32,
-                        &options,
-                        file_sig.as_ref(),
-                    )
-                });
-            if estimate.is_none() {
-                let progress_ctx = emit_ref.map(|(app, label)| {
-                    PreviewProgressCtx::new(app.clone(), label.to_string(), 6)
-                });
-                let fresh = compute_estimate_size(
-                    &input_path,
-                    &input_str,
-                    preview_duration_u32,
-                    preview_duration,
-                    video_duration,
-                    &options,
-                    emit_ref,
-                    progress_ctx.as_ref(),
-                )
-                .await?;
-                set_cached_estimate(
-                    input_str.clone(),
-                    preview_duration_u32,
-                    &options,
-                    fresh,
-                    file_sig.as_ref(),
-                );
-                estimate = Some(fresh);
-            }
-            estimate
-        } else {
-            None
-        };
-        if let Some((app, label)) = emit.as_ref() {
-            let _ = app.emit_to(label, "ffmpeg-complete", ());
-        }
         return Ok(PreviewResult {
             original_path: path_to_string(&original_path),
             compressed_path: path_to_string(&compressed_path),
-            estimated_size,
             start_offset_seconds,
         });
     }
@@ -553,7 +556,7 @@ pub(crate) async fn run_preview_core(
     let mut cleanup = TempCleanup::new();
     cleanup.add(output_path.clone());
 
-    let total_steps = 2 + if include_estimate { 6 } else { 0 };
+    let total_steps = 2;
     let progress_ctx = emit_ref.map(|(app, label)| {
         PreviewProgressCtx::new(app.clone(), label.to_string(), total_steps)
     });
@@ -586,39 +589,6 @@ pub(crate) async fn run_preview_core(
     )
     .await?;
 
-    let estimated_size = if include_estimate {
-        let mut estimate = get_cached_estimate(
-            &input_str,
-            preview_duration_u32,
-            &options,
-            file_sig.as_ref(),
-        );
-        if estimate.is_none() {
-            let fresh = compute_estimate_size(
-                &input_path,
-                &input_str,
-                preview_duration_u32,
-                preview_duration,
-                video_duration,
-                &options,
-                emit_ref,
-                progress_ctx.as_ref(),
-            )
-            .await?;
-            set_cached_estimate(
-                input_str.clone(),
-                preview_duration_u32,
-                &options,
-                fresh,
-                file_sig.as_ref(),
-            );
-            estimate = Some(fresh);
-        }
-        estimate
-    } else {
-        None
-    };
-
     store_preview_paths_for_cleanup(&segment_set.paths, std::slice::from_ref(&output_path));
     set_cached_preview(
         input_str.clone(),
@@ -627,7 +597,6 @@ pub(crate) async fn run_preview_core(
         &options,
         segment_set.paths.clone(),
         output_path.clone(),
-        estimated_size,
         file_sig.as_ref(),
     );
     let start_offset_seconds = get_video_metadata_async(&segment_set.paths[0])
@@ -636,18 +605,13 @@ pub(crate) async fn run_preview_core(
         .and_then(|m| m.start_time);
     log::info!(
         target: "tiny_vid::preview",
-        "run_preview_core: complete, estimated_size={:?}, start_offset_seconds={:?}",
-        estimated_size,
+        "run_preview_core: complete, start_offset_seconds={:?}",
         start_offset_seconds
     );
-    if let Some((app, label)) = emit.as_ref() {
-        let _ = app.emit_to(label, "ffmpeg-complete", ());
-    }
     cleanup.keep();
     Ok(PreviewResult {
         original_path: path_to_string(&segment_set.paths[0]),
         compressed_path: path_to_string(&output_path),
-        estimated_size,
         start_offset_seconds,
     })
 }

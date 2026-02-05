@@ -54,6 +54,7 @@ function toRustOptions(opts: CompressionOptions, durationSecs?: number): Transco
 let debouncePreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let debounceScrubPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let previewRequestId = 0;
+let estimateRequestId = 0;
 let commandPreviewRequestId = 0;
 let debounceCommandPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let selectPathRequestId = 0;
@@ -88,7 +89,7 @@ export interface CompressionState {
   error: ResultError | null;
   workerState: WorkerState;
   progress: number;
-  /** Step label during preview or transcoding (e.g. "extract", "transcode", "estimate"). */
+  /** Step label during preview or transcoding (e.g. "transcode", "preview_extract"). */
   progressStep: string | null;
   listenersReady: boolean;
   ffmpegCommandPreview: string | null;
@@ -209,6 +210,9 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         { triggerPreview: false }
       );
     }
+    if (!compressionOptions?.generatePreview) {
+      set({ estimatedSize: null });
+    }
 
     void get().refreshFfmpegCommandPreview();
 
@@ -217,49 +221,18 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         if (selectPathRequestId !== requestId) return;
         const { compressionOptions } = get();
         if (compressionOptions?.generatePreview) {
-          set({
-            workerState: WorkerState.GeneratingPreview,
-            progress: 0,
-            progressStep: null,
-            error: null,
-          });
           const previewStartSeconds = clampPreviewStartSeconds(
             get().previewStartSeconds,
             metadataResult.value.duration,
             compressionOptions.previewDuration
           );
-          const result = await tryCatch(
-            () =>
-              invoke<FfmpegPreviewResult>("ffmpeg_preview", {
-                inputPath: path,
-                options: toRustOptions(compressionOptions),
-                previewStartSeconds,
-                includeEstimate: true,
-              }),
-            "Preview Error"
-          );
-
-          if (selectPathRequestId !== requestId) return;
-          if (result.ok) {
-            if (result.value.estimatedSize != null) {
-              set({ estimatedSize: result.value.estimatedSize });
-            }
-            set({
-              previewStartSeconds,
-              videoPreview: {
-                originalSrc: convertFileSrc(result.value.originalPath),
-                compressedSrc: convertFileSrc(result.value.compressedPath),
-                startOffsetSeconds: result.value.startOffsetSeconds,
-              },
-              workerState: WorkerState.Idle,
-            });
-          } else if (!result.aborted) {
-            set({
-              workerState: WorkerState.Idle,
-              error: result.error,
-            });
-            void get().terminate();
-          }
+          previewRequestId++;
+          await get().generatePreview(previewRequestId, {
+            includeEstimate: true,
+            previewStartSeconds,
+          });
+        } else {
+          set({ videoUploading: false });
         }
       },
       "Preview Error",
@@ -387,19 +360,21 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       await get().terminate();
     }
 
-    set({
+    const includeEstimate = opts?.includeEstimate ?? true;
+    const estimateId = ++estimateRequestId;
+    const basePreviewState = {
       workerState: WorkerState.GeneratingPreview,
       progress: 0,
       progressStep: null,
       error: null,
-    });
+    };
+    set(includeEstimate ? { ...basePreviewState, estimatedSize: null } : basePreviewState);
 
     const previewStartSeconds = clampPreviewStartSeconds(
       opts?.previewStartSeconds ?? get().previewStartSeconds,
       get().videoMetadata?.duration,
       compressionOptions.previewDuration
     );
-    const includeEstimate = opts?.includeEstimate ?? true;
 
     const result = await tryCatch(
       () =>
@@ -407,7 +382,6 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           inputPath,
           options: toRustOptions(compressionOptions),
           previewStartSeconds,
-          includeEstimate,
         }),
       "Preview Error"
     );
@@ -415,9 +389,6 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (requestId !== undefined && requestId !== previewRequestId) return;
 
     if (result.ok) {
-      if (result.value.estimatedSize != null) {
-        set({ estimatedSize: result.value.estimatedSize });
-      }
       set({
         previewStartSeconds,
         videoPreview: {
@@ -425,7 +396,6 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           compressedSrc: convertFileSrc(result.value.compressedPath),
           startOffsetSeconds: result.value.startOffsetSeconds,
         },
-        workerState: WorkerState.Idle,
       });
     } else if (!result.aborted) {
       set({
@@ -433,7 +403,49 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         error: result.error,
       });
       await get().terminate();
+      return;
+    } else {
+      set({
+        workerState: WorkerState.Idle,
+        progress: 0,
+        progressStep: null,
+      });
+      return;
     }
+
+    if (!includeEstimate) {
+      set({
+        workerState: WorkerState.Idle,
+        progress: 1,
+        progressStep: null,
+      });
+      return;
+    }
+
+    set({ progress: 0, progressStep: "preview_estimate" });
+    const estimateResult = await tryCatch(
+      () =>
+        invoke<number>("ffmpeg_preview_estimate", {
+          inputPath,
+          options: toRustOptions(compressionOptions),
+        }),
+      "Estimate Error"
+    );
+
+    if (requestId !== undefined && requestId !== previewRequestId) return;
+    if (estimateId !== estimateRequestId) return;
+
+    if (estimateResult.ok) {
+      set({ estimatedSize: estimateResult.value });
+    } else if (!estimateResult.aborted) {
+      set({ error: estimateResult.error });
+    }
+
+    set({
+      workerState: WorkerState.Idle,
+      progress: 1,
+      progressStep: null,
+    });
   },
 
   setCompressionOptions: (options: CompressionOptions, opts?: { triggerPreview?: boolean }) => {

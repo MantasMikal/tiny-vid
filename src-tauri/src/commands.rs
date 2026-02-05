@@ -12,7 +12,7 @@ use crate::ffmpeg::{
     TempFileManager, TranscodeOptions,
 };
 use crate::ffmpeg::ffprobe::get_video_metadata_impl;
-use crate::preview::{run_preview_core, PreviewResult};
+use crate::preview::{run_preview_core, run_preview_estimate_core, PreviewResult};
 use crate::AppState;
 use tauri::{Emitter, Manager};
 
@@ -131,7 +131,6 @@ pub async fn ffmpeg_preview(
     input_path: PathBuf,
     options: TranscodeOptions,
     preview_start_seconds: Option<f64>,
-    include_estimate: Option<bool>,
     app: tauri::AppHandle,
     window: tauri::Window,
 ) -> Result<PreviewResult, AppError> {
@@ -139,7 +138,21 @@ pub async fn ffmpeg_preview(
         input_path,
         options,
         preview_start_seconds,
-        include_estimate.unwrap_or(true),
+        Some((app, window.label().to_string())),
+    )
+    .await
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn ffmpeg_preview_estimate(
+    input_path: PathBuf,
+    options: TranscodeOptions,
+    app: tauri::AppHandle,
+    window: tauri::Window,
+) -> Result<u64, AppError> {
+    run_preview_estimate_core(
+        input_path,
+        options,
         Some((app, window.label().to_string())),
     )
     .await

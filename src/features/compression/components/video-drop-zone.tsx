@@ -17,6 +17,9 @@ export function VideoDropZone() {
 
     void getCurrentWindow()
       .onDragDropEvent((event) => {
+        if (!selectIsInitialized(useCompressionStore.getState())) {
+          return;
+        }
         if (event.payload.type !== "drop" || event.payload.paths.length === 0) {
           return;
         }

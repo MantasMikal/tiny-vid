@@ -60,7 +60,10 @@ export function CompressionDetailsCard() {
               size="icon"
               variant="destructive"
               onClick={() => {
-                useCompressionStore.getState().clear();
+                const { terminate, clear } = useCompressionStore.getState();
+                void terminate().finally(() => {
+                  clear();
+                });
               }}
               className={cn("size-8")}
             >

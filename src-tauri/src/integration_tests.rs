@@ -7,7 +7,7 @@ use crate::ffmpeg::{
     build_ffmpeg_command, cleanup_transcode_temp, run_ffmpeg_blocking, set_transcode_temp,
     verify_video, TempFileManager,
 };
-use crate::preview::run_preview_core;
+use crate::preview::{run_preview_core, run_preview_estimate_core};
 use crate::test_util::{create_test_video, find_ffmpeg_and_set_env, opts_with, preview_options};
 use std::fs;
 use std::sync::Arc;
@@ -321,26 +321,16 @@ fn ffmpeg_preview_single_segment_integration() {
     let status = create_test_video(&ffmpeg, &input_path, 2.0).expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
-    let input_size = fs::metadata(&input_path).unwrap().len();
     let result = tauri::async_runtime::block_on(run_preview_core(
         input_path,
         preview_options(3),
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
 
     assert!(std::path::Path::new(&result.original_path).exists());
     assert!(std::path::Path::new(&result.compressed_path).exists());
-    let estimated_size = result.estimated_size.expect("expected estimate");
-    assert!(estimated_size > 0);
-    assert!(
-        estimated_size <= input_size * 2,
-        "estimated_size should be reasonable (not >> input): {} > {}",
-        estimated_size,
-        input_size * 2
-    );
 }
 
 #[test]
@@ -353,26 +343,16 @@ fn ffmpeg_preview_multi_segment_integration() {
     let status = create_test_video(&ffmpeg, &input_path, 10.0).expect("failed to create test video");
     assert!(status.success(), "ffmpeg failed to create test video");
 
-    let input_size = fs::metadata(&input_path).unwrap().len();
     let result = tauri::async_runtime::block_on(run_preview_core(
         input_path,
         preview_options(3),
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
 
     assert!(std::path::Path::new(&result.original_path).exists());
     assert!(std::path::Path::new(&result.compressed_path).exists());
-    let estimated_size = result.estimated_size.expect("expected estimate");
-    assert!(estimated_size > 0);
-    assert!(
-        estimated_size <= input_size * 2,
-        "estimated_size should be reasonable: {} > {}",
-        estimated_size,
-        input_size * 2
-    );
 }
 
 #[test]
@@ -386,16 +366,13 @@ fn ffmpeg_preview_estimation_sanity_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let input_size = fs::metadata(&input_path).unwrap().len();
-    let result = tauri::async_runtime::block_on(run_preview_core(
+    let estimated_size = tauri::async_runtime::block_on(run_preview_estimate_core(
         input_path,
         preview_options(3),
         None,
-        true,
-        None,
     ))
-    .expect("run_preview_core");
+    .expect("run_preview_estimate_core");
 
-    let estimated_size = result.estimated_size.expect("expected estimate");
     assert!(estimated_size > 0, "estimated_size should be positive");
     assert!(
         estimated_size <= input_size * 2,
@@ -419,14 +396,12 @@ fn ffmpeg_preview_region_no_estimate_integration() {
         input_path,
         preview_options(3),
         Some(2.0),
-        false,
         None,
     ))
     .expect("run_preview_core");
 
     assert!(std::path::Path::new(&result.original_path).exists());
     assert!(std::path::Path::new(&result.compressed_path).exists());
-    assert!(result.estimated_size.is_none(), "estimate should be omitted");
 }
 
 #[test]
@@ -440,17 +415,21 @@ fn ffmpeg_preview_region_with_estimate_integration() {
     assert!(status.success(), "ffmpeg failed to create test video");
 
     let result = tauri::async_runtime::block_on(run_preview_core(
-        input_path,
+        input_path.clone(),
         preview_options(3),
         Some(2.0),
-        true,
         None,
     ))
     .expect("run_preview_core");
 
     assert!(std::path::Path::new(&result.original_path).exists());
     assert!(std::path::Path::new(&result.compressed_path).exists());
-    let estimated_size = result.estimated_size.expect("expected estimate");
+    let estimated_size = tauri::async_runtime::block_on(run_preview_estimate_core(
+        input_path,
+        preview_options(3),
+        None,
+    ))
+    .expect("run_preview_estimate_core");
     assert!(estimated_size > 0);
 }
 
@@ -468,7 +447,6 @@ fn ffmpeg_preview_output_valid_integration() {
         input_path.clone(),
         preview_options(3),
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
@@ -505,7 +483,6 @@ fn ffmpeg_preview_transcode_cache_integration() {
         input_path.clone(),
         opts.clone(),
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
@@ -514,7 +491,6 @@ fn ffmpeg_preview_transcode_cache_integration() {
         input_path,
         opts,
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
@@ -523,11 +499,6 @@ fn ffmpeg_preview_transcode_cache_integration() {
         result1.compressed_path,
         result2.compressed_path,
         "second run should return cached transcoded output (same path)"
-    );
-    assert_eq!(
-        result1.estimated_size,
-        result2.estimated_size,
-        "cached result should have same estimated_size"
     );
 }
 
@@ -570,7 +541,6 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         input_path.clone(),
         opts_a.clone(),
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
@@ -579,7 +549,6 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         input_path.clone(),
         opts_b.clone(),
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
@@ -588,7 +557,6 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         input_path,
         opts_a,
         None,
-        true,
         None,
     ))
     .expect("run_preview_core");
@@ -597,11 +565,6 @@ fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
         result_a1.compressed_path,
         result_a2.compressed_path,
         "second run with preset A should return cached transcoded output (same path as first A)"
-    );
-    assert_eq!(
-        result_a1.estimated_size,
-        result_a2.estimated_size,
-        "cached result should have same estimated_size"
     );
     assert_ne!(
         result_a1.compressed_path,

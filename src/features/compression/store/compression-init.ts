@@ -64,8 +64,6 @@ export function useCompressionStoreInit() {
               workerState: WorkerState.Idle,
               progress: 1,
             });
-          } else if (s.workerState === WorkerState.GeneratingPreview) {
-            useCompressionStore.setState({ workerState: WorkerState.Idle });
           }
         }),
         win.listen<string[]>("open-file", (e) => {
