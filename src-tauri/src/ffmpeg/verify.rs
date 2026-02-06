@@ -6,6 +6,9 @@
 use std::path::Path;
 use std::process::Command;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use super::discovery::get_ffmpeg_path;
 
 fn run_verify(ffmpeg: &std::path::Path, path_str: &str, use_dav1d: bool) -> (bool, i32, String) {
@@ -14,7 +17,11 @@ fn run_verify(ffmpeg: &std::path::Path, path_str: &str, use_dav1d: bool) -> (boo
     } else {
         vec!["-v", "error", "-i", path_str, "-f", "null", "-"]
     };
-    let output = match Command::new(ffmpeg).args(&args).output() {
+    let mut cmd = Command::new(ffmpeg);
+    cmd.args(&args);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = match cmd.output() {
         Ok(o) => o,
         Err(e) => return (false, -1, e.to_string()),
     };

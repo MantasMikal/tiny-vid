@@ -6,6 +6,9 @@
 
 use std::io::{BufRead, BufReader};
 use std::process::{Child, Command, Stdio};
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
 use std::thread;
@@ -143,10 +146,13 @@ pub fn run_ffmpeg_blocking(
         output_arg
     );
 
-    let mut child = Command::new(&*path_str)
-        .args(&args)
+    let mut cmd = Command::new(&*path_str);
+    cmd.args(&args)
         .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
+        .stderr(Stdio::piped());
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let mut child = cmd
         .spawn()
         .map_err(|e| format!("Failed to spawn FFmpeg: {}", e))?;
 

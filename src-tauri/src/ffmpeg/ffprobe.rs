@@ -6,6 +6,9 @@ use serde::Deserialize;
 use std::path::Path;
 use std::process::Command;
 
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
+
 use super::discovery::get_ffprobe_path;
 
 #[derive(Debug, Deserialize)]
@@ -181,16 +184,19 @@ pub fn get_video_metadata_impl(path: &Path) -> Result<VideoMetadata, AppError> {
         path_str
     );
 
-    let output = Command::new(&ffprobe)
-        .args([
-            "-v",
-            "quiet",
-            "-print_format",
-            "json",
-            "-show_format",
-            "-show_streams",
-            &path_str,
-        ])
+    let mut cmd = Command::new(&ffprobe);
+    cmd.args([
+        "-v",
+        "quiet",
+        "-print_format",
+        "json",
+        "-show_format",
+        "-show_streams",
+        &path_str,
+    ]);
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = cmd
         .output()
         .map_err(|e| AppError::from(format!("Failed to run ffprobe: {}", e)))?;
 

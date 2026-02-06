@@ -3,6 +3,9 @@ use crate::error::AppError;
 use std::path::{Path, PathBuf};
 use std::process::Command;
 use std::sync::OnceLock;
+
+#[cfg(windows)]
+use std::os::windows::process::CommandExt;
 use tauri::utils::platform;
 
 #[cfg(target_os = "windows")]
@@ -11,7 +14,11 @@ const FIND_CMD: &str = "where";
 const FIND_CMD: &str = "which";
 
 fn find_in_path() -> Option<PathBuf> {
-    let output = Command::new(FIND_CMD).arg("ffmpeg").output().ok()?;
+    let mut cmd = Command::new(FIND_CMD);
+    cmd.arg("ffmpeg");
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = cmd.output().ok()?;
     if output.status.success() {
         let path = String::from_utf8_lossy(&output.stdout);
         let first = path.lines().next()?.trim();
@@ -278,8 +285,11 @@ pub fn get_available_codecs() -> Result<Vec<String>, AppError> {
         "Detecting available codecs from: {}",
         ffmpeg_path.display()
     );
-    let output = Command::new(ffmpeg_path)
-        .arg("-encoders")
+    let mut cmd = Command::new(ffmpeg_path);
+    cmd.arg("-encoders");
+    #[cfg(windows)]
+    cmd.creation_flags(0x08000000); // CREATE_NO_WINDOW
+    let output = cmd
         .output()
         .map_err(|e| AppError::from(format!("Failed to run ffmpeg -encoders: {}", e)))?;
     if !output.status.success() {
