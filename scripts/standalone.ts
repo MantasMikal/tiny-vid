@@ -13,7 +13,13 @@ import { type CommandContext, runCommand } from "./runtime.ts";
 
 export const BUILD_MODES = ["system", "standalone"] as const;
 export const BUILD_PLATFORMS = ["auto", "macos", "windows", "linux"] as const;
-export const TEST_SUITES = ["unit", "ffmpeg", "all", "discovery"] as const;
+export const TEST_SUITES = [
+  "unit",
+  "integration-smoke",
+  "integration-contract",
+  "all",
+  "discovery",
+] as const;
 
 export type BuildMode = (typeof BUILD_MODES)[number];
 export type BuildPlatform = (typeof BUILD_PLATFORMS)[number];
@@ -59,6 +65,9 @@ function validateSuiteForMode(mode: BuildMode, suite: TestSuite): void {
   if (mode === "standalone" && suite === "discovery") {
     throw new Error("discovery suite is only available for --mode system");
   }
+  if (mode === "system" && suite === "integration-contract") {
+    throw new Error("integration-contract suite is only available for --mode standalone");
+  }
 }
 
 function validateStandaloneProfileForBuild(
@@ -96,9 +105,11 @@ export function validateStandaloneOptions(opts: {
   platform?: Exclude<BuildPlatform, "auto">;
 }): FfmpegProfile | null {
   const profile = resolveProfileForMode(opts.mode, opts.profile);
+  if (opts.suite !== undefined) {
+    validateSuiteForMode(opts.mode, opts.suite);
+  }
   if (profile) {
     validateStandaloneTarget(profile);
-    if (opts.suite !== undefined) validateSuiteForMode(opts.mode, opts.suite);
     if (opts.platform !== undefined) validateStandaloneProfileForBuild(profile, opts.platform);
   }
   return profile;

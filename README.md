@@ -1,65 +1,59 @@
 # Tiny Vid
 
-Cross-platform app for compressing and optimizing video files with support for H.264, H.265, VP9, and AV1 codecs. [Web version (WASM)](https://handy.tools)
+Tiny Vid is a desktop app for compressing video with FFmpeg on macOS, Windows, and Linux.
+
+Supports H.264, H.265, VP9, and AV1. Web version: [handy.tools](https://handy.tools)
 
 ![image](https://github.com/user-attachments/assets/7faa0c2b-320e-45ef-b556-fa35b87142a7)
 
-## Build variants (FFmpeg)
+## Build
 
-| Mode | Profile | Platform | FFmpeg source |
-| ---- | ------- | -------- | ------------- |
-| system | n/a | Any | System FFmpeg |
-| standalone | gpl | macOS | Self-built from source |
-| standalone | gpl | Windows | BtbN GPL build |
-| standalone | lgpl-vt | macOS only | Custom LGPL + VideoToolbox build |
+Run from repo root. Installer artifacts go to `releases/<platform>/`.
 
-- **system**: no FFmpeg in bundle; app uses system FFmpeg.
-- **gpl**: bundles GPL FFmpeg (macOS self-built, Windows BtbN).
-- **lgpl-vt**: custom LGPL + VideoToolbox (macOS only).
+### Build targets
 
-### How to build
+| Build command                | Profile   | Platform   | FFmpeg source                           |
+| ---------------------------- | --------- | ---------- | --------------------------------------- |
+| `yarn build`                 | n/a       | Any        | System FFmpeg                           |
+| `yarn build:standalone`      | `gpl`     | macOS      | Built from source (local build script)  |
+| `yarn build:standalone`      | `gpl`     | Windows    | BtbN GPL build                          |
+| `yarn build:standalone:lgpl` | `lgpl-vt` | macOS only | Built from source (LGPL + VideoToolbox) |
 
-From the repo root, run the command for the variant you want. Installers go to **releases/\<platform>\/**.
+FFmpeg requirements:
 
-| Command | Description |
-| ------- | ----------- |
-| `yarn build` | system mode (no bundled FFmpeg). |
-| `yarn build:standalone` | standalone + gpl. |
-| `yarn build:standalone:lgpl` | standalone + lgpl-vt (macOS only). |
+- `system` mode (`yarn build`, `yarn dev`) uses your local FFmpeg from `PATH`.
+- `standalone` mode bundles FFmpeg for the selected profile.
 
-Prerequisites:
-- macOS standalone gpl: `yarn build-ffmpeg-standalone` (requires `brew install x264 x265 libvpx opus svt-av1 dav1d pkg-config`).
-- macOS standalone lgpl-vt: `yarn build-ffmpeg-standalone:lgpl`.
-- Windows standalone gpl: `yarn prepare-ffmpeg` downloads BtbN (cached in `%LOCALAPPDATA%\\tiny-vid\\cache\\ffmpeg`; macOS/Linux `~/.cache/tiny-vid/ffmpeg`).
-- `prepare-ffmpeg` defaults to `--profile gpl`; use `yarn prepare-ffmpeg:lgpl` for lgpl-vt.
-- Linux: system mode only. Build on Linux with `yarn build`; `.deb` output in `releases/linux/`. Install Tauri prerequisites first:
-  - **Ubuntu/Debian:** `sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev ca-certificates pkg-config`
-  - **Other distros:** [Tauri v2 Linux prerequisites](https://v2.tauri.app/start/prerequisites/)
+Before first build, install the Tauri prerequisites for your platform: [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/).
 
-Orchestration uses `yarn tv ...` (script runner in `scripts/tv.ts`):
-- `yarn tv build --mode standalone --profile gpl`
-- `yarn tv ffmpeg prepare --profile gpl`
-- `yarn tv ffmpeg build --profile lgpl-vt`
-- Add `--dry-run` to preview without executing (e.g. `yarn tv build --dry-run`); `--verbose` for extra output.
+## Run in dev mode
 
-### Dev commands
+- `yarn dev` (`system`)
+- `yarn dev:standalone` (`standalone` + `gpl`)
+- `yarn dev:standalone:lgpl` (`standalone` + `lgpl-vt`, requires VideoToolbox)
 
-- `yarn dev` — system FFmpeg.
-- `yarn dev:standalone` — standalone + gpl.
-- `yarn dev:standalone:lgpl` — standalone + lgpl-vt (requires VideoToolbox).
+## `tv` CLI
 
-## Testing
+`yarn tv` is the lower-level script runner behind the build/dev/test wrappers (`scripts/tv.ts`).
 
-From project root:
+Use `yarn tv --help` or `yarn tv <command> --help` for command-level help.
 
-- `yarn test` — unit + command tests (integration skipped by default).
-- `yarn test:integration` — FFmpeg integration (needs libx264, libx265, libsvtav1).
-- `yarn test:discovery` — discovery tests (env/cache isolation).
-- **standalone gpl**: `yarn test:standalone`, `yarn test:standalone:ffmpeg`.
-- **standalone lgpl-vt**: `yarn test:standalone:lgpl`, `yarn test:standalone:lgpl:ffmpeg` (fails if VideoToolbox unavailable).
+Common uses:
 
-Tests: unit tests in each module; Tauri commands in `commands_tests.rs`; FFmpeg integration in `integration_tests.rs`.
+| Task                                | Command                                  |
+| ----------------------------------- | ---------------------------------------- |
+| Run every supported test set        | `yarn tv test matrix`                    |
+| Prepare FFmpeg binaries by profile  | `yarn tv ffmpeg prepare --profile gpl`   |
+| Build FFmpeg from source by profile | `yarn tv ffmpeg build --profile lgpl-vt` |
+
+Useful flags:
+
+- `--dry-run` prints commands without executing them.
+- `--verbose` prints extra output.
+- `--mode system|standalone` applies to `build`, `dev`, and `test`.
+- `--profile gpl|lgpl-vt` is required when `--mode standalone`.
+- `--suite` applies to `tv test`; `discovery` is system-only and `integration-contract` is standalone-only.
 
 ## License
 
-Tiny Vid is MIT licensed. See [LICENSE](LICENSE). Some build variants bundle FFmpeg under GPL or LGPL—see [THIRD_PARTY.md](THIRD_PARTY.md) for details.
+MIT for this project. See [LICENSE](LICENSE). Some build variants bundle GPL-licensed or LGPL-licensed FFmpeg; see [THIRD_PARTY.md](THIRD_PARTY.md).

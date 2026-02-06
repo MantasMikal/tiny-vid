@@ -4,6 +4,8 @@ mod error;
 pub mod ffmpeg;
 mod log_plugin;
 mod preview;
+#[cfg(feature = "integration-test-api")]
+pub mod test_support;
 
 use std::path::PathBuf;
 
@@ -90,9 +92,6 @@ mod test_util;
 
 #[cfg(test)]
 mod commands_tests;
-
-#[cfg(test)]
-mod integration_tests;
 
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {

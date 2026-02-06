@@ -370,12 +370,4 @@ Encoders:
         assert!(!codecs.contains(&"aac".to_string()));
     }
 
-    #[test]
-    #[ignore]
-    fn get_available_codecs_returns_valid_list() {
-        let result = get_available_codecs();
-        assert!(result.is_ok(), "Should detect codecs: {:?}", result.err());
-        let codecs = result.unwrap();
-        assert!(!codecs.is_empty(), "Should detect at least one codec");
-    }
 }

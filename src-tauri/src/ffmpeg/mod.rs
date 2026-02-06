@@ -31,7 +31,7 @@ pub use temp::{
     cleanup_old_temp_files, cleanup_previous_preview_paths, cleanup_transcode_temp,
     set_transcode_temp, store_preview_paths_for_cleanup, TempFileManager,
 };
-#[cfg(test)]
+#[cfg(any(test, feature = "integration-test-api"))]
 pub use verify::verify_video;
 
 use serde::Deserialize;

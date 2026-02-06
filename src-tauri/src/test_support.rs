@@ -1,0 +1,150 @@
+//! Test-only wrappers exposed for integration test targets.
+
+use std::path::{Path, PathBuf};
+
+use tauri::ipc::{CallbackFn, InvokeBody};
+use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
+use tauri::webview::InvokeRequest;
+
+use crate::commands;
+use crate::error::AppError;
+use crate::ffmpeg::TranscodeOptions;
+use crate::preview::{run_preview_core, run_preview_with_estimate_core};
+use crate::CodecInfo;
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewResultForTest {
+    pub original_path: String,
+    pub compressed_path: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub start_offset_seconds: Option<f64>,
+}
+
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct PreviewWithEstimateResultForTest {
+    #[serde(flatten)]
+    pub preview: PreviewResultForTest,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub estimated_size: Option<u64>,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct VideoMetadataForTest {
+    pub duration: f64,
+    pub width: u32,
+    pub height: u32,
+    pub size: u64,
+    pub audio_stream_count: u32,
+}
+
+#[derive(Debug, Clone, serde::Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct BuildVariantForTest {
+    pub variant: String,
+    pub codecs: Vec<CodecInfo>,
+}
+
+/// Runs preview generation and returns paths for integration tests.
+pub async fn run_preview_for_test(
+    input_path: &Path,
+    options: &TranscodeOptions,
+    preview_start_seconds: Option<f64>,
+) -> Result<PreviewResultForTest, AppError> {
+    let result = run_preview_core(
+        input_path,
+        options,
+        preview_start_seconds,
+        None,
+        None,
+        None,
+        None,
+    )
+    .await?;
+    Ok(PreviewResultForTest {
+        original_path: result.original_path,
+        compressed_path: result.compressed_path,
+        start_offset_seconds: result.start_offset_seconds,
+    })
+}
+
+/// Runs preview generation with estimate and returns paths + estimate for integration tests.
+pub async fn run_preview_with_estimate_for_test(
+    input_path: &Path,
+    options: &TranscodeOptions,
+    preview_start_seconds: Option<f64>,
+) -> Result<PreviewWithEstimateResultForTest, AppError> {
+    let result =
+        run_preview_with_estimate_core(input_path, options, preview_start_seconds, None).await?;
+    Ok(PreviewWithEstimateResultForTest {
+        preview: PreviewResultForTest {
+            original_path: result.preview.original_path,
+            compressed_path: result.preview.compressed_path,
+            start_offset_seconds: result.preview.start_offset_seconds,
+        },
+        estimated_size: result.estimated_size,
+    })
+}
+
+/// Invokes get_video_metadata through the Tauri command layer.
+pub fn get_video_metadata_via_command_for_test(
+    path: PathBuf,
+) -> Result<VideoMetadataForTest, String> {
+    let app = create_test_app_for_commands();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .map_err(|e| e.to_string())?;
+    let body = InvokeBody::from(serde_json::json!({
+        "path": path.to_string_lossy()
+    }));
+    let response = tauri::test::get_ipc_response(
+        &window,
+        invoke_request("get_video_metadata", body),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    response.deserialize().map_err(|e| e.to_string())
+}
+
+/// Invokes get_build_variant through the Tauri command layer.
+pub fn get_build_variant_via_command_for_test() -> Result<BuildVariantForTest, String> {
+    let app = create_test_app_for_commands();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .map_err(|e| e.to_string())?;
+    let response = tauri::test::get_ipc_response(
+        &window,
+        invoke_request("get_build_variant", InvokeBody::default()),
+    )
+    .map_err(|e| format!("{:?}", e))?;
+    response.deserialize().map_err(|e| e.to_string())
+}
+
+fn create_test_app_for_commands() -> tauri::App<tauri::test::MockRuntime> {
+    mock_builder()
+        .manage(crate::AppState::default())
+        .invoke_handler(tauri::generate_handler![
+            commands::get_file_size,
+            commands::get_video_metadata,
+            commands::get_build_variant,
+            commands::ffmpeg_terminate,
+            commands::move_compressed_file,
+            commands::cleanup_temp_file,
+            commands::get_pending_opened_files,
+        ])
+        .build(mock_context(noop_assets()))
+        .expect("failed to build test app")
+}
+
+fn invoke_request(cmd: &str, body: InvokeBody) -> InvokeRequest {
+    InvokeRequest {
+        cmd: cmd.into(),
+        callback: CallbackFn(0),
+        error: CallbackFn(1),
+        url: "http://tauri.localhost".parse().expect("valid URL"),
+        body,
+        headers: Default::default(),
+        invoke_key: INVOKE_KEY.to_string(),
+    }
+}
