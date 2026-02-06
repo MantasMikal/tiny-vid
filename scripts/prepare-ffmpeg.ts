@@ -1,12 +1,13 @@
 /**
- * Prepares FFmpeg binaries for a standalone profile.
+ * Prepares FFmpeg binaries for a standalone profile. Obtains binaries if missing
+ * (Windows: download BtbN; macOS: build from source).
  *
  * Policy:
  * - standalone + gpl:
- *   - macOS: expects binaries built by scripts/build-ffmpeg-standalone-macos.sh
- *   - Windows: downloads BtbN prebuilt archive
+ *   - macOS: builds via scripts/build-ffmpeg-standalone-macos.sh if missing
+ *   - Windows: downloads BtbN prebuilt archive if missing
  * - standalone + lgpl-vt:
- *   - macOS only, expects binaries built by scripts/build-ffmpeg-lgpl.sh
+ *   - macOS only: builds via scripts/build-ffmpeg-lgpl.sh if missing
  *
  * Canonical entry: yarn tv ffmpeg prepare --profile gpl|lgpl-vt
  * Direct invocation: node scripts/prepare-ffmpeg.ts --ffmpeg-profile gpl
@@ -35,10 +36,10 @@ import {
   getTargetTriple,
   isMacOsTarget,
   isWindowsTarget,
+  profileBuildScript,
   profileFfmpegPath,
   profileFfprobePath,
   profileLgplDylibPaths,
-  profilePrereqCommand,
 } from "./ffmpeg-profile.ts";
 
 const __filename = fileURLToPath(import.meta.url);
@@ -266,33 +267,26 @@ async function prepareBtbN(target: string, profile: FfmpegProfile): Promise<void
   console.log(`Prepared ffmpeg and ffprobe for ${profile} (${target})`);
 }
 
-function ensureGplMacOsBinaries(target: string): void {
-  const ffmpeg = profileFfmpegPath(ROOT, "gpl", target);
-  const ffprobe = profileFfprobePath(ROOT, "gpl", target);
-  const missing = [ffmpeg, ffprobe].filter((path) => !existsSync(path));
-  if (missing.length > 0) {
-    const prereqCommand = profilePrereqCommand("gpl", target);
-    throw new Error(
-      `standalone gpl build requires macOS source FFmpeg. Run ${prereqCommand} first.\n` +
-        `Missing:${missing.map((path) => `\n  - ${path}`).join("")}`,
-    );
-  }
-  console.log(`Using existing standalone gpl FFmpeg binaries for ${target}`);
-}
+function prepareMacOsBinaries(target: string, profile: FfmpegProfile): void {
+  const ffmpeg = profileFfmpegPath(ROOT, profile, target);
+  const ffprobe = profileFfprobePath(ROOT, profile, target);
+  const required =
+    profile === "lgpl-vt"
+      ? [ffmpeg, ffprobe, ...profileLgplDylibPaths(ROOT, profile)]
+      : [ffmpeg, ffprobe];
 
-function ensureLgplMacOsBinaries(target: string): void {
-  const ffmpeg = profileFfmpegPath(ROOT, "lgpl-vt", target);
-  const ffprobe = profileFfprobePath(ROOT, "lgpl-vt", target);
-  const required = [ffmpeg, ffprobe, ...profileLgplDylibPaths(ROOT, "lgpl-vt")];
-  const missing = required.filter((path) => !existsSync(path));
-  if (missing.length > 0) {
-    const prereqCommand = profilePrereqCommand("lgpl-vt", target);
-    throw new Error(
-      `standalone lgpl-vt build requires custom FFmpeg. Run ${prereqCommand} first.\n` +
-        `Missing:${missing.map((path) => `\n  - ${path}`).join("")}`,
-    );
+  if (required.every((path) => existsSync(path))) {
+    console.log(`FFmpeg binaries already exist for ${profile} (${target}), skipping`);
+    return;
   }
-  console.log(`Using existing standalone lgpl-vt FFmpeg binaries for ${target}`);
+
+  console.log(`Standalone ${profile} binaries not found; building from source...`);
+  const script = join(ROOT, profileBuildScript(profile));
+  const r = spawnSync("bash", [script], { stdio: "inherit", cwd: ROOT });
+  if (r.status !== 0) {
+    throw new Error(`FFmpeg build failed (exit ${String(r.status ?? "unknown")}). See output above.`);
+  }
+  console.log(`Prepared ffmpeg and ffprobe for ${profile} (${target})`);
 }
 
 export async function prepareFfmpeg(profile: FfmpegProfile): Promise<void> {
@@ -315,11 +309,7 @@ export async function prepareFfmpeg(profile: FfmpegProfile): Promise<void> {
   }
 
   if (isMacOsTarget(target)) {
-    if (profile === "gpl") {
-      ensureGplMacOsBinaries(target);
-    } else {
-      ensureLgplMacOsBinaries(target);
-    }
+    prepareMacOsBinaries(target, profile);
     return;
   }
 

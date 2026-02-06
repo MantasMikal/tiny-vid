@@ -46,11 +46,11 @@ export function PreviewRegionTimeline({
       )}
     >
       <div className={cn("grid grid-cols-[1fr_auto_1fr] items-center text-[11px]")}>
-        <span className={cn("text-left text-white/70")}>{secondsToTimestamp(0)}</span>
-        <span className={cn("px-2 font-medium text-white")}>
+        <span className={cn("text-left text-foreground/70")}>{secondsToTimestamp(0)}</span>
+        <span className={cn("px-2 font-medium text-foreground")}>
           {formatRangeLabel(clampedStart, endSeconds, rangeSeconds)}
         </span>
-        <span className={cn("text-right text-white/70")}>{secondsToTimestamp(safeDuration)}</span>
+        <span className={cn("text-right text-foreground/70")}>{secondsToTimestamp(safeDuration)}</span>
       </div>
       <SliderPrimitive.Root
         className={cn(
@@ -68,7 +68,7 @@ export function PreviewRegionTimeline({
         aria-label="Preview region start"
       >
         <SliderPrimitive.Track
-          className={cn("relative h-2 w-full overflow-hidden rounded-full bg-white/15")}
+          className={cn("relative h-2 w-full overflow-hidden rounded-full bg-foreground/15")}
         >
           <div
             className={cn(`absolute inset-y-0 rounded-full bg-primary/50`)}
@@ -84,7 +84,7 @@ export function PreviewRegionTimeline({
             `flex size-5 cursor-pointer items-center justify-center rounded-full bg-primary hover:bg-primary/80`
           )}
         >
-          <GripVertical className={cn("size-3 text-white")} />
+          <GripVertical className={cn("size-3 text-foreground")} />
         </SliderPrimitive.Thumb>
       </SliderPrimitive.Root>
     </div>

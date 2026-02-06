@@ -63,13 +63,7 @@ export default function Compressor() {
   const showPreviewTimeline =
     videoPreview && !videoUploading && previewDuration != null && videoDuration != null;
   const showFpsBadges =
-    videoPreview &&
-    !videoUploading &&
-    sourceFps != null &&
-    previewFps != null &&
-    sourceFps > 0 &&
-    previewFps > 0 &&
-    sourceFps !== previewFps;
+    videoPreview && (sourceFps ?? 0) > 0 && (previewFps ?? 0) > 0 && sourceFps !== previewFps;
 
   return (
     <div

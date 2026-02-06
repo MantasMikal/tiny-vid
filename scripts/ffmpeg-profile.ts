@@ -86,6 +86,15 @@ export function assertProfileSupportedOnTarget(
   }
 }
 
+const FFMPEG_BUILD_SCRIPTS: Record<FfmpegProfile, string> = {
+  gpl: "scripts/build-ffmpeg-standalone-macos.sh",
+  "lgpl-vt": "scripts/build-ffmpeg-lgpl.sh",
+};
+
+export function profileBuildScript(profile: FfmpegProfile): string {
+  return FFMPEG_BUILD_SCRIPTS[profile];
+}
+
 export function profilePrereqCommand(
   profile: FfmpegProfile,
   target: string,
