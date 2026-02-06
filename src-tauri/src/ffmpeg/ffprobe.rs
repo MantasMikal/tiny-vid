@@ -36,6 +36,8 @@ struct FfprobeStream {
     codec_long_name: Option<String>,
     #[serde(default)]
     bit_rate: Option<String>,
+    #[serde(default)]
+    channels: Option<u32>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -80,6 +82,12 @@ pub struct VideoMetadata {
     pub format_name: Option<String>,
     pub format_long_name: Option<String>,
     pub nb_streams: Option<u32>,
+    /// Number of subtitle streams in the file.
+    pub subtitle_stream_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_codec_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub audio_channels: Option<u32>,
 }
 
 /// Parse ffprobe JSON output into VideoMetadata.
@@ -129,6 +137,17 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
         .as_ref()
         .map(|s| s.iter().filter(|st| st.codec_type.as_deref() == Some("audio")).count() as u32)
         .unwrap_or(0);
+    let subtitle_stream_count = output
+        .streams
+        .as_ref()
+        .map(|s| s.iter().filter(|st| st.codec_type.as_deref() == Some("subtitle")).count() as u32)
+        .unwrap_or(0);
+    let first_audio = output
+        .streams
+        .as_ref()
+        .and_then(|s| s.iter().find(|st| st.codec_type.as_deref() == Some("audio")));
+    let audio_codec_name = first_audio.and_then(|a| a.codec_name.clone());
+    let audio_channels = first_audio.and_then(|a| a.channels);
 
     Ok(VideoMetadata {
         duration,
@@ -145,6 +164,9 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
         format_long_name,
         nb_streams,
         audio_stream_count,
+        subtitle_stream_count,
+        audio_codec_name,
+        audio_channels,
     })
 }
 
@@ -265,6 +287,21 @@ mod tests {
         }"#;
         let meta = parse_ffprobe_json(json).unwrap();
         assert_eq!(meta.audio_stream_count, 2);
+        assert_eq!(meta.subtitle_stream_count, 1);
+    }
+
+    #[test]
+    fn parse_ffprobe_json_extracts_audio_codec_and_channels() {
+        let json = r#"{
+            "format": { "duration": "10.0", "size": "1000" },
+            "streams": [
+                {"codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1"},
+                {"codec_type": "audio", "codec_name": "aac", "channels": 6}
+            ]
+        }"#;
+        let meta = parse_ffprobe_json(json).unwrap();
+        assert_eq!(meta.audio_codec_name.as_deref(), Some("aac"));
+        assert_eq!(meta.audio_channels, Some(6));
     }
 
     #[test]

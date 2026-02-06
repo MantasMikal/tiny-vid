@@ -38,7 +38,10 @@ export interface VideoPreview {
 function toRustOptions(
   opts: CompressionOptions,
   durationSecs?: number,
-  audioStreamCount?: number
+  metadata?: Pick<
+    VideoMetadata,
+    "audioStreamCount" | "subtitleStreamCount" | "audioCodecName" | "audioChannels"
+  >
 ): TranscodeOptions {
   return {
     codec: opts.codec,
@@ -53,7 +56,14 @@ function toRustOptions(
     previewDuration: opts.previewDuration ?? 3,
     durationSecs,
     preserveAdditionalAudioStreams: opts.preserveAdditionalAudioStreams ?? false,
-    audioStreamCount,
+    audioStreamCount: metadata?.audioStreamCount,
+    preserveMetadata: opts.preserveMetadata ?? false,
+    audioBitrate: opts.audioBitrate,
+    downmixToStereo: opts.downmixToStereo ?? false,
+    preserveSubtitles: opts.preserveSubtitles ?? false,
+    subtitleStreamCount: metadata?.subtitleStreamCount,
+    audioCodecName: metadata?.audioCodecName,
+    audioChannels: metadata?.audioChannels,
   };
 }
 
@@ -163,7 +173,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     }, 0);
     try {
       const result = await invoke<string>("preview_ffmpeg_command", {
-        options: toRustOptions(compressionOptions, undefined, videoMetadata?.audioStreamCount),
+        options: toRustOptions(compressionOptions, undefined, videoMetadata ?? undefined),
         inputPath,
       });
       if (commandPreviewRequestId === requestId) {
@@ -280,7 +290,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           options: toRustOptions(
             compressionOptions,
             videoMetadata?.duration,
-            videoMetadata?.audioStreamCount
+            videoMetadata ?? undefined
           ),
         }),
       "Transcode Error"
@@ -389,11 +399,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       () =>
         invoke<FfmpegPreviewResult>("ffmpeg_preview", {
           inputPath,
-          options: toRustOptions(
-            compressionOptions,
-            undefined,
-            get().videoMetadata?.audioStreamCount
-          ),
+          options: toRustOptions(compressionOptions, undefined, get().videoMetadata ?? undefined),
           previewStartSeconds,
           includeEstimate,
         }),

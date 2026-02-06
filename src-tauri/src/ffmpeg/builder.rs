@@ -180,6 +180,34 @@ struct OutputFormatConfig {
     supports_multiple_audio: bool,
 }
 
+impl OutputFormatConfig {
+    /// Returns true if source audio can be passed through (copy) instead of re-encoding.
+    fn can_passthrough_audio(
+        &self,
+        source_codec: Option<&str>,
+        source_channels: Option<u32>,
+        downmix: bool,
+    ) -> bool {
+        let Some(codec) = source_codec else {
+            return false;
+        };
+        let codec_lower = codec.to_lowercase();
+        let codec_matches = match self.audio_codec {
+            "aac" => codec_lower == "aac" || codec_lower == "aac_latm",
+            "libopus" => codec_lower == "opus",
+            _ => return false,
+        };
+        if !codec_matches {
+            return false;
+        }
+        if self.requires_stereo_downmix || downmix {
+            source_channels == Some(2)
+        } else {
+            true
+        }
+    }
+}
+
 fn get_output_config(format: &str, video_codec: &str) -> OutputFormatConfig {
     let is_vp9 = video_codec.to_lowercase().contains("vp9");
     match (format.to_lowercase().as_str(), is_vp9) {
@@ -303,6 +331,18 @@ pub fn build_ffmpeg_command(
         && config.supports_multiple_audio
         && options.effective_preserve_additional_audio_streams()
         && options.effective_audio_stream_count() > 1;
+    let preserve_subtitles =
+        options.effective_preserve_subtitles() && options.effective_subtitle_stream_count() > 0;
+    let use_explicit_mapping = preserve_multi || preserve_subtitles;
+
+    let audio_bitrate_k = format!("{}k", options.effective_audio_bitrate());
+    let downmix = options.effective_downmix_to_stereo();
+    let passthrough = !preserve_multi
+        && config.can_passthrough_audio(
+            options.audio_codec_name.as_deref(),
+            options.audio_channels,
+            downmix,
+        );
 
     let mut args = ffmpeg_base_args();
     args.extend(["-progress".to_string(), "pipe:1".to_string()]);
@@ -311,13 +351,22 @@ pub fn build_ffmpeg_command(
     }
     args.extend(["-i".to_string(), input_path.to_string()]);
 
-    if preserve_multi {
+    if use_explicit_mapping {
         args.push("-map".to_string());
         args.push("0:v".to_string());
         let n = options.effective_audio_stream_count();
-        for i in 0..n {
+        if preserve_multi {
+            for i in 0..n {
+                args.push("-map".to_string());
+                args.push(format!("0:a:{}", i));
+            }
+        } else {
             args.push("-map".to_string());
-            args.push(format!("0:a:{}", i));
+            args.push("0:a:0".to_string());
+        }
+        if preserve_subtitles {
+            args.push("-map".to_string());
+            args.push("0:s".to_string());
         }
     }
 
@@ -331,32 +380,46 @@ pub fn build_ffmpeg_command(
     } else if preserve_multi {
         let n = options.effective_audio_stream_count();
         for i in 0..n {
-            args.extend([
-                format!("-c:a:{}", i),
-                config.audio_codec.to_string(),
-                format!("-b:a:{}", i),
-                "128k".to_string(),
-            ]);
-            if config.requires_stereo_downmix {
-                args.extend([format!("-ac:a:{}", i), "2".to_string()]);
+            if passthrough {
+                args.extend([format!("-c:a:{}", i), "copy".to_string()]);
+            } else {
+                args.extend([
+                    format!("-c:a:{}", i),
+                    config.audio_codec.to_string(),
+                    format!("-b:a:{}", i),
+                    audio_bitrate_k.clone(),
+                ]);
+                if config.requires_stereo_downmix || downmix {
+                    args.extend([format!("-ac:a:{}", i), "2".to_string()]);
+                }
             }
         }
     } else if config.requires_stereo_downmix {
-        args.extend([
-            "-c:a".to_string(),
-            config.audio_codec.to_string(),
-            "-b:a".to_string(),
-            "128k".to_string(),
-            "-ac".to_string(),
-            "2".to_string(),
-        ]);
+        if passthrough {
+            args.extend(["-c:a".to_string(), "copy".to_string()]);
+        } else {
+            args.extend([
+                "-c:a".to_string(),
+                config.audio_codec.to_string(),
+                "-b:a".to_string(),
+                audio_bitrate_k.clone(),
+                "-ac".to_string(),
+                "2".to_string(),
+            ]);
+        }
+    } else if passthrough {
+        args.extend(["-c:a".to_string(), "copy".to_string()]);
     } else {
-        args.extend([
+        let mut audio_args = vec![
             "-c:a".to_string(),
             config.audio_codec.to_string(),
             "-b:a".to_string(),
-            "128k".to_string(),
-        ]);
+            audio_bitrate_k,
+        ];
+        if downmix {
+            audio_args.extend(["-ac".to_string(), "2".to_string()]);
+        }
+        args.extend(audio_args);
     }
 
     if scale < 1.0 {
@@ -373,6 +436,9 @@ pub fn build_ffmpeg_command(
 
     if let Some(dur) = output_duration_secs.filter(|&d| d > 0.0) {
         args.extend(["-t".to_string(), dur.to_string()]);
+    }
+    if options.effective_preserve_metadata() {
+        args.extend(["-map_metadata".to_string(), "0".to_string()]);
     }
     args.push(output_path.to_string());
     Ok(args)
@@ -855,5 +921,60 @@ mod tests {
         assert!(args.contains(&"-tag:v".to_string()));
         let tag_idx = args.iter().position(|a| a == "-tag:v").unwrap();
         assert_eq!(args.get(tag_idx + 1).unwrap(), "hvc1");
+    }
+
+    #[test]
+    fn audio_bitrate_used_in_args() {
+        let mut o = opts();
+        o.audio_bitrate = Some(192);
+        o.remove_audio = Some(false);
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
+        let ba_idx = args.iter().position(|a| a == "-b:a").unwrap();
+        assert_eq!(args.get(ba_idx + 1).unwrap(), "192k");
+    }
+
+    #[test]
+    fn downmix_to_stereo_adds_ac() {
+        let mut o = opts();
+        o.downmix_to_stereo = Some(true);
+        o.remove_audio = Some(false);
+        o.output_format = Some("mp4".to_string());
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
+        assert!(args.contains(&"-ac".to_string()));
+        let ac_idx = args.iter().position(|a| a == "-ac").unwrap();
+        assert_eq!(args.get(ac_idx + 1).unwrap(), "2");
+    }
+
+    #[test]
+    fn preserve_subtitles_adds_map_s() {
+        let mut o = opts();
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(2);
+        o.remove_audio = Some(false);
+        let args = build_ffmpeg_command("/in.mkv", "/out.mp4", &o, None, None, None).unwrap();
+        assert!(args.contains(&"-map".to_string()));
+        assert!(args.contains(&"0:s".to_string()));
+    }
+
+    #[test]
+    fn audio_passthrough_uses_copy() {
+        let mut o = opts();
+        o.audio_codec_name = Some("aac".to_string());
+        o.audio_channels = Some(2);
+        o.remove_audio = Some(false);
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
+        assert!(args.contains(&"-c:a".to_string()));
+        let ca_idx = args.iter().position(|a| a == "-c:a").unwrap();
+        assert_eq!(args.get(ca_idx + 1).unwrap(), "copy");
+    }
+
+    #[test]
+    fn preserve_metadata_adds_map_metadata() {
+        let mut o = opts();
+        o.preserve_metadata = Some(true);
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
+        assert!(args.contains(&"-map_metadata".to_string()));
+        let mm_idx = args.iter().position(|a| a == "-map_metadata").unwrap();
+        assert_eq!(args.get(mm_idx + 1).unwrap(), "0");
     }
 }

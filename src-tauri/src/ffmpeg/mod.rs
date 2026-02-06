@@ -54,6 +54,20 @@ pub struct TranscodeOptions {
     pub preserve_additional_audio_streams: Option<bool>,
     /// From metadata; used when preserve_additional_audio_streams. Default 1.
     pub audio_stream_count: Option<u32>,
+    /// Copy input metadata (title, creation date, etc.) to output via -map_metadata 0. Default false.
+    pub preserve_metadata: Option<bool>,
+    /// Audio bitrate in kbps. Default 128.
+    pub audio_bitrate: Option<u32>,
+    /// Downmix multichannel to stereo when output supports multichannel. Default false.
+    pub downmix_to_stereo: Option<bool>,
+    /// Include all subtitle streams in output. Default false.
+    pub preserve_subtitles: Option<bool>,
+    /// From metadata; used when preserve_subtitles. Default 0.
+    pub subtitle_stream_count: Option<u32>,
+    /// From metadata; first audio stream codec name for passthrough decision.
+    pub audio_codec_name: Option<String>,
+    /// From metadata; first audio stream channel count.
+    pub audio_channels: Option<u32>,
 }
 
 impl Default for TranscodeOptions {
@@ -72,6 +86,13 @@ impl Default for TranscodeOptions {
             duration_secs: None,
             preserve_additional_audio_streams: None,
             audio_stream_count: None,
+            preserve_metadata: None,
+            audio_bitrate: None,
+            downmix_to_stereo: None,
+            preserve_subtitles: None,
+            subtitle_stream_count: None,
+            audio_codec_name: None,
+            audio_channels: None,
         }
     }
 }
@@ -125,28 +146,43 @@ impl TranscodeOptions {
         self.audio_stream_count.unwrap_or(1).max(1)
     }
 
+    pub fn effective_preserve_metadata(&self) -> bool {
+        self.preserve_metadata.unwrap_or(false)
+    }
+
+    pub fn effective_audio_bitrate(&self) -> u32 {
+        self.audio_bitrate.unwrap_or(128).clamp(64, 320)
+    }
+
+    pub fn effective_downmix_to_stereo(&self) -> bool {
+        self.downmix_to_stereo.unwrap_or(false)
+    }
+
+    pub fn effective_preserve_subtitles(&self) -> bool {
+        self.preserve_subtitles.unwrap_or(false)
+    }
+
+    pub fn effective_subtitle_stream_count(&self) -> u32 {
+        self.subtitle_stream_count.unwrap_or(0)
+    }
+
     /// Cache key for full transcode (excludes duration_secs).
     pub fn options_cache_key(&self) -> String {
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
-            self.effective_codec(),
-            self.effective_quality(),
-            self.max_bitrate.map(|b| b.to_string()).as_deref().unwrap_or(""),
-            self.effective_scale(),
-            self.effective_fps(),
-            self.effective_remove_audio(),
-            self.effective_preset(),
-            self.tune.as_deref().unwrap_or(""),
+            "{}|{}",
+            self.options_cache_key_common(),
             self.effective_output_format(),
-            self.effective_preserve_additional_audio_streams(),
-            self.effective_audio_stream_count(),
         )
     }
 
     /// Cache key for preview/estimate (excludes output_format).
     pub fn options_cache_key_for_preview(&self) -> String {
+        self.options_cache_key_common()
+    }
+
+    fn options_cache_key_common(&self) -> String {
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.effective_codec(),
             self.effective_quality(),
             self.max_bitrate.map(|b| b.to_string()).as_deref().unwrap_or(""),
@@ -157,6 +193,12 @@ impl TranscodeOptions {
             self.tune.as_deref().unwrap_or(""),
             self.effective_preserve_additional_audio_streams(),
             self.effective_audio_stream_count(),
+            self.effective_preserve_metadata(),
+            self.effective_audio_bitrate(),
+            self.effective_downmix_to_stereo(),
+            self.effective_preserve_subtitles(),
+            self.effective_subtitle_stream_count(),
+            self.audio_codec_name.as_deref().unwrap_or(""),
         )
     }
 }

@@ -10,7 +10,7 @@ use crate::ffmpeg::{
     build_ffmpeg_command, cleanup_transcode_temp, format_args_for_display_multiline,
     path_to_string, set_transcode_temp, terminate_all_ffmpeg, TempFileManager, TranscodeOptions,
 };
-use crate::ffmpeg::ffprobe::get_video_metadata_impl;
+use crate::ffmpeg::ffprobe::{get_video_metadata_impl, VideoMetadata as FfprobeVideoMetadata};
 use crate::preview::{
     run_preview_core, run_preview_with_estimate_core, PreviewWithEstimateResult,
 };
@@ -57,6 +57,37 @@ pub(crate) struct VideoMetadataResult {
     #[serde(skip_serializing_if = "Option::is_none")]
     nb_streams: Option<u32>,
     audio_stream_count: u32,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    subtitle_stream_count: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_codec_name: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    audio_channels: Option<u32>,
+}
+
+impl From<FfprobeVideoMetadata> for VideoMetadataResult {
+    fn from(meta: FfprobeVideoMetadata) -> Self {
+        let fps = (meta.fps * 100.0).round() / 100.0;
+        Self {
+            duration: meta.duration,
+            width: meta.width,
+            height: meta.height,
+            size: meta.size,
+            size_mb: meta.size as f64 / 1024.0 / 1024.0,
+            fps,
+            codec_name: meta.codec_name,
+            codec_long_name: meta.codec_long_name,
+            video_bit_rate: meta.video_bit_rate,
+            format_bit_rate: meta.format_bit_rate,
+            format_name: meta.format_name,
+            format_long_name: meta.format_long_name,
+            nb_streams: meta.nb_streams,
+            audio_stream_count: meta.audio_stream_count,
+            subtitle_stream_count: Some(meta.subtitle_stream_count),
+            audio_codec_name: meta.audio_codec_name,
+            audio_channels: meta.audio_channels,
+        }
+    }
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -174,23 +205,7 @@ pub fn get_video_metadata(path: PathBuf) -> Result<VideoMetadataResult, AppError
         path.display()
     );
     let meta = get_video_metadata_impl(&path)?;
-    let fps = (meta.fps * 100.0).round() / 100.0;
-    Ok(VideoMetadataResult {
-        duration: meta.duration,
-        width: meta.width,
-        height: meta.height,
-        size: meta.size,
-        size_mb: meta.size as f64 / 1024.0 / 1024.0,
-        fps,
-        codec_name: meta.codec_name,
-        codec_long_name: meta.codec_long_name,
-        video_bit_rate: meta.video_bit_rate,
-        format_bit_rate: meta.format_bit_rate,
-        format_name: meta.format_name,
-        format_long_name: meta.format_long_name,
-        nb_streams: meta.nb_streams,
-        audio_stream_count: meta.audio_stream_count,
-    })
+    Ok(meta.into())
 }
 
 #[tauri::command(rename_all = "camelCase")]

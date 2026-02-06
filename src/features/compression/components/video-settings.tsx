@@ -1,45 +1,19 @@
-import { BikeIcon, CarFrontIcon, CookingPotIcon, InfoIcon, RocketIcon } from "lucide-react";
+import { BikeIcon, CarFrontIcon, CookingPotIcon, RocketIcon } from "lucide-react";
 import { AnimatePresence, motion, usePresenceData } from "motion/react";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useShallow } from "zustand/react/shallow";
 
-import {
-  Accordion,
-  AccordionContent,
-  AccordionItem,
-  AccordionTrigger,
-} from "@/components/ui/accordion";
 import { Checkbox } from "@/components/ui/checkbox";
-import { ClampedNumberInput } from "@/components/ui/clamped-number-input";
 import { Label } from "@/components/ui/label";
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from "@/components/ui/select";
-import { Slider } from "@/components/ui/slider";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from "@/components/ui/tooltip";
-import {
-  getAvailableFormats,
-  getCodecInfo,
-  getCodecsForFormat,
-  getFormatCapabilities,
-  isCodec,
-  isFormat,
-  isPresetValue,
-  presets,
-  tuneOptions,
-} from "@/features/compression/lib/compression-options";
+import { VideoSettingsAdvanced } from "@/features/compression/components/video-settings-advanced";
 import {
   applyPreset,
   type BasicPresetId,
   DEFAULT_PRESET_ID,
   isBasicPresetId,
-  resolve,
 } from "@/features/compression/lib/options-pipeline";
 import { selectIsActionsDisabled } from "@/features/compression/store/compression-selectors";
 import {
@@ -125,7 +99,6 @@ export function VideoSettings() {
     direction: number;
   }>({ activeTab: "basic", direction: 0 });
   const { activeTab, direction } = tabState;
-  const ffmpegAccordionRef = useRef<HTMLDivElement>(null);
   const [basicPreset, setBasicPreset] = useState<BasicPresetId>(DEFAULT_PRESET_ID);
   const {
     compressionOptions: cOptions,
@@ -151,18 +124,6 @@ export function VideoSettings() {
     }
   }, [activeTab, ffmpegCommandPreview]);
 
-  const handleAccordionChange = (value: string) => {
-    if (value === "ffmpeg-command") {
-      // Delay until accordion expand animation (0.2s) completes
-      setTimeout(() => {
-        ffmpegAccordionRef.current?.scrollIntoView({
-          behavior: "smooth",
-          block: "end",
-        });
-      }, 220);
-    }
-  };
-
   const handleTabChange = (value: string) => {
     const newTab: TabOptions = value === "advanced" ? "advanced" : "basic";
     const prevIndex = getTabIndex(activeTab);
@@ -172,9 +133,6 @@ export function VideoSettings() {
   };
 
   if (!cOptions) return null;
-
-  const currentCodec = getCodecInfo(cOptions.codec, availableCodecs);
-  const availableFormats = getAvailableFormats(availableCodecs);
 
   return (
     <TooltipProvider>
@@ -219,300 +177,48 @@ export function VideoSettings() {
                 </ToggleGroup>
               </div>
               <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Omits all audio from output (FFmpeg -an). Saves space when you don't need sound; video-only encoding is faster.">
-                  Audio
-                </TooltipLabel>
-                <div className={cn("flex items-center space-x-2")}>
-                  <Checkbox
-                    id="removeAudio"
-                    disabled={isDisabled}
-                    checked={cOptions.removeAudio}
-                    onCheckedChange={(c) => {
-                      setOptions({ ...cOptions, removeAudio: !!c });
-                    }}
-                  />
-                  <Label htmlFor="removeAudio">Remove soundtrack</Label>
-                </div>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <div className={cn("flex items-center space-x-2")}>
+                      <Checkbox
+                        id="removeAudio-basic"
+                        disabled={isDisabled}
+                        checked={cOptions.removeAudio}
+                        onCheckedChange={(c) => {
+                          setOptions({ ...cOptions, removeAudio: !!c });
+                        }}
+                      />
+                      <Label htmlFor="removeAudio-basic">Remove Audio</Label>
+                    </div>
+                  </TooltipTrigger>
+                  <TooltipContent className={cn("max-w-72")}>
+                    <p>
+                      Omits all audio from output (FFmpeg -an). Saves space when you don&apos;t need
+                      sound; video-only encoding is faster.
+                    </p>
+                  </TooltipContent>
+                </Tooltip>
               </div>
             </AnimatedTabPanel>
           )}
           {activeTab === "advanced" && (
-            <AnimatedTabPanel key="advanced" value="advanced" className={cn("flex flex-col gap-4")}>
-              <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Container format: the file wrapper that holds video and audio streams.">
-                  Format
-                </TooltipLabel>
-                <Select
-                  value={cOptions.outputFormat}
-                  disabled={isDisabled}
-                  onValueChange={(v) => {
-                    if (!isFormat(v)) return;
-                    setOptions(resolve({ ...cOptions, outputFormat: v }, availableCodecs));
-                  }}
-                >
-                  <SelectTrigger className={cn("w-full")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {availableFormats.map((format) => {
-                      const name =
-                        (isFormat(format) ? getFormatCapabilities(format).name : null) ??
-                        format.toUpperCase();
-                      return (
-                        <SelectItem key={format} value={format}>
-                          {name}
-                        </SelectItem>
-                      );
-                    })}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Video codec: the algorithm that compresses the video. Different codecs offer different compression and compatibility.">
-                  Codec
-                </TooltipLabel>
-                <Select
-                  value={cOptions.codec}
-                  disabled={isDisabled}
-                  onValueChange={(v) => {
-                    if (!isCodec(v, availableCodecs)) return;
-                    setOptions(resolve({ ...cOptions, codec: v }, availableCodecs));
-                  }}
-                >
-                  <SelectTrigger className={cn("w-full")}>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {getCodecsForFormat(cOptions.outputFormat, availableCodecs).map((codec) => (
-                      <SelectItem key={codec.value} value={codec.value}>
-                        {codec.name}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
-              <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Quality vs file size. Higher = better quality, larger file.">
-                  Quality
-                </TooltipLabel>
-                <Slider
-                  disabled={isDisabled}
-                  min={1}
-                  max={100}
-                  step={1}
-                  value={[cOptions.quality]}
-                  showValueOnThumb
-                  onValueChange={([v]) => {
-                    setOptions({ ...cOptions, quality: v }, { triggerPreview: false });
-                  }}
-                  onValueCommit={([v]) => {
-                    setOptions({ ...cOptions, quality: v });
-                  }}
-                />
-              </div>
-              {currentCodec?.presetType !== "vt" && (
-                <div className={cn("flex flex-col gap-2")}>
-                  <TooltipLabel tooltip="Encoding speed vs compression. Slower presets produce smaller files at the same quality but take longer to encode.">
-                    Encoding Preset
-                  </TooltipLabel>
-                  <Select
-                    value={cOptions.preset}
-                    disabled={isDisabled}
-                    onValueChange={(v) => {
-                      if (!isPresetValue(v)) return;
-                      setOptions({ ...cOptions, preset: v });
-                    }}
-                  >
-                    <SelectTrigger className={cn("w-full")}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {presets.map((p) => (
-                        <SelectItem key={p.value} value={p.value}>
-                          {p.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              {currentCodec?.supportsTune && (
-                <div className={cn("flex flex-col gap-2")}>
-                  <TooltipLabel tooltip="x264 tune: optimizes for specific content (film, animation, etc.). Only applies to H.264.">
-                    Tune
-                  </TooltipLabel>
-                  <Select
-                    value={cOptions.tune ?? "none"}
-                    disabled={isDisabled}
-                    onValueChange={(v) => {
-                      setOptions({
-                        ...cOptions,
-                        tune: v === "none" ? undefined : v,
-                      });
-                    }}
-                  >
-                    <SelectTrigger className={cn("w-full")}>
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {tuneOptions.map((t) => (
-                        <SelectItem key={t.value} value={t.value}>
-                          {t.name}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-              )}
-              {(videoMetadata?.audioStreamCount ?? 0) > 1 && (
-                <div className={cn("flex flex-col gap-2")}>
-                  <Tooltip>
-                    <TooltipTrigger asChild>
-                      <div className={cn("flex items-center space-x-2")}>
-                        <Checkbox
-                          id="preserveAdditionalAudioStreams"
-                          disabled={isDisabled || cOptions.outputFormat === "webm"}
-                          checked={cOptions.preserveAdditionalAudioStreams ?? false}
-                          onCheckedChange={(c) => {
-                            setOptions({
-                              ...cOptions,
-                              preserveAdditionalAudioStreams: !!c,
-                            });
-                          }}
-                        />
-                        <Label htmlFor="preserveAdditionalAudioStreams">
-                          Preserve additional audio streams
-                        </Label>
-                      </div>
-                    </TooltipTrigger>
-                    <TooltipContent className={cn("max-w-72")}>
-                      <p>
-                        {cOptions.outputFormat === "webm"
-                          ? "WebM supports a single audio stream"
-                          : "Include all audio streams in the output (transcoded to AAC/Opus). Only the first stream is used for preview."}
-                      </p>
-                    </TooltipContent>
-                  </Tooltip>
-                </div>
-              )}
-              <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Resize output (scale filter). 1.0 = original size. Lower values shrink resolution and file size; aspect ratio preserved, dimensions kept even for encoders.">
-                  Resolution Scale
-                </TooltipLabel>
-                <Slider
-                  disabled={isDisabled}
-                  min={0.25}
-                  max={1}
-                  step={0.05}
-                  value={[cOptions.scale]}
-                  showValueOnThumb
-                  formatThumbValue={(v) => `${String(Math.round(v * 100))}%`}
-                  onValueChange={([v]) => {
-                    setOptions({ ...cOptions, scale: v }, { triggerPreview: false });
-                  }}
-                  onValueCommit={([v]) => {
-                    setOptions({ ...cOptions, scale: v });
-                  }}
-                />
-              </div>
-              <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Output frame rate (-r): target FPS. Encoder duplicates or drops frames to hit this rate. Common: 24 (film), 30 (NTSC), 60 (smooth). Lower values reduce file size.">
-                  Frame Rate (FPS)
-                </TooltipLabel>
-                <ClampedNumberInput
-                  disabled={isDisabled}
-                  min={1}
-                  max={120}
-                  value={cOptions.fps}
-                  onChange={(fps) => {
-                    setOptions({ ...cOptions, fps });
-                  }}
-                />
-              </div>
-              <div className={cn("flex flex-col gap-2")}>
-                <TooltipLabel tooltip="Creates a short preview clip at the start of the video using -t (duration). Lets you check quality quickly before compressing the full file.">
-                  Preview
-                </TooltipLabel>
-                <div className={cn("flex items-center space-x-2")}>
-                  <Checkbox
-                    id="generatePreview"
-                    disabled={isDisabled}
-                    checked={cOptions.generatePreview ?? true}
-                    onCheckedChange={(c) => {
-                      setOptions({
-                        ...cOptions,
-                        generatePreview: !!c,
-                      });
-                    }}
-                  />
-                  <Label htmlFor="generatePreview">Generate preview automatically</Label>
-                </div>
-                <ClampedNumberInput
-                  disabled={isDisabled}
-                  min={1}
-                  max={30}
-                  value={cOptions.previewDuration ?? 3}
-                  onChange={(clamped) => {
-                    setOptions({
-                      ...cOptions,
-                      previewDuration: clamped,
-                    });
-                  }}
-                />
-                <p className={cn("text-xs text-muted-foreground")}>
-                  Duration in seconds (FFmpeg -t)
-                </p>
-              </div>
-              <Accordion
-                type="single"
-                collapsible
-                className={cn("w-full")}
-                onValueChange={handleAccordionChange}
-              >
-                <AccordionItem value="ffmpeg-command" className={cn("border-none")}>
-                  <AccordionTrigger
-                    className={cn("py-2 text-base font-bold", "hover:no-underline")}
-                  >
-                    FFmpeg command
-                  </AccordionTrigger>
-                  <AccordionContent>
-                    <div
-                      ref={ffmpegAccordionRef}
-                      className="rounded-md border bg-muted/50 p-3 font-mono text-xs select-text"
-                    >
-                      {ffmpegCommandPreview ? (
-                        <pre className={cn("m-0 whitespace-pre-wrap select-text")}>
-                          {ffmpegCommandPreview}
-                        </pre>
-                      ) : (
-                        <p className={cn("text-muted-foreground")}>Could not generate command</p>
-                      )}
-                    </div>
-                  </AccordionContent>
-                </AccordionItem>
-              </Accordion>
+            <AnimatedTabPanel
+              key="advanced"
+              value="advanced"
+              className={cn("flex min-w-0 flex-col gap-4")}
+            >
+              <VideoSettingsAdvanced
+                cOptions={cOptions}
+                setOptions={setOptions}
+                availableCodecs={availableCodecs}
+                isDisabled={isDisabled}
+                videoMetadata={videoMetadata}
+                ffmpegCommandPreview={ffmpegCommandPreview}
+              />
             </AnimatedTabPanel>
           )}
         </AnimatePresence>
       </Tabs>
     </TooltipProvider>
-  );
-}
-
-function TooltipLabel({ children, tooltip }: { children: React.ReactNode; tooltip: string }) {
-  return (
-    <div className={cn("flex items-center gap-2")}>
-      <Label className={cn("text-base font-bold")}>{children}</Label>
-      <Tooltip>
-        <TooltipTrigger asChild>
-          <button type="button">
-            <InfoIcon className={cn("size-4 text-muted-foreground")} />
-          </button>
-        </TooltipTrigger>
-        <TooltipContent className={cn("max-w-72")}>
-          <p>{tooltip}</p>
-        </TooltipContent>
-      </Tooltip>
-    </div>
   );
 }

@@ -555,7 +555,7 @@ pub(crate) async fn run_preview_with_estimate_core(
     let mut total_estimate = estimated_size.unwrap_or(0);
     if options.effective_preserve_additional_audio_streams() && options.effective_audio_stream_count() > 1 {
         let extra_tracks = options.effective_audio_stream_count() - 1;
-        let audio_bitrate_bps: u64 = 128_000;
+        let audio_bitrate_bps: u64 = (options.effective_audio_bitrate() as u64) * 1000;
         let extras = (extra_tracks as u64)
             .saturating_mul((meta.duration * (audio_bitrate_bps as f64) / 8.0) as u64);
         total_estimate = total_estimate.saturating_add(extras);

@@ -150,6 +150,16 @@ export function getTuneOptionsForCodec(codec: Codec): readonly { name: string; v
   return CODEC_REGISTRY[codec].supportsTune ? tuneOptions : [];
 }
 
+export const audioBitratePresets = [
+  { name: "64 kbps", value: 64 },
+  { name: "96 kbps", value: 96 },
+  { name: "128 kbps (default)", value: 128 },
+  { name: "160 kbps", value: 160 },
+  { name: "192 kbps (5.1)", value: 192 },
+  { name: "256 kbps (7.1)", value: 256 },
+  { name: "320 kbps", value: 320 },
+] as const;
+
 export const maxBitratePresets = [
   { name: "No limit", value: "none" },
   { name: "Low (500 kbps)", value: 500 },
@@ -173,6 +183,10 @@ export interface CompressionOptions {
   previewDuration?: number;
   tune?: string;
   preserveAdditionalAudioStreams?: boolean;
+  preserveMetadata?: boolean;
+  audioBitrate?: number;
+  downmixToStereo?: boolean;
+  preserveSubtitles?: boolean;
 }
 
 function getCrfRange(codec: string): { low: number; high: number } {
@@ -231,4 +245,21 @@ export function getAvailableFormats(codecs: CodecInfo[]): string[] {
 
 export function getCodecInfo(value: string, codecs: CodecInfo[]): CodecInfo | undefined {
   return codecs.find((c) => c.value === value);
+}
+
+/**
+ * Returns true when the format+codec combo supports optional downmix.
+ * WebM and MKV+VP9 always downmix (backend requires_stereo_downmix), so no UI.
+ */
+export function supportsDownmixOption(format: Format, codec: string): boolean {
+  switch (format) {
+    case "webm":
+      return false;
+    case "mp4":
+      return true;
+    case "mkv":
+      return !codec.toLowerCase().includes("vp9");
+    default:
+      return false;
+  }
 }

@@ -26,6 +26,10 @@ const DEFAULT_OPTIONS: CompressionOptions = {
   previewDuration: 3,
   tune: undefined,
   preserveAdditionalAudioStreams: false,
+  preserveMetadata: false,
+  audioBitrate: 128,
+  downmixToStereo: false,
+  preserveSubtitles: false,
 };
 
 const MP4 = "mp4" satisfies Format;
