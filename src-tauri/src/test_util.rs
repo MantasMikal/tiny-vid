@@ -12,6 +12,7 @@ pub fn create_test_app() -> tauri::App<tauri::test::MockRuntime> {
     mock_builder()
         .invoke_handler(tauri::generate_handler![
             commands::get_file_size,
+            commands::preview_media_bytes,
             commands::get_video_metadata,
             commands::get_build_variant,
             commands::ffmpeg_terminate,
@@ -34,6 +35,7 @@ pub fn create_test_app_with_file_assoc(
         .manage(state)
         .invoke_handler(tauri::generate_handler![
             commands::get_file_size,
+            commands::preview_media_bytes,
             commands::get_video_metadata,
             commands::get_build_variant,
             commands::ffmpeg_terminate,

@@ -1,5 +1,6 @@
-import { convertFileSrc, invoke } from "@tauri-apps/api/core";
+import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
 import { open, save } from "@tauri-apps/plugin-dialog";
+import { platform } from "@tauri-apps/plugin-os";
 import { create } from "zustand";
 
 import {
@@ -73,9 +74,41 @@ let previewRequestId = 0;
 let commandPreviewRequestId = 0;
 let debounceCommandPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let selectPathRequestId = 0;
+let activePreviewBlobUrls: string[] = [];
 
 const SCRUB_PREVIEW_DEBOUNCE_MS = 200;
 const OPTIONS_PREVIEW_DEBOUNCE_MS = 300;
+const runningInTauri = isTauri();
+const isLinuxWebview = runningInTauri && platform() === "linux";
+
+function revokeObjectUrls(urls: string[]) {
+  for (const url of urls) {
+    URL.revokeObjectURL(url);
+  }
+}
+
+function releaseActivePreviewBlobUrls() {
+  revokeObjectUrls(activePreviewBlobUrls);
+  activePreviewBlobUrls = [];
+}
+
+async function toPreviewMediaSrc(filePath: string, nextBlobUrls: string[]): Promise<string> {
+  if (!runningInTauri) {
+    return filePath;
+  }
+  const assetSrc = convertFileSrc(filePath);
+  if (!isLinuxWebview) {
+    return assetSrc;
+  }
+  try {
+    const bytes = await invoke<number[]>("preview_media_bytes", { path: filePath });
+    const blobUrl = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: "video/mp4" }));
+    nextBlobUrls.push(blobUrl);
+    return blobUrl;
+  } catch {
+    return assetSrc;
+  }
+}
 
 function clampPreviewStartSeconds(
   startSeconds: number,
@@ -197,6 +230,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (workerState !== WorkerState.Idle) {
       await get().terminate();
     }
+    releaseActivePreviewBlobUrls();
 
     set({
       inputPath: path,
@@ -362,6 +396,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   },
 
   clear: () => {
+    releaseActivePreviewBlobUrls();
     set({
       inputPath: null,
       videoPreview: null,
@@ -417,11 +452,22 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (requestId !== undefined && requestId !== previewRequestId) return;
 
     if (result.ok) {
+      const nextBlobUrls: string[] = [];
+      const [originalSrc, compressedSrc] = await Promise.all([
+        toPreviewMediaSrc(result.value.originalPath, nextBlobUrls),
+        toPreviewMediaSrc(result.value.compressedPath, nextBlobUrls),
+      ]);
+      if (requestId !== undefined && requestId !== previewRequestId) {
+        revokeObjectUrls(nextBlobUrls);
+        return;
+      }
+      releaseActivePreviewBlobUrls();
+      activePreviewBlobUrls = nextBlobUrls;
       set({
         previewStartSeconds,
         videoPreview: {
-          originalSrc: convertFileSrc(result.value.originalPath),
-          compressedSrc: convertFileSrc(result.value.compressedPath),
+          originalSrc,
+          compressedSrc,
           startOffsetSeconds: result.value.startOffsetSeconds,
         },
         ...(result.value.estimatedSize != null && { estimatedSize: result.value.estimatedSize }),

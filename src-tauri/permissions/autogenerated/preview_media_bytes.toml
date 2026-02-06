@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-preview-media-bytes"
+description = "Enables the preview_media_bytes command without any pre-configured scope."
+commands.allow = ["preview_media_bytes"]
+
+[[permission]]
+identifier = "deny-preview-media-bytes"
+description = "Denies the preview_media_bytes command without any pre-configured scope."
+commands.deny = ["preview_media_bytes"]

@@ -33,6 +33,18 @@ fn is_cross_device_rename_error(e: &io::Error) -> bool {
     }
 }
 
+fn resolve_preview_media_path(path: &PathBuf) -> Option<PathBuf> {
+    let canonical = fs::canonicalize(path).ok()?;
+    let temp_dir = fs::canonicalize(std::env::temp_dir()).ok()?;
+    let file_name = canonical.file_name()?.to_str()?;
+    let is_tiny_vid_temp_mp4 = file_name.starts_with("tiny-vid-") && file_name.ends_with(".mp4");
+    if canonical.starts_with(&temp_dir) && is_tiny_vid_temp_mp4 {
+        Some(canonical)
+    } else {
+        None
+    }
+}
+
 #[derive(serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub(crate) struct VideoMetadataResult {
@@ -195,6 +207,18 @@ pub fn get_file_size(path: PathBuf) -> Result<u64, AppError> {
         path.display()
     );
     fs::metadata(&path).map(|m| m.len()).map_err(Into::into)
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub fn preview_media_bytes(path: PathBuf) -> Result<Vec<u8>, AppError> {
+    log::debug!(
+        target: "tiny_vid::commands",
+        "preview_media_bytes: path={}",
+        path.display()
+    );
+    let allowed = resolve_preview_media_path(&path)
+        .ok_or_else(|| AppError::from("Preview media path is not allowed"))?;
+    fs::read(allowed).map_err(Into::into)
 }
 
 #[tauri::command(rename_all = "camelCase")]

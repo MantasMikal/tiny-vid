@@ -16,6 +16,7 @@
     "allow-preview-ffmpeg-command",
     "allow-ffmpeg-terminate",
     "allow-get-file-size",
+    "allow-preview-media-bytes",
     "allow-get-video-metadata",
     "allow-move-compressed-file",
     "allow-cleanup-temp-file",

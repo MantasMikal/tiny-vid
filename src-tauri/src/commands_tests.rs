@@ -5,6 +5,7 @@ use crate::test_util::{
 };
 use crate::CodecInfo;
 use std::fs;
+use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::InvokeBody;
 
 #[test]
@@ -75,6 +76,48 @@ fn get_file_size_nonexistent_returns_error() {
     }));
     let res = tauri::test::get_ipc_response(&window, invoke_request("get_file_size", body));
     assert!(res.is_err());
+}
+
+#[test]
+fn preview_media_bytes_reads_tiny_vid_temp_mp4() {
+    let app = create_test_app();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let now_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time before unix epoch")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("tiny-vid-{now_nanos}-preview-output.mp4"));
+    fs::write(&path, b"preview-bytes").unwrap();
+
+    let body = InvokeBody::from(serde_json::json!({ "path": path.to_string_lossy() }));
+    let res = tauri::test::get_ipc_response(&window, invoke_request("preview_media_bytes", body));
+    let _ = fs::remove_file(&path);
+    assert!(res.is_ok(), "preview_media_bytes failed: {:?}", res.err());
+    let bytes: Vec<u8> = res.unwrap().deserialize().unwrap();
+    assert_eq!(bytes, b"preview-bytes");
+}
+
+#[test]
+fn preview_media_bytes_rejects_non_tiny_vid_temp_file() {
+    let app = create_test_app();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let now_nanos = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .expect("system time before unix epoch")
+        .as_nanos();
+    let path = std::env::temp_dir().join(format!("not-tiny-vid-{now_nanos}.mp4"));
+    fs::write(&path, b"preview-bytes").unwrap();
+
+    let body = InvokeBody::from(serde_json::json!({ "path": path.to_string_lossy() }));
+    let res = tauri::test::get_ipc_response(&window, invoke_request("preview_media_bytes", body));
+    let _ = fs::remove_file(&path);
+    assert!(res.is_err(), "preview_media_bytes should reject non tiny-vid temp file");
 }
 
 #[test]

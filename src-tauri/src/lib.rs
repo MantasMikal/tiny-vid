@@ -137,6 +137,7 @@ pub fn run() {
             commands::preview_ffmpeg_command,
             commands::ffmpeg_terminate,
             commands::get_file_size,
+            commands::preview_media_bytes,
             commands::get_video_metadata,
             commands::get_build_variant,
             commands::move_compressed_file,
