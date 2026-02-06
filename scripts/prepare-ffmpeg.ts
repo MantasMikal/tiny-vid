@@ -1,22 +1,20 @@
 /**
- * Prepares FFmpeg binaries for bundling. Run before `tauri build` for macOS/Windows.
+ * Prepares FFmpeg binaries for a standalone profile.
  *
- * - Linux / default: No-op (platform overrides set externalBin to [])
- * - Windows: Downloads BtbN win64-gpl or winarm64-gpl (x86_64/aarch64), extracts to src-tauri/binaries/
- * - macOS standalone: Expects output from build-ffmpeg-standalone-macos.sh; fails if missing
- * - macOS lgpl: Expects output from build-ffmpeg-lgpl.sh; fails if missing
+ * Policy:
+ * - standalone + gpl:
+ *   - macOS: expects binaries built by scripts/build-ffmpeg-standalone-macos.sh
+ *   - Windows: downloads BtbN prebuilt archive
+ * - standalone + lgpl-vt:
+ *   - macOS only, expects binaries built by scripts/build-ffmpeg-lgpl.sh
  *
- * Caches BtbN downloads in ~/.cache/tiny-vid/ffmpeg (or TINY_VID_FFMPEG_CACHE). Verifies checksums when BtbN provides checksums.sha256.
- *
- * Env: TARGET, CARGO_BUILD_TARGET (target triple); TINY_VID_LGPL (truthy = lgpl)
- *       TINY_VID_FFMPEG_CACHE (optional) cache directory for downloads
- * Flags: --stub Create placeholder binaries (for build pass without download)
+ * Canonical entry: yarn tv ffmpeg prepare --profile gpl|lgpl-vt
+ * Direct invocation: node scripts/prepare-ffmpeg.ts --ffmpeg-profile gpl
  */
 
-import { execSync, spawnSync } from "node:child_process";
+import { spawnSync } from "node:child_process";
 import { createHash } from "node:crypto";
 import {
-  chmodSync,
   copyFileSync,
   createReadStream,
   createWriteStream,
@@ -25,77 +23,73 @@ import {
   readdirSync,
   rmSync,
   statSync,
-  writeFileSync,
 } from "node:fs";
 import { homedir, platform } from "node:os";
-import { dirname, join } from "node:path";
+import { dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
+
+import {
+  assertProfileSupportedOnTarget,
+  FFMPEG_PROFILES,
+  type FfmpegProfile,
+  getTargetTriple,
+  isMacOsTarget,
+  isWindowsTarget,
+  profileFfmpegPath,
+  profileFfprobePath,
+  profileLgplDylibPaths,
+  profilePrereqCommand,
+} from "./ffmpeg-profile.ts";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 
 const ROOT = join(__dirname, "..");
-const BINARIES_DIR = join(ROOT, "src-tauri", "binaries");
 
-/** BtbN release tag. Use "latest" for newest; pin to a specific tag for reproducibility when available. */
+function parseProfileFromArgv(argv: string[]): FfmpegProfile {
+  for (let i = 0; i < argv.length; i++) {
+    if (argv[i] === "--ffmpeg-profile" && argv[i + 1]) {
+      const profile = argv[i + 1];
+      if (FFMPEG_PROFILES.includes(profile as FfmpegProfile)) {
+        return profile as FfmpegProfile;
+      }
+      throw new Error(`Invalid --ffmpeg-profile: ${profile}. Choose: ${FFMPEG_PROFILES.join(", ")}`);
+    }
+  }
+  throw new Error("Missing --ffmpeg-profile. Usage: node scripts/prepare-ffmpeg.ts --ffmpeg-profile gpl|lgpl-vt");
+}
+
+/** BtbN release tag (latest or pinned). */
 const BtbN_RELEASE = process.env.TINY_VID_BTBN_RELEASE ?? "latest";
 const BtbN_BASE = `https://github.com/BtbN/FFmpeg-Builds/releases/download/${BtbN_RELEASE}`;
+
+interface BtbNAsset {
+  url: string;
+  filename: string;
+}
 
 function getCacheDir(): string {
   if (process.env.TINY_VID_FFMPEG_CACHE) {
     return process.env.TINY_VID_FFMPEG_CACHE;
   }
   if (platform() === "win32") {
-    const local =
-      process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
+    const local = process.env.LOCALAPPDATA ?? join(homedir(), "AppData", "Local");
     return join(local, "tiny-vid", "cache", "ffmpeg");
   }
   return join(homedir(), ".cache", "tiny-vid", "ffmpeg");
 }
 
-interface BtbNAsset { url: string; filename: string; ext: "tar.xz" | "zip" }
-
-function getTargetTriple(): string {
-  return (
-    process.env.CARGO_BUILD_TARGET ??
-    process.env.TARGET ??
-    execSync("rustc --print host-tuple", { encoding: "utf8" }).trim()
-  );
-}
-
-function isLgplBuild(): boolean {
-  return !!process.env.TINY_VID_LGPL;
-}
-
-function isLinux(target: string): boolean {
-  return target.includes("linux");
-}
-
-function isWindows(target: string): boolean {
-  return target.includes("windows");
-}
-
-function isMacOs(target: string): boolean {
-  return target.includes("darwin");
-}
-
-function getBtbNAsset(target: string): BtbNAsset | null {
-  if (target.includes("windows")) {
-    const filename = target.includes("aarch64")
-      ? "ffmpeg-master-latest-winarm64-gpl.zip"
-      : "ffmpeg-master-latest-win64-gpl.zip";
-    return {
-      url: `${BtbN_BASE}/${filename}`,
-      filename,
-      ext: "zip",
-    };
+function getBtbNAsset(target: string, profile: FfmpegProfile): BtbNAsset | null {
+  if (profile !== "gpl" || !isWindowsTarget(target)) {
+    return null;
   }
-  return null;
-}
-
-function getSidecarSuffix(target: string): string {
-  const exe = isWindows(target) ? ".exe" : "";
-  return `${target}${exe}`;
+  const filename = target.includes("aarch64")
+    ? "ffmpeg-master-latest-winarm64-gpl.zip"
+    : "ffmpeg-master-latest-win64-gpl.zip";
+  return {
+    url: `${BtbN_BASE}/${filename}`,
+    filename,
+  };
 }
 
 /** Fetch BtbN checksums.sha256; returns Map<filename, expectedSha256> or null if unavailable. */
@@ -136,7 +130,9 @@ function sha256File(path: string): Promise<string> {
     const hash = createHash("sha256");
     const rs = createReadStream(path);
     rs.on("data", (chunk) => hash.update(chunk));
-    rs.on("end", () => { resolve(hash.digest("hex")); });
+    rs.on("end", () => {
+      resolve(hash.digest("hex"));
+    });
     rs.on("error", reject);
   });
 }
@@ -144,7 +140,7 @@ function sha256File(path: string): Promise<string> {
 async function download(url: string, dest: string): Promise<void> {
   const res = await fetch(url, {
     redirect: "follow",
-    signal: AbortSignal.timeout(5 * 60_000), // 5 min for large files
+    signal: AbortSignal.timeout(5 * 60_000),
   });
   if (!res.ok) throw new Error(`Download failed: ${String(res.status)} ${url}`);
   const body = res.body;
@@ -153,7 +149,7 @@ async function download(url: string, dest: string): Promise<void> {
   const ws = createWriteStream(dest);
   const reader = body.getReader();
   try {
-    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional infinite loop with break
+    // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional loop with break
     while (true) {
       const { done, value } = await reader.read();
       if (done) break;
@@ -169,13 +165,6 @@ async function download(url: string, dest: string): Promise<void> {
   });
 }
 
-function extractTarXz(archivePath: string, outDir: string): void {
-  const r = spawnSync("tar", ["-xJf", archivePath, "-C", outDir], {
-    stdio: "inherit",
-  });
-  if (r.status !== 0) throw new Error(`tar exited ${String(r.status ?? "unknown")}`);
-}
-
 function extractZip(archivePath: string, outDir: string): void {
   if (process.platform === "win32") {
     const r = spawnSync(
@@ -184,34 +173,30 @@ function extractZip(archivePath: string, outDir: string): void {
         "-Command",
         `Expand-Archive -Path '${archivePath.replace(/'/g, "''")}' -DestinationPath '${outDir.replace(/'/g, "''")}'`,
       ],
-      { stdio: "inherit" }
+      { stdio: "inherit" },
     );
-    if (r.status !== 0)
+    if (r.status !== 0) {
       throw new Error(`Expand-Archive exited ${String(r.status ?? "unknown")}`);
+    }
   } else {
     const r = spawnSync("unzip", ["-o", archivePath, "-d", outDir], {
       stdio: "inherit",
     });
-    if (r.status !== 0)
-      throw new Error(`unzip exited ${String(r.status ?? "unknown")}`);
+    if (r.status !== 0) throw new Error(`unzip exited ${String(r.status ?? "unknown")}`);
   }
-}
-
-function findFfmpegInExtracted(extractDir: string): string | null {
-  return findBinaryInExtracted(extractDir, "ffmpeg");
 }
 
 function findBinaryInExtracted(extractDir: string, baseName: string): string | null {
   const exe = process.platform === "win32" ? ".exe" : "";
   const find = (dir: string): string | null => {
     const entries = readdirSync(dir, { withFileTypes: true });
-    for (const e of entries) {
-      const p = join(dir, e.name);
-      if (e.isDirectory()) {
-        const found = find(p);
-        if (found) return found;
-      } else if (e.name === baseName || e.name === `${baseName}${exe}`) {
-        return p;
+    for (const entry of entries) {
+      const current = join(dir, entry.name);
+      if (entry.isDirectory()) {
+        const nested = find(current);
+        if (nested) return nested;
+      } else if (entry.name === baseName || entry.name === `${baseName}${exe}`) {
+        return current;
       }
     }
     return null;
@@ -219,23 +204,23 @@ function findBinaryInExtracted(extractDir: string, baseName: string): string | n
   return find(extractDir);
 }
 
-async function prepareBtbN(target: string): Promise<void> {
-  const asset = getBtbNAsset(target);
-  if (!asset) throw new Error(`No BtbN asset for target: ${target}`);
+async function prepareBtbN(target: string, profile: FfmpegProfile): Promise<void> {
+  const asset = getBtbNAsset(target, profile);
+  if (!asset) throw new Error(`No BtbN asset for target/profile: ${target}/${profile}`);
 
-  const suffix = getSidecarSuffix(target);
-  const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
-  const ffprobeDest = join(BINARIES_DIR, `ffprobe-${suffix}`);
+  const ffmpegDest = profileFfmpegPath(ROOT, profile, target);
+  const ffprobeDest = profileFfprobePath(ROOT, profile, target);
+  const destDir = dirname(ffmpegDest);
 
   if (existsSync(ffmpegDest) && existsSync(ffprobeDest)) {
-    console.log(`FFmpeg binaries already exist for ${target}, skipping`);
+    console.log(`FFmpeg binaries already exist for ${profile} (${target}), skipping`);
     return;
   }
 
   const cacheDir = getCacheDir();
   const archivePath = join(cacheDir, asset.filename);
   mkdirSync(cacheDir, { recursive: true });
-  mkdirSync(BINARIES_DIR, { recursive: true });
+  mkdirSync(destDir, { recursive: true });
 
   const checksums = await fetchChecksums();
   const verify = async (path: string): Promise<void> => {
@@ -244,7 +229,7 @@ async function prepareBtbN(target: string): Promise<void> {
     const actual = await sha256File(path);
     if (actual !== expected) {
       throw new Error(
-        `Checksum mismatch for ${asset.filename}: expected ${expected}, got ${actual}. Delete cache and retry: ${path}`
+        `Checksum mismatch for ${asset.filename}: expected ${expected}, got ${actual}. Delete cache and retry: ${path}`,
       );
     }
   };
@@ -259,116 +244,81 @@ async function prepareBtbN(target: string): Promise<void> {
   if (size < 1_000_000) {
     rmSync(archivePath, { force: true });
     throw new Error(
-      `Download incomplete (${String(size)} bytes). Deleted corrupted cache. Retry: yarn prepare-ffmpeg`
+      `Download incomplete (${String(size)} bytes). Deleted corrupted cache. Retry: yarn tv ffmpeg prepare --profile ${profile}`,
     );
   }
   await verify(archivePath);
 
-  const extractDir = join(BINARIES_DIR, "extract");
+  const extractDir = join(destDir, "extract");
   mkdirSync(extractDir, { recursive: true });
   try {
-    if (asset.ext === "zip") {
-      extractZip(archivePath, extractDir);
-    } else {
-      extractTarXz(archivePath, extractDir);
-    }
-
-    const ffmpegPath = findFfmpegInExtracted(extractDir);
+    extractZip(archivePath, extractDir);
+    const ffmpegPath = findBinaryInExtracted(extractDir, "ffmpeg");
     if (!ffmpegPath) throw new Error("ffmpeg not found in archive");
-
-    const extractParent = dirname(ffmpegPath);
-
+    const ffprobePath = findBinaryInExtracted(extractDir, "ffprobe");
+    if (!ffprobePath) throw new Error("ffprobe not found in archive");
     copyFileSync(ffmpegPath, ffmpegDest);
-    const ffprobePath = join(
-      extractParent,
-      isWindows(target) ? "ffprobe.exe" : "ffprobe"
-    );
-    if (!existsSync(ffprobePath))
-      throw new Error("ffprobe not found in archive");
     copyFileSync(ffprobePath, ffprobeDest);
   } finally {
     rmSync(extractDir, { recursive: true, force: true });
   }
 
-  console.log(`Prepared ffmpeg and ffprobe for ${target}`);
+  console.log(`Prepared ffmpeg and ffprobe for ${profile} (${target})`);
 }
 
-/** macOS standalone: expects binaries from build-ffmpeg-standalone-macos.sh. */
-function prepareStandaloneMacOs(target: string): void {
-  const suffix = getSidecarSuffix(target);
-  const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
-  const ffprobeDest = join(BINARIES_DIR, `ffprobe-${suffix}`);
-
-  if (!existsSync(ffmpegDest) || !existsSync(ffprobeDest)) {
+function ensureGplMacOsBinaries(target: string): void {
+  const ffmpeg = profileFfmpegPath(ROOT, "gpl", target);
+  const ffprobe = profileFfprobePath(ROOT, "gpl", target);
+  const missing = [ffmpeg, ffprobe].filter((path) => !existsSync(path));
+  if (missing.length > 0) {
+    const prereqCommand = profilePrereqCommand("gpl", target);
     throw new Error(
-      `macOS standalone build requires FFmpeg built from source. Run yarn build-ffmpeg-standalone-macos first. ` +
-        `Expected: ${ffmpegDest}, ${ffprobeDest}`
+      `standalone gpl build requires macOS source FFmpeg. Run ${prereqCommand} first.\n` +
+        `Missing:${missing.map((path) => `\n  - ${path}`).join("")}`,
     );
   }
-  console.log(`Using existing standalone FFmpeg binaries for ${target}`);
+  console.log(`Using existing standalone gpl FFmpeg binaries for ${target}`);
 }
 
-function prepareLgpl(target: string): void {
-  const suffix = getSidecarSuffix(target);
-  const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
-  const ffprobeDest = join(BINARIES_DIR, `ffprobe-${suffix}`);
-
-  if (!existsSync(ffmpegDest) || !existsSync(ffprobeDest)) {
+function ensureLgplMacOsBinaries(target: string): void {
+  const ffmpeg = profileFfmpegPath(ROOT, "lgpl-vt", target);
+  const ffprobe = profileFfprobePath(ROOT, "lgpl-vt", target);
+  const required = [ffmpeg, ffprobe, ...profileLgplDylibPaths(ROOT, "lgpl-vt")];
+  const missing = required.filter((path) => !existsSync(path));
+  if (missing.length > 0) {
+    const prereqCommand = profilePrereqCommand("lgpl-vt", target);
     throw new Error(
-      `lgpl build requires custom FFmpeg. Run yarn build-ffmpeg-lgpl first. ` +
-        `Expected: ${ffmpegDest}, ${ffprobeDest}`
+      `standalone lgpl-vt build requires custom FFmpeg. Run ${prereqCommand} first.\n` +
+        `Missing:${missing.map((path) => `\n  - ${path}`).join("")}`,
     );
   }
-  console.log(`Using existing lgpl FFmpeg binaries for ${target}`);
+  console.log(`Using existing standalone lgpl-vt FFmpeg binaries for ${target}`);
 }
 
-function createStubBinaries(target: string): void {
-  const suffix = getSidecarSuffix(target);
-  const ffmpegDest = join(BINARIES_DIR, `ffmpeg-${suffix}`);
-  const ffprobeDest = join(BINARIES_DIR, `ffprobe-${suffix}`);
-  mkdirSync(BINARIES_DIR, { recursive: true });
-  if (process.platform === "win32") {
-    writeFileSync(ffmpegDest, "");
-    writeFileSync(ffprobeDest, "");
-  } else {
-    const stub = "#!/bin/sh\nexit 0\n";
-    writeFileSync(ffmpegDest, stub);
-    writeFileSync(ffprobeDest, stub);
-    chmodSync(ffmpegDest, 0o755);
-    chmodSync(ffprobeDest, 0o755);
-  }
-  console.log(
-    `Created stub binaries for ${target} (build only; run without --stub for real FFmpeg)`
-  );
-}
-
-async function main(): Promise<void> {
-  const stubOnly = process.argv.includes("--stub");
+export async function prepareFfmpeg(profile: FfmpegProfile): Promise<void> {
   const target = getTargetTriple();
-  console.log(
-    `Target: ${target}, lgpl: ${String(isLgplBuild())}, stub: ${String(stubOnly)}`
-  );
+  assertProfileSupportedOnTarget(profile, target);
+  console.log(`Target: ${target}, ffmpeg-profile: ${profile}`);
 
-  if (isLinux(target)) {
-    console.log("Default build: no FFmpeg bundling (platform overrides set externalBin to [])");
+  if (target.includes("linux")) {
+    throw new Error(
+      `Bundled profile ${profile} is not supported on Linux in this project.`,
+    );
+  }
+
+  if (isWindowsTarget(target)) {
+    if (profile !== "gpl") {
+      throw new Error("Windows standalone supports only --profile gpl.");
+    }
+    await prepareBtbN(target, profile);
     return;
   }
 
-  if (stubOnly) {
-    createStubBinaries(target);
-    return;
-  }
-
-  if (isWindows(target)) {
-    await prepareBtbN(target);
-    return;
-  }
-
-  if (isMacOs(target)) {
-    if (isLgplBuild()) {
-      prepareLgpl(target);
+  if (isMacOsTarget(target)) {
+    if (profile === "gpl") {
+      ensureGplMacOsBinaries(target);
     } else {
-      prepareStandaloneMacOs(target);
+      ensureLgplMacOsBinaries(target);
     }
     return;
   }
@@ -376,7 +326,14 @@ async function main(): Promise<void> {
   throw new Error(`Unsupported target: ${target}`);
 }
 
-main().catch((err: unknown) => {
-  console.error(err);
-  process.exit(1);
-});
+const scriptPath = fileURLToPath(import.meta.url);
+const argv1 = process.argv[1];
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- argv1 can be undefined when module is imported
+const isMain = argv1 != null && resolve(scriptPath) === resolve(argv1);
+if (isMain) {
+  const profile = parseProfileFromArgv(process.argv.slice(2));
+  prepareFfmpeg(profile).catch((err: unknown) => {
+    console.error(err);
+    process.exit(1);
+  });
+}

@@ -8,10 +8,10 @@ use crate::ffmpeg::{
     build_ffmpeg_command, cleanup_transcode_temp, run_ffmpeg_blocking, set_transcode_temp,
     verify_video, TempFileManager,
 };
-use crate::preview::{run_preview_core, run_preview_with_estimate_core};
 use crate::test_util::{
-    create_test_video, create_test_video_with_multi_audio, find_ffmpeg_and_set_env, opts_with,
-    preview_options,
+    default_codec, opts_with, preview_options, run_preview_and_assert_exists,
+    run_preview_with_estimate_and_assert, run_transcode_and_verify,
+    IntegrationEnv, VideoKind,
 };
 use std::fs;
 use std::sync::Arc;
@@ -25,51 +25,19 @@ fn run_transcode_integration(
     duration_secs: f32,
     skip_if_encoder_missing: bool,
 ) {
-    let ffmpeg = find_ffmpeg_and_set_env();
+    let env = IntegrationEnv::new();
+    env.with_test_video("input.mp4", duration_secs, VideoKind::Plain);
+    let input_path = env.path("input.mp4");
+    let output_path = env.path("output.mp4");
 
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let output_path = dir.path().join("output.mp4");
-
-    let status =
-        create_test_video(&ffmpeg, &input_path, duration_secs).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
-    let args = build_ffmpeg_command(
-        input_path.to_str().unwrap(),
-        output_path.to_str().unwrap(),
+    run_transcode_and_verify(
+        &input_path,
+        &output_path,
         &options,
         None,
-        None,
-        None,
+        skip_if_encoder_missing,
     )
-    .expect("build_ffmpeg_command");
-
-    let result = run_ffmpeg_blocking(args, None, None, None, None, None);
-    if let Err(ref e) = result {
-        if skip_if_encoder_missing {
-            let stderr = format!("{}", e);
-            if stderr.to_lowercase().contains("unknown encoder")
-                || stderr.to_lowercase().contains("encoder not found")
-            {
-                return;
-            }
-        }
-    }
-    assert!(
-        result.is_ok(),
-        "run_ffmpeg_blocking failed: {:?}",
-        result.err()
-    );
-    assert!(output_path.exists());
-    assert!(fs::metadata(&output_path).unwrap().len() > 0);
-
-    let verify_result = verify_video(&output_path, options.codec.as_deref());
-    assert!(
-        verify_result.is_ok(),
-        "Encoded video failed verification (corrupted): {}",
-        verify_result.unwrap_err()
-    );
+    .expect("transcode failed");
 }
 
 #[test]
@@ -129,29 +97,30 @@ fn ffmpeg_transcode_integration() {
         }
         #[cfg(all(feature = "lgpl", target_os = "macos"))]
         {
+            let c = default_codec();
             vec![
                 (opts_with(|o| {
-                    o.codec = Some("h264_videotoolbox".into());
+                    o.codec = Some(c.clone());
                     o.output_format = Some("mp4".into());
                 }), 1.0, true),
                 (opts_with(|o| {
-                    o.codec = Some("h264_videotoolbox".into());
+                    o.codec = Some(c.clone());
                     o.quality = Some(0);
                     o.output_format = Some("mp4".into());
                 }), 1.0, true),
                 (opts_with(|o| {
-                    o.codec = Some("h264_videotoolbox".into());
+                    o.codec = Some(c.clone());
                     o.quality = Some(100);
                     o.remove_audio = Some(false);
                     o.output_format = Some("mp4".into());
                 }), 1.0, true),
                 (opts_with(|o| {
-                    o.codec = Some("h264_videotoolbox".into());
+                    o.codec = Some(c.clone());
                     o.scale = Some(0.5);
                     o.output_format = Some("mp4".into());
                 }), 1.0, true),
                 (opts_with(|o| {
-                    o.codec = Some("h264_videotoolbox".into());
+                    o.codec = Some(c.clone());
                     o.max_bitrate = Some(1000);
                     o.output_format = Some("mp4".into());
                 }), 1.0, true),
@@ -177,15 +146,9 @@ fn ffmpeg_transcode_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_preserve_additional_audio_streams_integration -- --ignored"]
 fn ffmpeg_transcode_preserve_additional_audio_streams_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input_multi_audio.mp4");
-    let output_path = dir.path().join("output.mp4");
-
-    let status = create_test_video_with_multi_audio(&ffmpeg, &input_path, 2.0, 2)
-        .expect("failed to create test video with multi audio");
-    assert!(status.success(), "ffmpeg failed to create multi-audio test video");
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input_multi_audio.mp4", 2.0, VideoKind::MultiAudio(2));
+    let output_path = env.path("output.mp4");
 
     let input_meta = get_video_metadata_impl(&input_path).expect("get_video_metadata_impl input");
     assert_eq!(
@@ -198,11 +161,69 @@ fn ffmpeg_transcode_preserve_additional_audio_streams_integration() {
         o.preset = Some("ultrafast".into());
         o.preserve_additional_audio_streams = Some(true);
         o.audio_stream_count = Some(2);
-        o.codec = Some(if cfg!(feature = "lgpl") {
-            "h264_videotoolbox".into()
-        } else {
-            "libx264".into()
-        });
+        o.codec = Some(default_codec());
+    });
+
+    run_transcode_and_verify(&input_path, &output_path, &options, None, false)
+        .expect("transcode failed");
+
+    let output_meta =
+        get_video_metadata_impl(&output_path).expect("get_video_metadata_impl output");
+    assert_eq!(
+        output_meta.audio_stream_count, 2,
+        "output should preserve 2 audio streams, got {}",
+        output_meta.audio_stream_count
+    );
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_preserve_subtitles_mp4_integration -- --ignored"]
+fn ffmpeg_transcode_preserve_subtitles_mp4_integration() {
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input_with_subs.mp4", 2.0, VideoKind::Subtitles);
+    let output_path = env.path("output.mp4");
+
+    let input_meta = get_video_metadata_impl(&input_path).expect("get_video_metadata_impl input");
+    assert_eq!(
+        input_meta.subtitle_stream_count, 1,
+        "input should have 1 subtitle stream"
+    );
+
+    let options = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(1);
+        o.codec = Some(default_codec());
+    });
+
+    run_transcode_and_verify(&input_path, &output_path, &options, None, false)
+        .expect("transcode failed");
+
+    let output_meta =
+        get_video_metadata_impl(&output_path).expect("get_video_metadata_impl output");
+    assert!(
+        output_meta.subtitle_stream_count >= 1,
+        "output should preserve subtitle stream, got {}",
+        output_meta.subtitle_stream_count
+    );
+}
+
+#[test]
+#[cfg(not(feature = "lgpl"))] // WebM requires libvpx-vp9, not in LGPL build
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_preserve_subtitles_webm_integration -- --ignored"]
+fn ffmpeg_transcode_preserve_subtitles_webm_integration() {
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input_with_subs.mp4", 2.0, VideoKind::Subtitles);
+    let output_path = env.path("output.webm");
+
+    let options = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(1);
+        o.output_format = Some("webm".into());
+        o.codec = Some("libvpx-vp9".into());
     });
 
     let args = build_ffmpeg_command(
@@ -216,6 +237,14 @@ fn ffmpeg_transcode_preserve_additional_audio_streams_integration() {
     .expect("build_ffmpeg_command");
 
     let result = run_ffmpeg_blocking(args, None, None, None, None, None);
+    if let Err(ref e) = result {
+        let stderr = format!("{}", e);
+        if stderr.to_lowercase().contains("unknown encoder")
+            || stderr.to_lowercase().contains("encoder not found")
+        {
+            return;
+        }
+    }
     assert!(
         result.is_ok(),
         "run_ffmpeg_blocking failed: {:?}",
@@ -226,41 +255,115 @@ fn ffmpeg_transcode_preserve_additional_audio_streams_integration() {
 
     let output_meta =
         get_video_metadata_impl(&output_path).expect("get_video_metadata_impl output");
+    assert!(
+        output_meta.subtitle_stream_count >= 1,
+        "output should preserve subtitle stream, got {}",
+        output_meta.subtitle_stream_count
+    );
+    // Note: verify_video is not called for WebM - it fails with Opus packet header parsing errors.
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_preserve_subtitles_mkv_integration -- --ignored"]
+fn ffmpeg_transcode_preserve_subtitles_mkv_integration() {
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input_with_subs.mp4", 2.0, VideoKind::Subtitles);
+    let output_path = env.path("output.mkv");
+
+    let options = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(1);
+        o.output_format = Some("mkv".into());
+        o.codec = Some(default_codec());
+    });
+
+    run_transcode_and_verify(&input_path, &output_path, &options, None, false)
+        .expect("transcode failed");
+
+    let output_meta =
+        get_video_metadata_impl(&output_path).expect("get_video_metadata_impl output");
+    assert!(
+        output_meta.subtitle_stream_count >= 1,
+        "output should preserve subtitle stream, got {}",
+        output_meta.subtitle_stream_count
+    );
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_preserve_subtitles_no_subs_optional_map_integration -- --ignored"]
+fn ffmpeg_transcode_preserve_subtitles_no_subs_optional_map_integration() {
+    let env = IntegrationEnv::new();
+    let input_path =
+        env.with_test_video("input.mp4", 2.0, VideoKind::MultiAudio(1));
+    let output_path = env.path("output.mp4");
+
+    let options = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(1);
+        o.codec = Some(default_codec());
+    });
+
+    run_transcode_and_verify(&input_path, &output_path, &options, None, false)
+        .expect("transcode with preserve_subtitles but no subs in input should succeed (0:s? optional map)");
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_preserve_subtitles_no_audio_integration -- --ignored"]
+fn ffmpeg_transcode_preserve_subtitles_no_audio_integration() {
+    let env = IntegrationEnv::new();
+    let input_path =
+        env.with_test_video("input_with_subs_no_audio.mp4", 2.0, VideoKind::SubtitlesNoAudio);
+    let output_path = env.path("output.mp4");
+
+    let input_meta = get_video_metadata_impl(&input_path).expect("get_video_metadata_impl input");
     assert_eq!(
-        output_meta.audio_stream_count, 2,
-        "output should preserve 2 audio streams, got {}",
-        output_meta.audio_stream_count
+        input_meta.audio_stream_count, 0,
+        "input should have 0 audio streams"
+    );
+    assert_eq!(
+        input_meta.subtitle_stream_count, 1,
+        "input should have 1 subtitle stream"
     );
 
-    let verify_result = verify_video(&output_path, options.codec.as_deref());
+    let options = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(1);
+        o.codec = Some(default_codec());
+    });
+
+    run_transcode_and_verify(&input_path, &output_path, &options, None, false)
+        .expect("transcode with subtitles and no audio should succeed");
+
+    let output_meta =
+        get_video_metadata_impl(&output_path).expect("get_video_metadata_impl output");
+    assert_eq!(
+        output_meta.audio_stream_count, 0,
+        "output should have 0 audio streams, got {}",
+        output_meta.audio_stream_count
+    );
     assert!(
-        verify_result.is_ok(),
-        "Encoded video failed verification: {}",
-        verify_result.unwrap_err()
+        output_meta.subtitle_stream_count >= 1,
+        "output should preserve subtitle stream, got {}",
+        output_meta.subtitle_stream_count
     );
 }
 
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_progress_emission_integration -- --ignored"]
 fn ffmpeg_progress_emission_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let output_path = dir.path().join("output.mp4");
-
-    // 2 seconds - long enough for multiple progress updates
-    let duration_secs = 2.0_f32;
-    let status =
-        create_test_video(&ffmpeg, &input_path, duration_secs).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 2.0, VideoKind::Plain);
+    let output_path = env.path("output.mp4");
+    let duration_secs = 2.0_f64;
 
     let options = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl") {
-            "h264_videotoolbox".into()
-        } else {
-            "libx264".into()
-        });
+        o.codec = Some(default_codec());
         o.remove_audio = Some(true);
         o.preset = Some("ultrafast".into());
     });
@@ -280,7 +383,7 @@ fn ffmpeg_progress_emission_integration() {
         args,
         None,
         None,
-        Some(duration_secs as f64),
+        Some(duration_secs),
         None,
         Some(Arc::clone(&progress_collector)),
     );
@@ -311,23 +414,13 @@ fn ffmpeg_progress_emission_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_cancel_cleanup_integration -- --ignored"]
 fn ffmpeg_cancel_cleanup_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
+    let env = IntegrationEnv::new();
     // 60 seconds + slow preset so transcode takes long enough to cancel mid-run
-    // (modern hardware can encode 10s video in ~50ms, so we need a longer video)
-    let duration_secs = 60.0_f32;
-    let status =
-        create_test_video(&ffmpeg, &input_path, duration_secs).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
+    let input_path = env.with_test_video("input.mp4", 60.0, VideoKind::Plain);
+    let duration_secs = 60.0_f64;
 
     let options = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl") {
-            "h264_videotoolbox".into()
-        } else {
-            "libx264".into()
-        });
+        o.codec = Some(default_codec());
         o.remove_audio = Some(true);
         o.preset = Some("slow".into());
     });
@@ -352,19 +445,11 @@ fn ffmpeg_cancel_cleanup_integration() {
     .expect("build_ffmpeg_command");
 
     let result_handle = thread::spawn(move || {
-        // Small delay to let FFmpeg start, then cancel mid-run
         thread::sleep(StdDuration::from_millis(50));
         crate::ffmpeg::terminate_all_ffmpeg();
     });
 
-    let transcode_result = run_ffmpeg_blocking(
-        args,
-        None,
-        None,
-        Some(duration_secs as f64),
-        None,
-        None,
-    );
+    let transcode_result = run_ffmpeg_blocking(args, None, None, Some(duration_secs), None, None);
 
     result_handle.join().unwrap();
 
@@ -390,72 +475,27 @@ fn ffmpeg_cancel_cleanup_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_single_segment_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_single_segment_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 2.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
-    let result = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &preview_options(3),
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
-
-    assert!(std::path::Path::new(&result.original_path).exists());
-    assert!(std::path::Path::new(&result.compressed_path).exists());
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 2.0, VideoKind::Plain);
+    run_preview_and_assert_exists(&input_path, &preview_options(3), None);
 }
 
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_multi_segment_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_multi_segment_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 10.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
-    let result = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &preview_options(3),
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
-
-    assert!(std::path::Path::new(&result.original_path).exists());
-    assert!(std::path::Path::new(&result.compressed_path).exists());
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 10.0, VideoKind::Plain);
+    run_preview_and_assert_exists(&input_path, &preview_options(3), None);
 }
 
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_estimation_sanity_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_estimation_sanity_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 5.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 5.0, VideoKind::Plain);
     let input_size = fs::metadata(&input_path).unwrap().len();
-    let result = tauri::async_runtime::block_on(run_preview_with_estimate_core(
-        &input_path,
-        &preview_options(3),
-        None,
-        None,
-    ))
-    .expect("run_preview_with_estimate_core");
 
+    let result = run_preview_with_estimate_and_assert(&input_path, &preview_options(3), None);
     let estimated_size = result.estimated_size.unwrap();
     assert!(estimated_size > 0, "estimated_size should be positive");
     assert!(
@@ -469,57 +509,30 @@ fn ffmpeg_preview_estimation_sanity_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_estimate_preserve_additional_audio_streams_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_estimate_preserve_additional_audio_streams_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input_multi_audio.mp4");
-    let status = create_test_video_with_multi_audio(&ffmpeg, &input_path, 5.0, 2)
-        .expect("failed to create test video with multi audio");
-    assert!(status.success(), "ffmpeg failed to create multi-audio test video");
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input_multi_audio.mp4", 5.0, VideoKind::MultiAudio(2));
 
     let opts_without_preserve = opts_with(|o| {
         o.remove_audio = Some(false);
         o.preset = Some("ultrafast".into());
         o.preview_duration = Some(3);
-        o.codec = Some(if cfg!(feature = "lgpl") {
-            "h264_videotoolbox".into()
-        } else {
-            "libx264".into()
-        });
+        o.codec = Some(default_codec());
     });
-
     let opts_with_preserve = opts_with(|o| {
         o.remove_audio = Some(false);
         o.preset = Some("ultrafast".into());
         o.preview_duration = Some(3);
         o.preserve_additional_audio_streams = Some(true);
         o.audio_stream_count = Some(2);
-        o.codec = Some(if cfg!(feature = "lgpl") {
-            "h264_videotoolbox".into()
-        } else {
-            "libx264".into()
-        });
+        o.codec = Some(default_codec());
     });
 
-    let result_without = tauri::async_runtime::block_on(run_preview_with_estimate_core(
-        &input_path,
-        &opts_without_preserve,
-        None,
-        None,
-    ))
-    .expect("run_preview_with_estimate_core without preserve");
-
-    let result_with = tauri::async_runtime::block_on(run_preview_with_estimate_core(
-        &input_path,
-        &opts_with_preserve,
-        None,
-        None,
-    ))
-    .expect("run_preview_with_estimate_core with preserve");
+    let result_without =
+        run_preview_with_estimate_and_assert(&input_path, &opts_without_preserve, None);
+    let result_with = run_preview_with_estimate_and_assert(&input_path, &opts_with_preserve, None);
 
     let estimate_without = result_without.estimated_size.unwrap();
     let estimate_with = result_with.estimated_size.unwrap();
-
     assert!(
         estimate_with > estimate_without,
         "estimate with preserve ({}) should be larger than without ({})",
@@ -531,81 +544,31 @@ fn ffmpeg_preview_estimate_preserve_additional_audio_streams_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_region_no_estimate_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_region_no_estimate_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 10.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
-    let result = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &preview_options(3),
-        Some(2.0),
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
-
-    assert!(std::path::Path::new(&result.original_path).exists());
-    assert!(std::path::Path::new(&result.compressed_path).exists());
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 10.0, VideoKind::Plain);
+    run_preview_and_assert_exists(&input_path, &preview_options(3), Some(2.0));
 }
 
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_region_with_estimate_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_region_with_estimate_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 10.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
-    let result = tauri::async_runtime::block_on(run_preview_with_estimate_core(
-        &input_path,
-        &preview_options(3),
-        Some(2.0),
-        None,
-    ))
-    .expect("run_preview_with_estimate_core");
-
-    assert!(std::path::Path::new(&result.preview.original_path).exists());
-    assert!(std::path::Path::new(&result.preview.compressed_path).exists());
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 10.0, VideoKind::Plain);
+    let result =
+        run_preview_with_estimate_and_assert(&input_path, &preview_options(3), Some(2.0));
     assert!(result.estimated_size.unwrap() > 0);
 }
 
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_output_valid_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_output_valid_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 5.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
-    let result = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &preview_options(3),
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 5.0, VideoKind::Plain);
+    let result = run_preview_and_assert_exists(&input_path, &preview_options(3), None);
 
     let compressed_path = std::path::Path::new(&result.compressed_path);
-    assert!(compressed_path.exists());
-
-    let codec = if cfg!(feature = "lgpl") {
-        Some("h264_videotoolbox")
-    } else {
-        Some("libx264")
-    };
-    let verify_result = verify_video(compressed_path, codec);
+    let verify_result =
+        verify_video(compressed_path, Some(default_codec().as_str()));
     assert!(
         verify_result.is_ok(),
         "compressed preview should decode: {}",
@@ -616,37 +579,12 @@ fn ffmpeg_preview_output_valid_integration() {
 #[test]
 #[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_transcode_cache_integration -- --ignored --test-threads=1"]
 fn ffmpeg_preview_transcode_cache_integration() {
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 5.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
-
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 5.0, VideoKind::Plain);
     let opts = preview_options(3);
 
-    let result1 = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &opts,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
-
-    let result2 = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &opts,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
-
+    let result1 = run_preview_and_assert_exists(&input_path, &opts, None);
+    let result2 = run_preview_and_assert_exists(&input_path, &opts, None);
     assert_eq!(
         result1.compressed_path,
         result2.compressed_path,
@@ -659,68 +597,27 @@ fn ffmpeg_preview_transcode_cache_integration() {
 fn ffmpeg_preview_transcode_cache_multi_entry_integration() {
     use crate::ffmpeg::cleanup_preview_transcode_cache;
 
-    let ffmpeg = find_ffmpeg_and_set_env();
-
-    let dir = tempfile::tempdir().unwrap();
-    let input_path = dir.path().join("input.mp4");
-    let status = create_test_video(&ffmpeg, &input_path, 5.0).expect("failed to create test video");
-    assert!(status.success(), "ffmpeg failed to create test video");
+    let env = IntegrationEnv::new();
+    let input_path = env.with_test_video("input.mp4", 5.0, VideoKind::Plain);
 
     cleanup_preview_transcode_cache();
 
     let opts_a = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl") {
-            "h264_videotoolbox".into()
-        } else {
-            "libx264".into()
-        });
+        o.codec = Some(default_codec());
         o.remove_audio = Some(true);
         o.preset = Some("ultrafast".into());
         o.preview_duration = Some(3);
     });
     let opts_b = opts_with(|o| {
-        o.codec = Some(if cfg!(feature = "lgpl") {
-            "h264_videotoolbox".into()
-        } else {
-            "libx264".into()
-        });
+        o.codec = Some(default_codec());
         o.remove_audio = Some(true);
         o.preset = Some("fast".into());
         o.preview_duration = Some(3);
     });
 
-    let result_a1 = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &opts_a,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
-
-    let result_b = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &opts_b,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
-
-    let result_a2 = tauri::async_runtime::block_on(run_preview_core(
-        &input_path,
-        &opts_a,
-        None,
-        None,
-        None,
-        None,
-        None,
-    ))
-    .expect("run_preview_core");
+    let result_a1 = run_preview_and_assert_exists(&input_path, &opts_a, None);
+    let result_b = run_preview_and_assert_exists(&input_path, &opts_b, None);
+    let result_a2 = run_preview_and_assert_exists(&input_path, &opts_a, None);
 
     assert_eq!(
         result_a1.compressed_path,

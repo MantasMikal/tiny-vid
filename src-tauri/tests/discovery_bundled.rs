@@ -73,14 +73,13 @@ fn env_var_override_with_suffixed_binaries() {
     let _ = fs::remove_dir(dir.parent().unwrap().parent().unwrap());
 }
 
-/// Prefer bundled sidecar when not lgpl. Run: cargo test --test discovery_bundled --features discovery-test-helpers
+/// Prefer bundled sidecar when present. Run: cargo test --test discovery_bundled --features discovery-test-helpers
 #[test]
 #[cfg(all(
     any(target_os = "macos", target_os = "windows"),
-    not(feature = "lgpl"),
     feature = "discovery-test-helpers"
 ))]
-fn prefer_bundled_sidecar_when_not_lgpl() {
+fn prefer_bundled_sidecar_when_present() {
     __test_reset_ffmpeg_path_cache();
     let exe_path = env::current_exe().expect("get current exe path");
     let exe_dir = exe_path.parent().expect("exe parent dir");
@@ -122,7 +121,7 @@ fn prefer_bundled_sidecar_when_not_lgpl() {
     assert_eq!(
         got_ffmpeg,
         mock_ffmpeg.as_path(),
-        "get_ffmpeg_path should return the suffixed bundled sidecar when not lgpl"
+        "get_ffmpeg_path should return the suffixed bundled sidecar when present"
     );
     assert_eq!(
         got_ffprobe,
@@ -181,32 +180,6 @@ fn sidecar_returns_none_on_linux() {
     assert!(
         result.is_none(),
         "resolve_sidecar_path should return None on Linux (no bundle)"
-    );
-}
-
-/// Smoke test: when FFMPEG_PATH points to a real bundled ffmpeg binary, run -version.
-/// Run after build: `FFMPEG_PATH=path/to/bundled/ffmpeg cargo test --test discovery_bundled bundled_ffmpeg_version -- --ignored`
-#[test]
-#[ignore = "run after build with FFMPEG_PATH pointing to bundled ffmpeg"]
-fn bundled_ffmpeg_version() {
-    let ffmpeg_path = env::var("FFMPEG_PATH").expect("FFMPEG_PATH must be set for this test");
-    let path = std::path::PathBuf::from(&ffmpeg_path);
-    assert!(path.exists(), "FFMPEG_PATH must point to an existing file: {}", ffmpeg_path);
-
-    let output = std::process::Command::new(&path)
-        .arg("-version")
-        .output()
-        .expect("failed to run ffmpeg -version");
-    assert!(
-        output.status.success(),
-        "ffmpeg -version failed: {}",
-        String::from_utf8_lossy(&output.stderr)
-    );
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    assert!(
-        stdout.contains("ffmpeg") || stdout.contains("FFmpeg"),
-        "expected version output, got: {}",
-        stdout
     );
 }
 

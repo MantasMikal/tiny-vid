@@ -202,13 +202,21 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       inputPath: path,
       videoUploading: true,
       videoPreview: null,
+      videoMetadata: null,
       estimatedSize: null,
       previewStartSeconds: 0,
+      error: null,
     });
     const metadataResult = await tryCatch(() => getVideoMetadataFromPath(path), "Metadata Error");
     if (!metadataResult.ok) {
       if (!metadataResult.aborted) {
-        set({ error: metadataResult.error });
+        set({
+          error: {
+            type: "Metadata Error",
+            message: "Failed to load video metadata",
+            detail: metadataResult.error.detail ?? metadataResult.error.message,
+          },
+        });
       }
       if (selectPathRequestId === requestId) {
         set({ videoUploading: false });

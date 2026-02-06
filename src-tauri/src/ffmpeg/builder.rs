@@ -325,14 +325,15 @@ pub fn build_ffmpeg_command(
     );
 
     let config = get_output_config(&output_format, &codec_str);
-    // Preview uses format_override (e.g. "mp4"); always single audio. Export honors preserve.
+    // Preview uses format_override (e.g. "mp4"); always single audio, no subtitles. Export honors preserve.
     let is_preview = format_override.is_some();
     let preserve_multi = !is_preview
         && config.supports_multiple_audio
         && options.effective_preserve_additional_audio_streams()
         && options.effective_audio_stream_count() > 1;
-    let preserve_subtitles =
-        options.effective_preserve_subtitles() && options.effective_subtitle_stream_count() > 0;
+    let preserve_subtitles = !is_preview
+        && options.effective_preserve_subtitles()
+        && options.effective_subtitle_stream_count() > 0;
     let use_explicit_mapping = preserve_multi || preserve_subtitles;
 
     let audio_bitrate_k = format!("{}k", options.effective_audio_bitrate());
@@ -354,19 +355,21 @@ pub fn build_ffmpeg_command(
     if use_explicit_mapping {
         args.push("-map".to_string());
         args.push("0:v".to_string());
-        let n = options.effective_audio_stream_count();
-        if preserve_multi {
-            for i in 0..n {
+        if !remove_audio {
+            if preserve_multi {
+                let n = options.effective_audio_stream_count();
+                for i in 0..n {
+                    args.push("-map".to_string());
+                    args.push(format!("0:a:{}", i));
+                }
+            } else {
                 args.push("-map".to_string());
-                args.push(format!("0:a:{}", i));
+                args.push("0:a:0?".to_string());
             }
-        } else {
-            args.push("-map".to_string());
-            args.push("0:a:0".to_string());
         }
         if preserve_subtitles {
             args.push("-map".to_string());
-            args.push("0:s".to_string());
+            args.push("0:s?".to_string());
         }
     }
 
@@ -420,6 +423,15 @@ pub fn build_ffmpeg_command(
             audio_args.extend(["-ac".to_string(), "2".to_string()]);
         }
         args.extend(audio_args);
+    }
+
+    if preserve_subtitles {
+        let sub_codec = match output_format.as_str() {
+            "webm" => "webvtt",
+            "mkv" => "webvtt",
+            _ => "mov_text",
+        };
+        args.extend(["-c:s".to_string(), sub_codec.to_string()]);
     }
 
     if scale < 1.0 {
@@ -953,7 +965,39 @@ mod tests {
         o.remove_audio = Some(false);
         let args = build_ffmpeg_command("/in.mkv", "/out.mp4", &o, None, None, None).unwrap();
         assert!(args.contains(&"-map".to_string()));
-        assert!(args.contains(&"0:s".to_string()));
+        assert!(args.contains(&"0:a:0?".to_string()));
+        assert!(args.contains(&"0:s?".to_string()));
+    }
+
+    #[test]
+    fn preserve_subtitles_remove_audio_omits_audio_map() {
+        let mut o = opts();
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(1);
+        o.remove_audio = Some(true);
+        let args = build_ffmpeg_command("/in.mkv", "/out.mp4", &o, None, None, None).unwrap();
+        assert!(!args.contains(&"0:a:0".to_string()));
+        assert!(!args.contains(&"0:a:0?".to_string()));
+        assert!(args.contains(&"0:s?".to_string()));
+        assert!(args.contains(&"-an".to_string()));
+    }
+
+    #[test]
+    fn preserve_subtitles_ignored_for_preview() {
+        let mut o = opts();
+        o.preserve_subtitles = Some(true);
+        o.subtitle_stream_count = Some(2);
+        o.remove_audio = Some(false);
+        let args = build_ffmpeg_command(
+            "/in.mkv",
+            "/out.mp4",
+            &o,
+            Some(3.0),
+            Some("mp4"),
+            None,
+        )
+        .unwrap();
+        assert!(!args.contains(&"0:s?".to_string()), "Preview omits subtitle mapping");
     }
 
     #[test]

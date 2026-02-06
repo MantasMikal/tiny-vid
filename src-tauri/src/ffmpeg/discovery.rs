@@ -97,23 +97,38 @@ pub fn resolve_sidecar_path(base_name: &str) -> Option<PathBuf> {
 }
 
 /// Base names for bundled sidecar (suffixed first, then plain).
-#[cfg(all(
-    any(target_os = "macos", target_os = "windows"),
-    not(feature = "lgpl")
-))]
+#[cfg(any(target_os = "macos", target_os = "windows"))]
 fn bundled_sidecar_base_names() -> [&'static str; 2] {
     [concat!("ffmpeg-", env!("TARGET")), "ffmpeg"]
 }
 
-/// Resolve FFmpeg path. Order: bundled sidecar (if not lgpl) → common paths → PATH → sidecar fallback.
+fn resolve_bundled_ffmpeg_path() -> Option<PathBuf> {
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        for base_name in bundled_sidecar_base_names() {
+            if let Some(path) = resolve_sidecar_path(base_name) {
+                return Some(path);
+            }
+        }
+        None
+    }
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    {
+        None
+    }
+}
+
+/// Resolve FFmpeg path. Order:
+/// - bundled sidecar first (macOS/Windows), unless TINY_VID_USE_SYSTEM_FFMPEG is set
+/// - then system paths
+/// - then PATH
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
-    #[cfg(all(
-        any(target_os = "macos", target_os = "windows"),
-        not(feature = "lgpl")
-    ))]
-    for base_name in bundled_sidecar_base_names() {
-        if let Some(p) = resolve_sidecar_path(base_name) {
-            return Ok(p);
+    #[cfg(any(target_os = "macos", target_os = "windows"))]
+    {
+        let prefer_system = std::env::var("TINY_VID_USE_SYSTEM_FFMPEG")
+            .is_ok_and(|v| !v.is_empty() && v != "0");
+        if !prefer_system && let Some(path) = resolve_bundled_ffmpeg_path() {
+            return Ok(path);
         }
     }
 
@@ -137,14 +152,9 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
             return Ok(p);
         }
 
-    #[cfg(any(target_os = "macos", target_os = "windows"))]
-    if let Some(p) = resolve_sidecar_path("ffmpeg") {
-        return Ok(p);
-    }
-
     log::error!(
         target: "tiny_vid::ffmpeg::discovery",
-        "FFmpeg not found in PATH or common locations"
+        "FFmpeg not found in sidecar, PATH, or common locations"
     );
     Err(AppError::FfmpegNotFound(
         "FFmpeg not found. Please install FFmpeg on your system:\n  - macOS: brew install ffmpeg\n  - Linux: sudo apt install ffmpeg\n  - Windows: Download from https://ffmpeg.org/download.html"
@@ -154,10 +164,9 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
 
 /// Get FFmpeg path. Cached for process lifetime.
 /// 1. FFMPEG_PATH env (when set and path exists) – for tests/CI or bundled binaries.
-/// 2. When not lgpl on macOS/Windows: bundled sidecar first (ffmpeg-{TARGET} then ffmpeg).
+/// 2. macOS/Windows bundled sidecar (ffmpeg-{TARGET} then ffmpeg).
 /// 3. Common installation paths (Homebrew, /usr/bin, etc.).
 /// 4. PATH (via which/where).
-/// 5. Bundled sidecar fallback (macOS/Windows only; used for lgpl when nothing in path).
 pub fn get_ffmpeg_path() -> Result<&'static Path, AppError> {
     #[cfg(feature = "discovery-test-helpers")]
     {
@@ -360,7 +369,7 @@ Encoders:
         assert!(!codecs.contains(&"mpeg4".to_string()));
         assert!(!codecs.contains(&"aac".to_string()));
     }
-    
+
     #[test]
     #[ignore]
     fn get_available_codecs_returns_valid_list() {

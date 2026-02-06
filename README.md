@@ -2,59 +2,63 @@
 
 Cross-platform app for compressing and optimizing video files with support for H.264, H.265, VP9, and AV1 codecs. [Web version (WASM)](https://handy.tools)
 
-
-
 ![image](https://github.com/user-attachments/assets/7faa0c2b-320e-45ef-b556-fa35b87142a7)
 
-## Build variants (FFmpeg bundling)
+## Build variants (FFmpeg)
 
-| Variant     | Platform       | FFmpeg source  |
-| ----------- | -------------- | -------------- |
-| standalone  | macOS          | Self-built from source (GPL) |
-| standalone | Windows        | BtbN GPL       |
-| lgpl       | macOS only     | Custom LGPL+VT |
-| default    | Any            | System         |
+| Mode | Profile | Platform | FFmpeg source |
+| ---- | ------- | -------- | ------------- |
+| system | n/a | Any | System FFmpeg |
+| standalone | gpl | macOS | Self-built from source |
+| standalone | gpl | Windows | BtbN GPL build |
+| standalone | lgpl-vt | macOS only | Custom LGPL + VideoToolbox build |
 
-- **Standalone (macOS)** – Bundles GPL FFmpeg (libx264, libx265, etc.). Build from source: run `yarn build-ffmpeg-standalone-macos` once, then `yarn build:standalone`.
-- **Standalone (Windows)** – Bundles BtbN GPL FFmpeg (libx264, libx265, libsvtav1).
-- **lgpl (macOS App Store)** – Custom LGPL FFmpeg with VideoToolbox only (H.264/HEVC, MP4). Requires building FFmpeg first.
-- **Default** – No FFmpeg in the bundle; app uses system FFmpeg (e.g. `apt install ffmpeg` on Linux).
+- **system**: no FFmpeg in bundle; app uses system FFmpeg.
+- **gpl**: bundles GPL FFmpeg (macOS self-built, Windows BtbN).
+- **lgpl-vt**: custom LGPL + VideoToolbox (macOS only).
 
 ### How to build
 
-From the repo root, run the script for the variant you want. Installers go to **releases/\<platform>\/**.
+From the repo root, run the command for the variant you want. Installers go to **releases/\<platform>\/**.
 
-| Script | Description |
-| ------ | ----------- |
-| `yarn build` | No bundled FFmpeg; uses system FFmpeg. Works on macOS, Windows, Linux (Linux requires Docker). |
-| `yarn build:standalone` | Bundles FFmpeg. macOS: build from source first (`yarn build-ffmpeg-standalone-macos`); Windows: BtbN download. |
-| `yarn build:lgpl` | macOS App Store build (custom LGPL FFmpeg). Run `yarn build-ffmpeg-lgpl` once first. |
+| Command | Description |
+| ------- | ----------- |
+| `yarn build` | system mode (no bundled FFmpeg). |
+| `yarn build:standalone` | standalone + gpl. |
+| `yarn build:standalone:lgpl` | standalone + lgpl-vt (macOS only). |
 
-To build by platform script instead: `./scripts/build-macos.sh [standalone|lgpl]`, `./scripts/build-linux.sh`, or `./scripts/build-windows.sh [standalone]`.
+Prerequisites:
+- macOS standalone gpl: `yarn build-ffmpeg-standalone` (requires `brew install x264 x265 libvpx opus svt-av1 dav1d pkg-config`).
+- macOS standalone lgpl-vt: `yarn build-ffmpeg-standalone:lgpl`.
+- Windows standalone gpl: `yarn prepare-ffmpeg` downloads BtbN (cached in `%LOCALAPPDATA%\\tiny-vid\\cache\\ffmpeg`; macOS/Linux `~/.cache/tiny-vid/ffmpeg`).
+- `prepare-ffmpeg` defaults to `--profile gpl`; use `yarn prepare-ffmpeg:lgpl` for lgpl-vt.
+- Linux: system mode only. Build on Linux with `yarn build`; `.deb` output in `releases/linux/`. Install Tauri prerequisites first:
+  - **Ubuntu/Debian:** `sudo apt-get install -y libwebkit2gtk-4.1-dev build-essential curl wget file libxdo-dev libssl-dev libayatana-appindicator3-dev librsvg2-dev ca-certificates pkg-config`
+  - **Other distros:** [Tauri v2 Linux prerequisites](https://v2.tauri.app/start/prerequisites/)
 
-macOS standalone requires building FFmpeg from source first: `yarn build-ffmpeg-standalone-macos` (requires `brew install x264 x265 libvpx opus pkg-config`). Windows standalone downloads BtbN FFmpeg (cached in `~/.cache/tiny-vid/ffmpeg`; checksums verified). Binaries go to `src-tauri/binaries/` (gitignored). lgpl expects custom FFmpeg from `yarn build-ffmpeg-lgpl`.
+Orchestration uses `yarn tv ...` (script runner in `scripts/tv.ts`):
+- `yarn tv build --mode standalone --profile gpl`
+- `yarn tv ffmpeg prepare --profile gpl`
+- `yarn tv ffmpeg build --profile lgpl-vt`
+- Add `--dry-run` to preview without executing (e.g. `yarn tv build --dry-run`); `--verbose` for extra output.
 
 ### Dev commands
 
-Run the app in development with a specific variant (uses system FFmpeg or `FFMPEG_PATH`):
-
-- **Default**: `yarn tauri dev` (default config).
-- **dev:standalone**: `yarn dev:standalone` — standalone config (bundled FFmpeg).
-- **dev:lgpl**: `yarn dev:lgpl` — lgpl variant (App Store build in dev).
+- `yarn dev` — system FFmpeg.
+- `yarn dev:standalone` — standalone + gpl.
+- `yarn dev:standalone:lgpl` — standalone + lgpl-vt (requires VideoToolbox).
 
 ## Testing
 
-Run from project root:
+From project root:
 
-- **Default**  
-  - `yarn test` — unit and command tests; integration tests are `#[ignore]`.  
-  - `yarn test:integration` — integration tests (needs FFmpeg with libx264, libx265, libsvtav1).  
-  - `yarn test:discovery` — discovery tests (env/cache isolation).
-- **lgpl**  
-  - `yarn test:lgpl` — unit and command tests (including get_build_variant and VideoToolbox builder tests).  
-  - `yarn test:lgpl:ffmpeg` — integration tests with VideoToolbox (requires `yarn build-ffmpeg-lgpl` first; macOS only, VideoToolbox may fail in headless/CI).
+- `yarn test` — unit + command tests (integration skipped by default).
+- `yarn test:integration` — FFmpeg integration (needs libx264, libx265, libsvtav1).
+- `yarn test:discovery` — discovery tests (env/cache isolation).
+- **standalone gpl**: `yarn test:standalone`, `yarn test:standalone:ffmpeg`.
+- **standalone lgpl-vt**: `yarn test:standalone:lgpl`, `yarn test:standalone:lgpl:ffmpeg` (fails if VideoToolbox unavailable).
 
-Unit tests live in each module (e.g. `error`, `ffmpeg/builder`); Tauri command tests are in `commands_tests.rs`; the FFmpeg integration test is in `integration_tests.rs` and is ignored by default.
+Tests: unit tests in each module; Tauri commands in `commands_tests.rs`; FFmpeg integration in `integration_tests.rs`.
 
 ## License
 

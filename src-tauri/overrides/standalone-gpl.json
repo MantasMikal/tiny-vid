@@ -1,0 +1,8 @@
+{
+  "bundle": {
+    "externalBin": [
+      "binaries/standalone-gpl/ffmpeg",
+      "binaries/standalone-gpl/ffprobe"
+    ]
+  }
+}

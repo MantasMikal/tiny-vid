@@ -39,6 +39,7 @@ regex = "1.12.2"
 thiserror = "2"
 url = "2"
 parking_lot = "0.12"
+fix-path-env = { git = "https://github.com/tauri-apps/fix-path-env-rs" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt-multi-thread", "macros"] }

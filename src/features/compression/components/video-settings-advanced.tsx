@@ -129,7 +129,9 @@ function InputGroup({
       <AccordionTrigger className={cn("py-2 text-base font-bold", "hover:no-underline")}>
         {title}
       </AccordionTrigger>
-      <AccordionContent className={cn("flex min-w-0 flex-col gap-4 pt-2")}>{children}</AccordionContent>
+      <AccordionContent className={cn("flex min-w-0 flex-col gap-4 pt-2")}>
+        {children}
+      </AccordionContent>
     </AccordionItem>
   );
 }
@@ -145,6 +147,8 @@ export function VideoSettingsAdvanced({
   const ffmpegAccordionRef = useRef<HTMLDivElement>(null);
   const availableFormats = getAvailableFormats(availableCodecs);
   const currentCodec = getCodecInfo(cOptions.codec, availableCodecs);
+  const hasNoAudio = (videoMetadata?.audioStreamCount ?? 0) === 0;
+  const isAlreadyStereo = (videoMetadata?.audioChannels ?? 0) <= 2;
 
   const handleAccordionChange = (value: string) => {
     if (value === "ffmpeg-command") {
@@ -331,66 +335,80 @@ export function VideoSettingsAdvanced({
         <CheckboxWithTooltip
           id="removeAudio"
           label="Remove Audio"
-          tooltip="Omits all audio from output (FFmpeg -an). Saves space when you don't need sound; video-only encoding is faster."
+          tooltip={
+            hasNoAudio
+              ? "No audio in source"
+              : "Omits all audio from output (FFmpeg -an). Saves space when you don't need sound; video-only encoding is faster."
+          }
           checked={cOptions.removeAudio}
           onCheckedChange={(c) => setOptions({ ...cOptions, removeAudio: c })}
-          disabled={isDisabled}
+          disabled={isDisabled || hasNoAudio}
         />
         {(videoMetadata?.audioStreamCount ?? 0) > 1 && (
           <CheckboxWithTooltip
             id="preserveAdditionalAudioStreams"
             label="Preserve additional audio streams"
             tooltip={
-              cOptions.outputFormat === "webm"
-                ? "WebM supports a single audio stream"
-                : "Include all audio streams in the output (transcoded to AAC/Opus). Only the first stream is used for preview."
+              cOptions.removeAudio
+                ? "Enable audio to preserve additional streams"
+                : cOptions.outputFormat === "webm"
+                  ? "WebM supports a single audio stream"
+                  : "Include all audio streams in the output (transcoded to AAC/Opus). Only the first stream is used for preview."
             }
             checked={cOptions.preserveAdditionalAudioStreams ?? false}
             onCheckedChange={(c) => setOptions({ ...cOptions, preserveAdditionalAudioStreams: c })}
-            disabled={isDisabled || cOptions.outputFormat === "webm"}
+            disabled={isDisabled || cOptions.outputFormat === "webm" || cOptions.removeAudio}
           />
         )}
-        {!cOptions.removeAudio && (
-          <LabeledControl
-            label="Audio Bitrate"
-            tooltip="Audio bitrate in kbps. Higher values improve quality for multichannel (5.1, 7.1)."
+        <LabeledControl
+          label="Audio Bitrate"
+          tooltip={
+            cOptions.removeAudio
+              ? "Enable audio to configure bitrate"
+              : "Audio bitrate in kbps. Higher values improve quality for multichannel (5.1, 7.1)."
+          }
+        >
+          <Select
+            value={String(cOptions.audioBitrate ?? 128)}
+            disabled={isDisabled || hasNoAudio || cOptions.removeAudio}
+            onValueChange={(v) => {
+              const n = Number.parseInt(v, 10);
+              if (Number.isFinite(n)) {
+                setOptions({ ...cOptions, audioBitrate: n });
+              }
+            }}
           >
-            <Select
-              value={String(cOptions.audioBitrate ?? 128)}
-              disabled={isDisabled}
-              onValueChange={(v) => {
-                const n = Number.parseInt(v, 10);
-                if (Number.isFinite(n)) {
-                  setOptions({ ...cOptions, audioBitrate: n });
-                }
-              }}
-            >
-              <SelectTrigger className={cn("w-full")}>
-                <SelectValue />
-              </SelectTrigger>
-              <SelectContent>
-                {audioBitratePresets.map((p) => (
-                  <SelectItem key={p.value} value={String(p.value)}>
-                    {p.name}
-                  </SelectItem>
-                ))}
-              </SelectContent>
-            </Select>
-            {(videoMetadata?.audioChannels ?? 0) > 2 && (
-              <p className={cn("text-xs text-muted-foreground")}>
-                Consider 192+ for 5.1, 256+ for 7.1
-              </p>
-            )}
-          </LabeledControl>
-        )}
-        {!cOptions.removeAudio && supportsDownmixOption(cOptions.outputFormat, cOptions.codec) && (
+            <SelectTrigger className={cn("w-full")}>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              {audioBitratePresets.map((p) => (
+                <SelectItem key={p.value} value={String(p.value)}>
+                  {p.name}
+                </SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
+          {(videoMetadata?.audioChannels ?? 0) > 2 && !cOptions.removeAudio && (
+            <p className={cn("text-xs text-muted-foreground")}>
+              Consider 192+ for 5.1, 256+ for 7.1
+            </p>
+          )}
+        </LabeledControl>
+        {supportsDownmixOption(cOptions.outputFormat, cOptions.codec) && (
           <CheckboxWithTooltip
             id="downmixToStereo"
             label="Downmix to stereo"
-            tooltip="Convert multichannel (5.1, 7.1) to stereo. Saves space; useful for headphones or stereo playback."
+            tooltip={
+              cOptions.removeAudio
+                ? "Enable audio to configure downmix"
+                : isAlreadyStereo
+                  ? "Source is already stereo"
+                  : "Convert multichannel (5.1, 7.1) to stereo. Saves space; useful for headphones or stereo playback."
+            }
             checked={cOptions.downmixToStereo ?? false}
             onCheckedChange={(c) => setOptions({ ...cOptions, downmixToStereo: c })}
-            disabled={isDisabled}
+            disabled={isDisabled || isAlreadyStereo || cOptions.removeAudio}
           />
         )}
       </InputGroup>

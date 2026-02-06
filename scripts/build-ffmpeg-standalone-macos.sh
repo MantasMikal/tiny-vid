@@ -1,9 +1,9 @@
 #!/usr/bin/env bash
 # Build FFmpeg from source with GPL and common codecs (x264, x265, etc.) for macOS.
-# Run on macOS. Output: src-tauri/binaries/ffmpeg-<target>, ffprobe-<target>
+# Run on macOS. Output: src-tauri/binaries/standalone-gpl/ffmpeg-<target>, ffprobe-<target>
 #
-# Dependencies (Homebrew): x264, x265, libvpx, opus, pkg-config
-#   brew install x264 x265 libvpx opus pkg-config
+# Dependencies (Homebrew): x264, x265, libvpx, opus, svt-av1, dav1d, pkg-config
+#   brew install x264 x265 libvpx opus svt-av1 dav1d pkg-config
 # Optional: libvorbis for Vorbis audio (brew install libvorbis)
 # For x86_64 native build you may need: nasm (brew install nasm)
 #
@@ -13,10 +13,10 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARIES_DIR="$ROOT/src-tauri/binaries"
+BINARIES_DIR="$ROOT/src-tauri/binaries/standalone-gpl"
 BUILD_DIR="${FFMPEG_BUILD_DIR:-/tmp/ffmpeg-standalone-macos-build}"
-# FFmpeg release branch (e.g. 7.1 → release/7.1). See https://git.ffmpeg.org/ffmpeg.git
-FFMPEG_VERSION="${FFMPEG_VERSION:-7.1}"
+# FFmpeg release branch (e.g. 8.0 → release/8.0). See https://git.ffmpeg.org/ffmpeg.git
+FFMPEG_VERSION="${FFMPEG_VERSION:-8.0}"
 TARGET_TRIPLE="${TARGET_TRIPLE:-$(rustc --print host-tuple 2>/dev/null || echo "aarch64-apple-darwin")}"
 
 echo "Building FFmpeg GPL for standalone build — $TARGET_TRIPLE (release/$FFMPEG_VERSION)"
@@ -40,6 +40,8 @@ cd ffmpeg
   --enable-libx265 \
   --enable-libvpx \
   --enable-libopus \
+  --enable-libsvtav1 \
+  --enable-libdav1d \
   --enable-videotoolbox \
   --enable-encoder=h264_videotoolbox \
   --enable-encoder=hevc_videotoolbox \
@@ -65,4 +67,4 @@ chmod +x "$BINARIES_DIR/ffmpeg-$SUFFIX" "$BINARIES_DIR/ffprobe-$SUFFIX"
 echo "Done. Binaries at:"
 echo "  $BINARIES_DIR/ffmpeg-$SUFFIX"
 echo "  $BINARIES_DIR/ffprobe-$SUFFIX"
-echo "Run yarn build:standalone to use these binaries (download will be skipped)."
+echo "Run yarn build:standalone to use these binaries."

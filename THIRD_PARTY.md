@@ -4,15 +4,16 @@ Tiny Vid is licensed under the [MIT License](LICENSE).
 
 Some build variants bundle FFmpeg. The bundled FFmpeg is a separate work with its own license:
 
-| Build variant | FFmpeg source   | License      |
-| ------------- | --------------- | ------------ |
-| **standalone** (macOS) | Self-built from FFmpeg source (GPL) | GPL v2+ |
-| **standalone** (Windows) | BtbN GPL build  | GPL v2+      |
-| **lgpl**      | Custom build    | LGPL v2.1+   |
-| **default**   | None (system)   | N/A          |
+| Mode | Profile | FFmpeg source | License |
+| ---- | ------- | ------------- | ------- |
+| **standalone** | **gpl** (macOS) | Self-built from FFmpeg source | GPL v2+ |
+| **standalone** | **gpl** (Windows) | BtbN GPL build | GPL v2+ |
+| **standalone** | **lgpl-vt** (macOS) | Custom build | LGPL v2.1+ |
+| **system** | n/a | None (system) | N/A |
 
-When distributing the **standalone** or **lgpl** builds, you must comply with the applicable FFmpeg license (provide source code, license text, and notices as required). The **default** build does not include FFmpeg.
+When distributing **standalone** builds, you must comply with the selected FFmpeg profile license (provide source code, license text, and notices as required). The **system** mode does not include FFmpeg.
 
-- **macOS standalone**: FFmpeg is built from source via `scripts/build-ffmpeg-standalone-macos.sh` (FFmpeg from https://git.ffmpeg.org/ffmpeg.git).
+- **macOS standalone + gpl**: FFmpeg is built from source via `scripts/build-ffmpeg-standalone-macos.sh`.
+- **macOS standalone + lgpl-vt**: FFmpeg is built from source via `scripts/build-ffmpeg-lgpl.sh`.
 - **BtbN FFmpeg** (Windows standalone): https://github.com/BtbN/FFmpeg-Builds
 - **FFmpeg project**: https://ffmpeg.org/
