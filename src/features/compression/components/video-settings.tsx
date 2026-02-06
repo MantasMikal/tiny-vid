@@ -132,12 +132,14 @@ export function VideoSettings() {
     availableCodecs,
     isDisabled,
     ffmpegCommandPreview,
+    videoMetadata,
   } = useCompressionStore(
     useShallow((s) => ({
       compressionOptions: s.compressionOptions,
       availableCodecs: s.availableCodecs,
       isDisabled: selectIsActionsDisabled(s),
       ffmpegCommandPreview: s.ffmpegCommandPreview,
+      videoMetadata: s.videoMetadata,
     }))
   );
 
@@ -360,6 +362,37 @@ export function VideoSettings() {
                       ))}
                     </SelectContent>
                   </Select>
+                </div>
+              )}
+              {(videoMetadata?.audioStreamCount ?? 0) > 1 && (
+                <div className={cn("flex flex-col gap-2")}>
+                  <Tooltip>
+                    <TooltipTrigger asChild>
+                      <div className={cn("flex items-center space-x-2")}>
+                        <Checkbox
+                          id="preserveAdditionalAudioStreams"
+                          disabled={isDisabled || cOptions.outputFormat === "webm"}
+                          checked={cOptions.preserveAdditionalAudioStreams ?? false}
+                          onCheckedChange={(c) => {
+                            setOptions({
+                              ...cOptions,
+                              preserveAdditionalAudioStreams: !!c,
+                            });
+                          }}
+                        />
+                        <Label htmlFor="preserveAdditionalAudioStreams">
+                          Preserve additional audio streams
+                        </Label>
+                      </div>
+                    </TooltipTrigger>
+                    <TooltipContent className={cn("max-w-72")}>
+                      <p>
+                        {cOptions.outputFormat === "webm"
+                          ? "WebM supports a single audio stream"
+                          : "Include all audio streams in the output (transcoded to AAC/Opus). Only the first stream is used for preview."}
+                      </p>
+                    </TooltipContent>
+                  </Tooltip>
                 </div>
               )}
               <div className={cn("flex flex-col gap-2")}>

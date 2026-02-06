@@ -42,7 +42,7 @@ macro_rules! codec_table {
             } ),*
         ];
 
-        /// Supported codec names, derived from CODEC_TABLE. Single source of truth.
+        /// Supported codec names from CODEC_TABLE.
         pub const SUPPORTED_CODEC_NAMES: &[&str] = &[ $($value),* ];
     };
 }

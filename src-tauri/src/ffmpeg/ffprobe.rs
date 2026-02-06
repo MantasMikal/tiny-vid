@@ -65,6 +65,7 @@ fn parse_bit_rate(s: &str) -> Option<u64> {
 #[serde(rename_all = "camelCase")]
 pub struct VideoMetadata {
     pub duration: f64,
+    pub audio_stream_count: u32,
     /// Format start_time (seconds). Non-zero for stream-copied segments; re-encoded typically 0.
     #[serde(skip_serializing_if = "Option::is_none")]
     pub start_time: Option<f64>,
@@ -123,6 +124,11 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
     let format_name = format.and_then(|f| f.format_name.clone());
     let format_long_name = format.and_then(|f| f.format_long_name.clone());
     let nb_streams = format.and_then(|f| f.nb_streams);
+    let audio_stream_count = output
+        .streams
+        .as_ref()
+        .map(|s| s.iter().filter(|st| st.codec_type.as_deref() == Some("audio")).count() as u32)
+        .unwrap_or(0);
 
     Ok(VideoMetadata {
         duration,
@@ -138,6 +144,7 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
         format_name,
         format_long_name,
         nb_streams,
+        audio_stream_count,
     })
 }
 
@@ -184,31 +191,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn parse_ffprobe_json_extracts_metadata() {
-        let json = r#"{
-            "format": {
-                "duration": "30.5",
-                "size": "12345678"
-            },
-            "streams": [
-                {
-                    "codec_type": "video",
-                    "width": 1920,
-                    "height": 1080,
-                    "r_frame_rate": "30/1"
-                }
-            ]
-        }"#;
-        let meta = parse_ffprobe_json(json).unwrap();
-        assert_eq!(meta.duration, 30.5);
-        assert_eq!(meta.width, 1920);
-        assert_eq!(meta.height, 1080);
-        assert_eq!(meta.size, 12_345_678);
-        assert!((meta.fps - 30.0).abs() < 0.01);
-    }
-
-    #[test]
-    fn parse_ffprobe_json_extracts_extended_metadata() {
+    fn parse_ffprobe_json_extracts_all_metadata() {
         let json = r#"{
             "format": {
                 "duration": "60.0",
@@ -231,6 +214,11 @@ mod tests {
             ]
         }"#;
         let meta = parse_ffprobe_json(json).unwrap();
+        assert_eq!(meta.duration, 60.0);
+        assert_eq!(meta.width, 1280);
+        assert_eq!(meta.height, 720);
+        assert_eq!(meta.size, 50_000_000);
+        assert!((meta.fps - 24.0).abs() < 0.01);
         assert_eq!(meta.codec_name.as_deref(), Some("h264"));
         assert_eq!(meta.codec_long_name.as_deref(), Some("H.264 / AVC"));
         assert_eq!(meta.video_bit_rate, Some(5_000_000));
@@ -238,12 +226,6 @@ mod tests {
         assert_eq!(meta.format_name.as_deref(), Some("mp4"));
         assert_eq!(meta.format_long_name.as_deref(), Some("QuickTime / MOV"));
         assert_eq!(meta.nb_streams, Some(2));
-    }
-
-    #[test]
-    fn parse_frame_rate_24000_1001() {
-        let fps = parse_frame_rate("24000/1001").unwrap();
-        assert!((fps - 23.976).abs() < 0.001);
     }
 
     #[test]
@@ -271,6 +253,21 @@ mod tests {
     }
 
     #[test]
+    fn parse_ffprobe_json_counts_audio_streams() {
+        let json = r#"{
+            "format": { "duration": "10.0", "size": "1000" },
+            "streams": [
+                {"codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1"},
+                {"codec_type": "audio"},
+                {"codec_type": "audio"},
+                {"codec_type": "subtitle"}
+            ]
+        }"#;
+        let meta = parse_ffprobe_json(json).unwrap();
+        assert_eq!(meta.audio_stream_count, 2);
+    }
+
+    #[test]
     fn parse_ffprobe_json_extracts_start_time() {
         let json = r#"{
             "format": {
@@ -282,5 +279,6 @@ mod tests {
         }"#;
         let meta = parse_ffprobe_json(json).unwrap();
         assert_eq!(meta.start_time, Some(0.083));
+        assert!((meta.fps - 23.976).abs() < 0.001);
     }
 }

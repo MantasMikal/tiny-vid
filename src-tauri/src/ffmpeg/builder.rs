@@ -171,6 +171,51 @@ fn map_linear_crf(quality: u32, high_crf: i32, low_crf: i32) -> i32 {
     (low_crf as f64 - q * (low_crf - high_crf) as f64).round() as i32
 }
 
+/// Per-format audio and container settings (MP4, WebM, MKV).
+#[derive(Clone, Copy)]
+struct OutputFormatConfig {
+    audio_codec: &'static str,
+    requires_stereo_downmix: bool,
+    use_movflags_faststart: bool,
+    supports_multiple_audio: bool,
+}
+
+fn get_output_config(format: &str, video_codec: &str) -> OutputFormatConfig {
+    let is_vp9 = video_codec.to_lowercase().contains("vp9");
+    match (format.to_lowercase().as_str(), is_vp9) {
+        ("mp4", _) => OutputFormatConfig {
+            audio_codec: "aac",
+            requires_stereo_downmix: false,
+            use_movflags_faststart: true,
+            supports_multiple_audio: true,
+        },
+        ("webm", _) => OutputFormatConfig {
+            audio_codec: "libopus",
+            requires_stereo_downmix: true,
+            use_movflags_faststart: false,
+            supports_multiple_audio: false,
+        },
+        ("mkv", true) => OutputFormatConfig {
+            audio_codec: "libopus",
+            requires_stereo_downmix: true,
+            use_movflags_faststart: false,
+            supports_multiple_audio: true,
+        },
+        ("mkv", false) => OutputFormatConfig {
+            audio_codec: "aac",
+            requires_stereo_downmix: false,
+            use_movflags_faststart: false,
+            supports_multiple_audio: true,
+        },
+        _ => OutputFormatConfig {
+            audio_codec: "aac",
+            requires_stereo_downmix: false,
+            use_movflags_faststart: true,
+            supports_multiple_audio: true,
+        },
+    }
+}
+
 /// Returns true if the codec is widely playable in browsers (H.264, HEVC, VP9, AV1).
 pub fn is_browser_playable_codec(codec_name: &str) -> bool {
     let lower = codec_name.to_lowercase();
@@ -191,7 +236,7 @@ fn ffmpeg_base_args() -> Vec<String> {
     ]
 }
 
-/// Build args for segment extraction (-ss -t -i -c copy). Used for preview extraction.
+/// Build args for segment extraction (-ss -t -i -c copy).
 pub fn build_extract_args(
     input_path: &str,
     start_secs: f64,
@@ -220,11 +265,6 @@ pub fn build_extract_args(
 }
 
 /// Build FFmpeg transcode command.
-/// `output_duration_secs`: when set, adds `-t` to limit output duration (used for preview
-/// to match stream-copied original segment duration).
-/// `format_override`: when Some, use instead of options.effective_output_format() (e.g. "mp4" for preview).
-/// `start_offset_secs`: when set, adds `-ss` before `-i` for fast input seeking (used for transcoding
-/// a segment directly from input, e.g. non-playable original preview).
 pub fn build_ffmpeg_command(
     input_path: &str,
     output_path: &str,
@@ -256,29 +296,55 @@ pub fn build_ffmpeg_command(
         output_path
     );
 
+    let config = get_output_config(&output_format, &codec_str);
+    // Preview uses format_override (e.g. "mp4"); always single audio. Export honors preserve.
+    let is_preview = format_override.is_some();
+    let preserve_multi = !is_preview
+        && config.supports_multiple_audio
+        && options.effective_preserve_additional_audio_streams()
+        && options.effective_audio_stream_count() > 1;
+
     let mut args = ffmpeg_base_args();
     args.extend(["-progress".to_string(), "pipe:1".to_string()]);
     if let Some(ss) = start_offset_secs.filter(|&s| s > 0.0) {
         args.extend(["-ss".to_string(), ss.to_string()]);
     }
+    args.extend(["-i".to_string(), input_path.to_string()]);
+
+    if preserve_multi {
+        args.push("-map".to_string());
+        args.push("0:v".to_string());
+        let n = options.effective_audio_stream_count();
+        for i in 0..n {
+            args.push("-map".to_string());
+            args.push(format!("0:a:{}", i));
+        }
+    }
+
     args.extend([
-        "-i".to_string(),
-        input_path.to_string(),
         "-c:v".to_string(),
         codec_kind.ffmpeg_name().to_string(),
     ]);
 
-    let is_webm = output_format == "webm";
-    let is_mkv = output_format == "mkv";
-
     if remove_audio {
         args.push("-an".to_string());
-    } else if is_webm || (is_mkv && codec_str.contains("vp9")) {
-        // WebM and MKV+VP9: Opus. Opus supports stereo/mono only. Downmix to stereo to avoid
-        // "Invalid channel layout" errors (e.g. 5.1(side) from Dolby Digital Plus / Atmos).
+    } else if preserve_multi {
+        let n = options.effective_audio_stream_count();
+        for i in 0..n {
+            args.extend([
+                format!("-c:a:{}", i),
+                config.audio_codec.to_string(),
+                format!("-b:a:{}", i),
+                "128k".to_string(),
+            ]);
+            if config.requires_stereo_downmix {
+                args.extend([format!("-ac:a:{}", i), "2".to_string()]);
+            }
+        }
+    } else if config.requires_stereo_downmix {
         args.extend([
             "-c:a".to_string(),
-            "libopus".to_string(),
+            config.audio_codec.to_string(),
             "-b:a".to_string(),
             "128k".to_string(),
             "-ac".to_string(),
@@ -287,7 +353,7 @@ pub fn build_ffmpeg_command(
     } else {
         args.extend([
             "-c:a".to_string(),
-            "aac".to_string(),
+            config.audio_codec.to_string(),
             "-b:a".to_string(),
             "128k".to_string(),
         ]);
@@ -301,8 +367,7 @@ pub fn build_ffmpeg_command(
     args.extend(codec_kind.build_codec_args(quality, preset, tune, max_bitrate));
 
     args.extend(["-r".to_string(), fps.to_string()]);
-    // MP4 only: movflags +faststart. WebM and MKV don't use it.
-    if !is_webm && !is_mkv {
+    if config.use_movflags_faststart {
         args.extend(["-movflags".to_string(), "+faststart".to_string()]);
     }
 
@@ -706,6 +771,74 @@ mod tests {
         o.codec = Some("h264_videotoolbox".to_string());
         let result = build_ffmpeg_command("/in.mp4", "/out.mkv", &o, None, None, None);
         assert!(result.is_ok(), "lgpl build should accept MKV output: {:?}", result.err());
+    }
+
+    #[test]
+    fn preserve_additional_audio_streams_adds_map_and_per_track_codec() {
+        let mut o = opts();
+        o.preserve_additional_audio_streams = Some(true);
+        o.audio_stream_count = Some(3);
+        o.remove_audio = Some(false);
+        o.output_format = Some("mp4".to_string());
+        let args = build_ffmpeg_command("/in.mkv", "/out.mp4", &o, None, None, None).unwrap();
+        assert!(args.contains(&"-map".to_string()));
+        assert!(args.contains(&"0:v".to_string()));
+        assert!(args.contains(&"0:a:0".to_string()));
+        assert!(args.contains(&"0:a:1".to_string()));
+        assert!(args.contains(&"0:a:2".to_string()));
+        assert!(args.contains(&"-c:a:0".to_string()));
+        assert!(args.contains(&"-c:a:1".to_string()));
+        assert!(args.contains(&"-c:a:2".to_string()));
+        assert!(args.contains(&"aac".to_string()));
+    }
+
+    #[test]
+    fn preserve_additional_audio_streams_ignored_for_preview() {
+        let mut o = opts();
+        o.preserve_additional_audio_streams = Some(true);
+        o.audio_stream_count = Some(3);
+        o.remove_audio = Some(false);
+        let args = build_ffmpeg_command(
+            "/in.mkv",
+            "/out.mp4",
+            &o,
+            Some(3.0),
+            Some("mp4"),
+            None,
+        )
+        .unwrap();
+        assert!(!args.contains(&"0:a:1".to_string()), "Preview uses single audio");
+    }
+
+    #[test]
+    #[cfg(not(feature = "lgpl"))]
+    fn preserve_additional_audio_streams_ignored_for_webm() {
+        let mut o = opts();
+        o.preserve_additional_audio_streams = Some(true);
+        o.audio_stream_count = Some(3);
+        o.remove_audio = Some(false);
+        o.output_format = Some("webm".to_string());
+        o.codec = Some("libvpx-vp9".to_string());
+        let args = build_ffmpeg_command("/in.mkv", "/out.webm", &o, None, None, None).unwrap();
+        assert!(!args.contains(&"0:a:1".to_string()), "WebM supports single audio only");
+    }
+
+    #[test]
+    #[cfg(not(feature = "lgpl"))]
+    fn mkv_vp9_preserve_additional_audio_streams_downmixes_each_track() {
+        let mut o = opts();
+        o.preserve_additional_audio_streams = Some(true);
+        o.audio_stream_count = Some(2);
+        o.remove_audio = Some(false);
+        o.output_format = Some("mkv".to_string());
+        o.codec = Some("libvpx-vp9".to_string());
+        let args = build_ffmpeg_command("/in.mkv", "/out.mkv", &o, None, None, None).unwrap();
+        assert!(args.contains(&"-ac:a:0".to_string()));
+        assert!(args.contains(&"-ac:a:1".to_string()));
+        let ac0_idx = args.iter().position(|a| a == "-ac:a:0").unwrap();
+        let ac1_idx = args.iter().position(|a| a == "-ac:a:1").unwrap();
+        assert_eq!(args.get(ac0_idx + 1).unwrap(), "2");
+        assert_eq!(args.get(ac1_idx + 1).unwrap(), "2");
     }
 
     #[test]

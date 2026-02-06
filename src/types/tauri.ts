@@ -31,6 +31,7 @@ export interface GetVideoMetadataResult {
   formatName?: string;
   formatLongName?: string;
   nbStreams?: number;
+  audioStreamCount: number;
 }
 
 export interface CodecInfo {
@@ -58,4 +59,6 @@ export interface TranscodeOptions {
   outputFormat?: string;
   previewDuration?: number;
   durationSecs?: number;
+  preserveAdditionalAudioStreams?: boolean;
+  audioStreamCount?: number;
 }

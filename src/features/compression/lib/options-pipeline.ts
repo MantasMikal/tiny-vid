@@ -25,6 +25,7 @@ const DEFAULT_OPTIONS: CompressionOptions = {
   generatePreview: true,
   previewDuration: 3,
   tune: undefined,
+  preserveAdditionalAudioStreams: false,
 };
 
 const MP4 = "mp4" satisfies Format;

@@ -14,7 +14,7 @@ pub use builder::{
 };
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
 
-/// Used by both preview and transcoding.
+/// Progress payload for ffmpeg-progress events.
 #[derive(Debug, Clone, serde::Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct FfmpegProgressPayload {
@@ -50,6 +50,10 @@ pub struct TranscodeOptions {
     pub output_format: Option<String>,
     pub preview_duration: Option<u32>,
     pub duration_secs: Option<f64>,
+    /// Include all audio streams in output (transcoded to AAC/Opus). Default false.
+    pub preserve_additional_audio_streams: Option<bool>,
+    /// From metadata; used when preserve_additional_audio_streams. Default 1.
+    pub audio_stream_count: Option<u32>,
 }
 
 impl Default for TranscodeOptions {
@@ -66,6 +70,8 @@ impl Default for TranscodeOptions {
             output_format: Some("mp4".to_string()),
             preview_duration: Some(3),
             duration_secs: None,
+            preserve_additional_audio_streams: None,
+            audio_stream_count: None,
         }
     }
 }
@@ -111,10 +117,18 @@ impl TranscodeOptions {
         self.preview_duration.unwrap_or(3)
     }
 
-    /// Deterministic cache key from options (excludes duration_secs, for full transcode only).
+    pub fn effective_preserve_additional_audio_streams(&self) -> bool {
+        self.preserve_additional_audio_streams.unwrap_or(false)
+    }
+
+    pub fn effective_audio_stream_count(&self) -> u32 {
+        self.audio_stream_count.unwrap_or(1).max(1)
+    }
+
+    /// Cache key for full transcode (excludes duration_secs).
     pub fn options_cache_key(&self) -> String {
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.effective_codec(),
             self.effective_quality(),
             self.max_bitrate.map(|b| b.to_string()).as_deref().unwrap_or(""),
@@ -124,13 +138,15 @@ impl TranscodeOptions {
             self.effective_preset(),
             self.tune.as_deref().unwrap_or(""),
             self.effective_output_format(),
+            self.effective_preserve_additional_audio_streams(),
+            self.effective_audio_stream_count(),
         )
     }
 
-    /// Cache key for preview/estimate: excludes output_format (preview always uses MP4).
+    /// Cache key for preview/estimate (excludes output_format).
     pub fn options_cache_key_for_preview(&self) -> String {
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.effective_codec(),
             self.effective_quality(),
             self.max_bitrate.map(|b| b.to_string()).as_deref().unwrap_or(""),
@@ -139,11 +155,13 @@ impl TranscodeOptions {
             self.effective_remove_audio(),
             self.effective_preset(),
             self.tune.as_deref().unwrap_or(""),
+            self.effective_preserve_additional_audio_streams(),
+            self.effective_audio_stream_count(),
         )
     }
 }
 
-/// Use for PathBuf/Path when passing to FFmpeg or logging.
+/// Path to string for FFmpeg args or logging.
 pub fn path_to_string(path: &impl AsRef<std::path::Path>) -> String {
     path.as_ref().to_string_lossy().to_string()
 }

@@ -1,8 +1,8 @@
 //! Tauri IPC command tests. Uses test_util for app and invoke helpers.
 
 use crate::test_util::{
-    create_test_app, create_test_app_with_file_assoc, create_test_video, find_ffmpeg_and_set_env,
-    invoke_request,
+    create_test_app, create_test_app_with_file_assoc, create_test_video,
+    create_test_video_with_multi_audio, find_ffmpeg_and_set_env, invoke_request,
 };
 use crate::CodecInfo;
 use std::fs;
@@ -163,6 +163,50 @@ fn get_video_metadata_with_video_returns_metadata() {
     assert_eq!(meta.width, 320);
     assert_eq!(meta.height, 240);
     assert!(meta.size > 0);
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test get_video_metadata_multi_audio_returns_audio_stream_count -- --ignored"]
+fn get_video_metadata_multi_audio_returns_audio_stream_count() {
+    let ffmpeg = find_ffmpeg_and_set_env();
+
+    let app = create_test_app();
+    let window = tauri::WebviewWindowBuilder::new(&app, "main", Default::default())
+        .build()
+        .expect("failed to create window");
+
+    let dir = tempfile::tempdir().unwrap();
+    let video_path = dir.path().join("multi_audio.mp4");
+    let status = create_test_video_with_multi_audio(&ffmpeg, &video_path, 2.0, 2)
+        .expect("failed to create test video with multi audio");
+    assert!(status.success(), "ffmpeg failed to create multi-audio test video");
+
+    let body = InvokeBody::from(serde_json::json!({
+        "path": video_path.to_string_lossy()
+    }));
+    let res =
+        tauri::test::get_ipc_response(&window, invoke_request("get_video_metadata", body));
+    assert!(res.is_ok(), "get_video_metadata failed: {:?}", res.err());
+
+    let body = res.unwrap();
+    #[derive(serde::Deserialize)]
+    #[serde(rename_all = "camelCase")]
+    struct Meta {
+        duration: f64,
+        width: u32,
+        height: u32,
+        size: u64,
+        audio_stream_count: u32,
+    }
+    let meta: Meta = body.deserialize().unwrap();
+    assert!(meta.duration > 1.0 && meta.duration < 3.0, "duration={}", meta.duration);
+    assert_eq!(meta.width, 320);
+    assert_eq!(meta.height, 240);
+    assert!(meta.size > 0);
+    assert_eq!(
+        meta.audio_stream_count, 2,
+        "audioStreamCount should be 2 for multi-audio file"
+    );
 }
 
 #[test]

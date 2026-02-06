@@ -35,7 +35,11 @@ export interface VideoPreview {
   startOffsetSeconds?: number;
 }
 
-function toRustOptions(opts: CompressionOptions, durationSecs?: number): TranscodeOptions {
+function toRustOptions(
+  opts: CompressionOptions,
+  durationSecs?: number,
+  audioStreamCount?: number
+): TranscodeOptions {
   return {
     codec: opts.codec,
     quality: opts.quality,
@@ -48,6 +52,8 @@ function toRustOptions(opts: CompressionOptions, durationSecs?: number): Transco
     outputFormat: opts.outputFormat,
     previewDuration: opts.previewDuration ?? 3,
     durationSecs,
+    preserveAdditionalAudioStreams: opts.preserveAdditionalAudioStreams ?? false,
+    audioStreamCount,
   };
 }
 
@@ -147,7 +153,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   },
 
   refreshFfmpegCommandPreview: async () => {
-    const { compressionOptions, inputPath } = get();
+    const { compressionOptions, inputPath, videoMetadata } = get();
     if (!compressionOptions) return;
     const requestId = ++commandPreviewRequestId;
     const tid = setTimeout(() => {
@@ -157,7 +163,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     }, 0);
     try {
       const result = await invoke<string>("preview_ffmpeg_command", {
-        options: toRustOptions(compressionOptions),
+        options: toRustOptions(compressionOptions, undefined, videoMetadata?.audioStreamCount),
         inputPath,
       });
       if (commandPreviewRequestId === requestId) {
@@ -271,7 +277,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       () =>
         invoke<string>("ffmpeg_transcode_to_temp", {
           inputPath,
-          options: toRustOptions(compressionOptions, videoMetadata?.duration),
+          options: toRustOptions(
+            compressionOptions,
+            videoMetadata?.duration,
+            videoMetadata?.audioStreamCount
+          ),
         }),
       "Transcode Error"
     );
@@ -379,7 +389,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       () =>
         invoke<FfmpegPreviewResult>("ffmpeg_preview", {
           inputPath,
-          options: toRustOptions(compressionOptions),
+          options: toRustOptions(
+            compressionOptions,
+            undefined,
+            get().videoMetadata?.audioStreamCount
+          ),
           previewStartSeconds,
           includeEstimate,
         }),

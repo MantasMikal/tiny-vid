@@ -36,6 +36,7 @@
     "check": "yarn test:all && yarn lint && yarn lint:rust && yarn format:check && tsc --noEmit",
     "check:rust": "yarn prepare-ffmpeg:stub && cd src-tauri && cargo check",
     "lint:rust": "yarn prepare-ffmpeg:stub && cd src-tauri && cargo clippy",
+    "lint:rust:fix": "yarn prepare-ffmpeg:stub && cd src-tauri && cargo clippy --fix --allow-dirty --allow-staged",
     "test": "cd src-tauri && cargo test",
     "test:all": "yarn test && yarn test:ffmpeg",
     "test:ffmpeg": "cd src-tauri && cargo test --lib -- --ignored --test-threads=1",

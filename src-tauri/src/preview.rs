@@ -27,9 +27,7 @@ fn estimate_step_count(segment_count: usize) -> usize {
     segment_count * 2
 }
 
-/// Context for aggregating preview progress across multiple FFmpeg steps.
-/// Supports sub-range emission via base_step for unified multi-phase progress.
-/// Emits (base_step + step_index + p) / total_steps.
+/// Progress context for multi-step preview (extract + transcode).
 pub(crate) struct PreviewProgressCtx {
     app: tauri::AppHandle,
     label: String,
@@ -39,7 +37,6 @@ pub(crate) struct PreviewProgressCtx {
 }
 
 impl PreviewProgressCtx {
-    /// Create a progress context. Use base_step=0 for a standalone pipeline, or base_step>0 for a sub-range of a larger progress.
     fn new(
         app: tauri::AppHandle,
         label: String,
@@ -78,7 +75,6 @@ impl PreviewProgressCtx {
 }
 
 /// Creates a callback that emits ffmpeg-progress with a step label.
-/// Use for single-step operations (e.g. transcode).
 pub(crate) fn make_progress_emitter(
     app: tauri::AppHandle,
     label: String,
@@ -94,12 +90,9 @@ pub(crate) fn make_progress_emitter(
     })
 }
 
-/// Runs FFmpeg with optional progress and error emission. pub(crate) for use by commands.
-///
-/// - `emit`: When Some, used for ffmpeg-error emission on failure. When `progress_callback` is
-///   None, also passed to the runner for direct ffmpeg-progress emission.
-/// - `progress_callback`: When Some, used for progress instead of direct emit (e.g. preview
-///   aggregate progress). `emit` is still used for error emission.
+/// Runs FFmpeg with optional progress and error emission.
+/// `emit`: when Some, used for ffmpeg-error on failure; when `progress_callback` is None, also for ffmpeg-progress.
+/// `progress_callback`: when Some, used for progress instead of direct emit (e.g. preview aggregate); `emit` still used for errors.
 pub(crate) async fn run_ffmpeg_step(
     args: Vec<String>,
     emit: Option<(&tauri::AppHandle, &str)>,
@@ -152,7 +145,6 @@ pub(crate) async fn run_ffmpeg_step(
     }
 }
 
-/// Handles both emit (with app) and no-emit (silent) paths.
 async fn run_ffmpeg_with_progress(
     args: Vec<String>,
     duration_secs: Option<f64>,
@@ -560,16 +552,24 @@ pub(crate) async fn run_preview_with_estimate_core(
         estimated_size = Some(fresh);
     }
 
+    let mut total_estimate = estimated_size.unwrap_or(0);
+    if options.effective_preserve_additional_audio_streams() && options.effective_audio_stream_count() > 1 {
+        let extra_tracks = options.effective_audio_stream_count() - 1;
+        let audio_bitrate_bps: u64 = 128_000;
+        let extras = (extra_tracks as u64)
+            .saturating_mul((meta.duration * (audio_bitrate_bps as f64) / 8.0) as u64);
+        total_estimate = total_estimate.saturating_add(extras);
+    }
+
     Ok(PreviewWithEstimateResult {
         preview: preview_result,
-        estimated_size: Some(estimated_size.unwrap_or(0)),
+        estimated_size: Some(total_estimate),
     })
 }
 
-/// Core preview logic. When emit is Some, emits progress events; when None, runs silently (for tests).
-/// When progress_ctx_override is Some, uses it for progress emission (e.g. when part of unified preview+estimate).
-/// When video_duration_override is Some, skips ffprobe for input duration.
-/// When meta_override is Some, uses it for duration and codec (avoids extra ffprobe when caller already has it).
+/// Core preview logic. When emit is None, runs silently (tests).
+/// `progress_ctx_override`: when Some, uses it for progress (e.g. unified preview+estimate).
+/// `video_duration_override` / `meta_override`: when Some, skip ffprobe when caller already has it.
 pub(crate) async fn run_preview_core(
     input_path: &Path,
     options: &TranscodeOptions,

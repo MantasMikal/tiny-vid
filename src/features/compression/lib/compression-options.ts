@@ -172,6 +172,7 @@ export interface CompressionOptions {
   generatePreview?: boolean;
   previewDuration?: number;
   tune?: string;
+  preserveAdditionalAudioStreams?: boolean;
 }
 
 function getCrfRange(codec: string): { low: number; high: number } {

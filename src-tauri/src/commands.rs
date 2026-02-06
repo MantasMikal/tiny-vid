@@ -56,6 +56,7 @@ pub(crate) struct VideoMetadataResult {
     format_long_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     nb_streams: Option<u32>,
+    audio_stream_count: u32,
 }
 
 #[tauri::command(rename_all = "camelCase")]
@@ -188,6 +189,7 @@ pub fn get_video_metadata(path: PathBuf) -> Result<VideoMetadataResult, AppError
         format_name: meta.format_name,
         format_long_name: meta.format_long_name,
         nb_streams: meta.nb_streams,
+        audio_stream_count: meta.audio_stream_count,
     })
 }
 

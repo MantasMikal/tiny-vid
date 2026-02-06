@@ -9,7 +9,7 @@ use std::path::{Path, PathBuf};
 
 use crate::ffmpeg::TranscodeOptions;
 
-/// Build TranscodeOptions with overrides. Use in integration tests.
+/// Build TranscodeOptions with overrides.
 pub fn opts_with(overrides: impl FnOnce(&mut TranscodeOptions)) -> TranscodeOptions {
     let mut o = TranscodeOptions::default();
     overrides(&mut o);
@@ -119,6 +119,72 @@ pub fn create_test_video(
             .stderr(Stdio::null())
             .status()
     }
+}
+
+/// Creates a test video with multiple audio tracks using lavfi testsrc + sine.
+/// `audio_track_count`: number of separate audio streams (e.g. 2 = two stereo tracks).
+/// Uses libx264 (standalone) or h264_videotoolbox (lgpl) for video.
+pub fn create_test_video_with_multi_audio(
+    ffmpeg: &Path,
+    output_path: &Path,
+    duration_secs: f32,
+    audio_track_count: u32,
+) -> std::io::Result<std::process::ExitStatus> {
+    if audio_track_count == 0 {
+        return create_test_video(ffmpeg, output_path, duration_secs);
+    }
+
+    let duration_arg = format!("{}", duration_secs);
+    let mut args = vec![
+        "-loglevel".to_string(),
+        "error".to_string(),
+        "-y".to_string(),
+        "-f".to_string(),
+        "lavfi".to_string(),
+        "-i".to_string(),
+        format!("testsrc=duration={}:size=320x240:rate=30", duration_arg),
+    ];
+
+    for i in 0..audio_track_count {
+        let freq = 440 + (i as i32) * 220;
+        args.push("-f".to_string());
+        args.push("lavfi".to_string());
+        args.push("-i".to_string());
+        args.push(format!("sine=frequency={}:duration={}", freq, duration_arg));
+    }
+
+    args.push("-map".to_string());
+    args.push("0:v".to_string());
+    for i in 0..audio_track_count {
+        args.push("-map".to_string());
+        args.push(format!("{}:a", i + 1));
+    }
+    args.push("-c:v".to_string());
+    #[cfg(not(feature = "lgpl"))]
+    args.push("libx264".to_string());
+    #[cfg(not(feature = "lgpl"))]
+    {
+        args.push("-pix_fmt".to_string());
+        args.push("yuv420p".to_string());
+    }
+    #[cfg(feature = "lgpl")]
+    {
+        args.push("h264_videotoolbox".to_string());
+        args.push("-allow_sw".to_string());
+        args.push("1".to_string());
+        args.push("-q:v".to_string());
+        args.push("25".to_string());
+    }
+    args.push("-c:a".to_string());
+    args.push("aac".to_string());
+    args.push("-shortest".to_string());
+    args.push(output_path.to_str().unwrap().to_string());
+
+    Command::new(ffmpeg)
+        .args(&args)
+        .stdout(Stdio::null())
+        .stderr(Stdio::null())
+        .status()
 }
 
 pub fn create_test_app() -> tauri::App<tauri::test::MockRuntime> {

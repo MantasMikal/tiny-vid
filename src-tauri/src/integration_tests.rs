@@ -3,12 +3,16 @@
 //! `cargo test ffmpeg_progress_emission_integration -- --ignored`
 
 use crate::ffmpeg::TranscodeOptions;
+use crate::ffmpeg::ffprobe::get_video_metadata_impl;
 use crate::ffmpeg::{
     build_ffmpeg_command, cleanup_transcode_temp, run_ffmpeg_blocking, set_transcode_temp,
     verify_video, TempFileManager,
 };
 use crate::preview::{run_preview_core, run_preview_with_estimate_core};
-use crate::test_util::{create_test_video, find_ffmpeg_and_set_env, opts_with, preview_options};
+use crate::test_util::{
+    create_test_video, create_test_video_with_multi_audio, find_ffmpeg_and_set_env, opts_with,
+    preview_options,
+};
 use std::fs;
 use std::sync::Arc;
 
@@ -168,6 +172,72 @@ fn ffmpeg_transcode_integration() {
     for (options, duration_secs, skip_if_encoder_missing) in option_sets {
         run_transcode_integration(options, duration_secs, skip_if_encoder_missing);
     }
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_transcode_preserve_additional_audio_streams_integration -- --ignored"]
+fn ffmpeg_transcode_preserve_additional_audio_streams_integration() {
+    let ffmpeg = find_ffmpeg_and_set_env();
+
+    let dir = tempfile::tempdir().unwrap();
+    let input_path = dir.path().join("input_multi_audio.mp4");
+    let output_path = dir.path().join("output.mp4");
+
+    let status = create_test_video_with_multi_audio(&ffmpeg, &input_path, 2.0, 2)
+        .expect("failed to create test video with multi audio");
+    assert!(status.success(), "ffmpeg failed to create multi-audio test video");
+
+    let input_meta = get_video_metadata_impl(&input_path).expect("get_video_metadata_impl input");
+    assert_eq!(
+        input_meta.audio_stream_count, 2,
+        "input should have 2 audio streams"
+    );
+
+    let options = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preserve_additional_audio_streams = Some(true);
+        o.audio_stream_count = Some(2);
+        o.codec = Some(if cfg!(feature = "lgpl") {
+            "h264_videotoolbox".into()
+        } else {
+            "libx264".into()
+        });
+    });
+
+    let args = build_ffmpeg_command(
+        input_path.to_str().unwrap(),
+        output_path.to_str().unwrap(),
+        &options,
+        None,
+        None,
+        None,
+    )
+    .expect("build_ffmpeg_command");
+
+    let result = run_ffmpeg_blocking(args, None, None, None, None, None);
+    assert!(
+        result.is_ok(),
+        "run_ffmpeg_blocking failed: {:?}",
+        result.err()
+    );
+    assert!(output_path.exists());
+    assert!(fs::metadata(&output_path).unwrap().len() > 0);
+
+    let output_meta =
+        get_video_metadata_impl(&output_path).expect("get_video_metadata_impl output");
+    assert_eq!(
+        output_meta.audio_stream_count, 2,
+        "output should preserve 2 audio streams, got {}",
+        output_meta.audio_stream_count
+    );
+
+    let verify_result = verify_video(&output_path, options.codec.as_deref());
+    assert!(
+        verify_result.is_ok(),
+        "Encoded video failed verification: {}",
+        verify_result.unwrap_err()
+    );
 }
 
 #[test]
@@ -393,6 +463,68 @@ fn ffmpeg_preview_estimation_sanity_integration() {
         "estimated_size ({}) should be reasonable (not >> input_size {})",
         estimated_size,
         input_size
+    );
+}
+
+#[test]
+#[ignore = "requires FFmpeg on system; run with: cargo test ffmpeg_preview_estimate_preserve_additional_audio_streams_integration -- --ignored --test-threads=1"]
+fn ffmpeg_preview_estimate_preserve_additional_audio_streams_integration() {
+    let ffmpeg = find_ffmpeg_and_set_env();
+
+    let dir = tempfile::tempdir().unwrap();
+    let input_path = dir.path().join("input_multi_audio.mp4");
+    let status = create_test_video_with_multi_audio(&ffmpeg, &input_path, 5.0, 2)
+        .expect("failed to create test video with multi audio");
+    assert!(status.success(), "ffmpeg failed to create multi-audio test video");
+
+    let opts_without_preserve = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preview_duration = Some(3);
+        o.codec = Some(if cfg!(feature = "lgpl") {
+            "h264_videotoolbox".into()
+        } else {
+            "libx264".into()
+        });
+    });
+
+    let opts_with_preserve = opts_with(|o| {
+        o.remove_audio = Some(false);
+        o.preset = Some("ultrafast".into());
+        o.preview_duration = Some(3);
+        o.preserve_additional_audio_streams = Some(true);
+        o.audio_stream_count = Some(2);
+        o.codec = Some(if cfg!(feature = "lgpl") {
+            "h264_videotoolbox".into()
+        } else {
+            "libx264".into()
+        });
+    });
+
+    let result_without = tauri::async_runtime::block_on(run_preview_with_estimate_core(
+        &input_path,
+        &opts_without_preserve,
+        None,
+        None,
+    ))
+    .expect("run_preview_with_estimate_core without preserve");
+
+    let result_with = tauri::async_runtime::block_on(run_preview_with_estimate_core(
+        &input_path,
+        &opts_with_preserve,
+        None,
+        None,
+    ))
+    .expect("run_preview_with_estimate_core with preserve");
+
+    let estimate_without = result_without.estimated_size.unwrap();
+    let estimate_with = result_with.estimated_size.unwrap();
+
+    assert!(
+        estimate_with > estimate_without,
+        "estimate with preserve ({}) should be larger than without ({})",
+        estimate_with,
+        estimate_without
     );
 }
 
