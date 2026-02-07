@@ -9,8 +9,8 @@ use tauri::webview::InvokeRequest;
 use crate::CodecInfo;
 use crate::commands;
 use crate::error::AppError;
-use crate::ffmpeg::TranscodeOptions;
 use crate::ffmpeg::ffprobe::get_video_metadata_impl;
+use crate::ffmpeg::{SizeEstimate, TranscodeOptions};
 use crate::preview::{run_preview_core, run_preview_with_estimate_core};
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
@@ -28,7 +28,7 @@ pub struct PreviewWithEstimateResultForTest {
     #[serde(flatten)]
     pub preview: PreviewResultForTest,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub estimated_size: Option<u64>,
+    pub estimate: Option<SizeEstimate>,
 }
 
 #[derive(Debug, Clone, serde::Deserialize)]
@@ -141,7 +141,7 @@ pub async fn run_preview_with_estimate_for_test(
             compressed_path: result.preview.compressed_path,
             start_offset_seconds: result.preview.start_offset_seconds,
         },
-        estimated_size: result.estimated_size,
+        estimate: result.estimate,
     })
 }
 

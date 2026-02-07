@@ -20,6 +20,7 @@ import type {
   BuildVariantResult,
   CodecInfo,
   FfmpegPreviewResult,
+  FfmpegSizeEstimate,
   TranscodeOptions,
 } from "@/types/tauri";
 
@@ -127,7 +128,7 @@ export interface CompressionState {
   inputPath: string | null;
   videoPreview: VideoPreview | null;
   videoUploading: boolean;
-  estimatedSize: number | null;
+  estimate: FfmpegSizeEstimate | null;
   videoMetadata: VideoMetadata | null;
   previewStartSeconds: number;
   isSaving: boolean;
@@ -163,7 +164,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   inputPath: null,
   videoPreview: null,
   videoUploading: false,
-  estimatedSize: null,
+  estimate: null,
   videoMetadata: null,
   previewStartSeconds: 0,
   isSaving: false,
@@ -237,7 +238,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       videoUploading: true,
       videoPreview: null,
       videoMetadata: null,
-      estimatedSize: null,
+      estimate: null,
       previewStartSeconds: 0,
       error: null,
     });
@@ -269,7 +270,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       );
     }
     if (!compressionOptions?.generatePreview) {
-      set({ estimatedSize: null });
+      set({ estimate: null });
     }
 
     void get().refreshFfmpegCommandPreview();
@@ -401,7 +402,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       inputPath: null,
       videoPreview: null,
       videoMetadata: null,
-      estimatedSize: null,
+      estimate: null,
       previewStartSeconds: 0,
       error: null,
     });
@@ -470,7 +471,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           compressedSrc,
           startOffsetSeconds: result.value.startOffsetSeconds,
         },
-        ...(result.value.estimatedSize != null && { estimatedSize: result.value.estimatedSize }),
+        ...(result.value.estimate != null && { estimate: result.value.estimate }),
         workerState: WorkerState.Idle,
         progress: 1,
         progressStep: null,

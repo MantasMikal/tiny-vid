@@ -9,22 +9,34 @@ use crate::error::AppError;
 use crate::ffmpeg::ffprobe::{VideoMetadata, get_video_metadata_impl};
 use crate::ffmpeg::parse_ffmpeg_error;
 use crate::ffmpeg::{
-    FfmpegProgressPayload, FileSignature, TempFileManager, TranscodeOptions, build_extract_args,
-    build_ffmpeg_command, cleanup_previous_preview_paths, file_signature, get_cached_estimate,
-    get_cached_preview, get_cached_segments, is_preview_stream_copy_safe_audio_codec,
-    is_preview_stream_copy_safe_codec, path_to_string, run_ffmpeg_blocking, set_cached_estimate,
-    set_cached_preview, store_preview_paths_for_cleanup,
+    EstimateConfidence, FfmpegProgressPayload, FileSignature, SizeEstimate, TempFileManager,
+    TranscodeOptions, build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
+    file_signature, get_cached_estimate, get_cached_preview, get_cached_segments,
+    is_preview_stream_copy_safe_audio_codec, is_preview_stream_copy_safe_codec, path_to_string,
+    run_ffmpeg_blocking, set_cached_estimate, set_cached_preview, store_preview_paths_for_cleanup,
 };
 use tauri::Emitter;
 
 /// Optional emit context for progress events: (AppHandle, window label).
 pub(crate) type PreviewEmit = Option<(tauri::AppHandle, String)>;
 
-/// Step counts for progress emission. Preview: extract + transcode. Estimate: N segments × (extract + transcode).
+/// Step counts for progress emission. Preview: extract + transcode. Estimate: up to 5 sample encodes.
 const PREVIEW_STEPS: usize = 2;
+const ESTIMATE_SHORT_VIDEO_THRESHOLD_SECS: f64 = 12.0;
+const ESTIMATE_ADAPTIVE_MIN_DURATION_SECS: f64 = 30.0;
+const ESTIMATE_BASE_SAMPLE_DURATION_SECS: f64 = 1.5;
+const ESTIMATE_MAX_SAMPLED_SECONDS: f64 = 7.5;
+const ESTIMATE_EXTRA_SAMPLE_CV_THRESHOLD: f64 = 0.35;
+const ESTIMATE_HIGH_CONFIDENCE_MAX_CV: f64 = 0.15;
+const ESTIMATE_MEDIUM_CONFIDENCE_MAX_CV: f64 = 0.35;
+const ESTIMATE_METHOD: &str = "sampled_bitrate";
 
-fn estimate_step_count(segment_count: usize) -> usize {
-    segment_count * 2
+fn estimate_step_count(video_duration: f64) -> usize {
+    if video_duration > ESTIMATE_SHORT_VIDEO_THRESHOLD_SECS {
+        5
+    } else {
+        1
+    }
 }
 
 /// Progress context for multi-step preview (extract + transcode).
@@ -155,6 +167,21 @@ async fn run_ffmpeg_with_progress(
     Ok(())
 }
 
+fn complete_progress_steps(
+    progress_ctx: Option<&PreviewProgressCtx>,
+    count: usize,
+    step_label: &'static str,
+) {
+    let Some(ctx) = progress_ctx else {
+        return;
+    };
+    for _ in 0..count {
+        let cb = ctx.make_callback(step_label);
+        cb(1.0);
+        ctx.advance();
+    }
+}
+
 fn clamp_preview_start_seconds(requested: f64, video_duration: f64, preview_duration: f64) -> f64 {
     if !requested.is_finite() {
         return 0.0;
@@ -220,6 +247,12 @@ impl Drop for TempCleanup {
 struct SegmentSet {
     paths: Vec<PathBuf>,
     created: bool,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq)]
+struct EstimateSampleWindow {
+    start_seconds: f64,
+    duration_seconds: f64,
 }
 
 struct OriginalPreviewTranscodeCtx<'a> {
@@ -427,132 +460,233 @@ async fn transcode_original_preview_segment_or_use_cache(
     }
 }
 
-/// Transcodes estimation segments (begin/mid/end) and computes size estimate.
-/// Uses provided segment durations to avoid ffprobe calls on the extracted samples.
-async fn estimate_size_from_segments(
+fn clamp_sample_start(center: f64, sample_duration: f64, video_duration: f64) -> f64 {
+    let max_start = (video_duration - sample_duration).max(0.0);
+    (center - (sample_duration / 2.0)).clamp(0.0, max_start)
+}
+
+fn sample_duration_for_video(video_duration: f64) -> f64 {
+    ESTIMATE_BASE_SAMPLE_DURATION_SECS.min(video_duration.max(0.1))
+}
+
+fn sample_at_percent(
+    video_duration: f64,
+    sample_duration: f64,
+    percent: f64,
+) -> EstimateSampleWindow {
+    EstimateSampleWindow {
+        start_seconds: clamp_sample_start(
+            video_duration * percent,
+            sample_duration,
+            video_duration,
+        ),
+        duration_seconds: sample_duration,
+    }
+}
+
+fn base_estimate_samples(video_duration: f64) -> Vec<EstimateSampleWindow> {
+    if video_duration <= 0.0 {
+        return vec![];
+    }
+    if video_duration <= ESTIMATE_SHORT_VIDEO_THRESHOLD_SECS {
+        return vec![EstimateSampleWindow {
+            start_seconds: 0.0,
+            duration_seconds: video_duration,
+        }];
+    }
+    let sample_duration = sample_duration_for_video(video_duration);
+    vec![
+        sample_at_percent(video_duration, sample_duration, 0.05),
+        sample_at_percent(video_duration, sample_duration, 0.50),
+        sample_at_percent(video_duration, sample_duration, 0.95),
+    ]
+}
+
+fn extra_estimate_samples(video_duration: f64) -> Vec<EstimateSampleWindow> {
+    let sample_duration = sample_duration_for_video(video_duration);
+    vec![
+        sample_at_percent(video_duration, sample_duration, 0.25),
+        sample_at_percent(video_duration, sample_duration, 0.75),
+    ]
+}
+
+fn coefficient_of_variation(values: &[f64]) -> f64 {
+    if values.len() < 2 {
+        return 0.0;
+    }
+    let mean = values.iter().sum::<f64>() / values.len() as f64;
+    if mean <= 0.0 {
+        return 0.0;
+    }
+    let variance = values
+        .iter()
+        .map(|v| {
+            let diff = *v - mean;
+            diff * diff
+        })
+        .sum::<f64>()
+        / values.len() as f64;
+    variance.sqrt() / mean
+}
+
+fn aggregate_bytes_per_sec(values: &[f64]) -> Option<f64> {
+    if values.is_empty() {
+        return None;
+    }
+    if values.len() < 5 {
+        return Some(values.iter().sum::<f64>() / values.len() as f64);
+    }
+    let mut sorted = values.to_vec();
+    sorted.sort_by(f64::total_cmp);
+    let trimmed = &sorted[1..sorted.len() - 1];
+    Some(trimmed.iter().sum::<f64>() / trimmed.len() as f64)
+}
+
+fn confidence_band_for_cv(cv: f64) -> (EstimateConfidence, f64) {
+    if cv <= ESTIMATE_HIGH_CONFIDENCE_MAX_CV {
+        (EstimateConfidence::High, 0.08)
+    } else if cv <= ESTIMATE_MEDIUM_CONFIDENCE_MAX_CV {
+        (EstimateConfidence::Medium, 0.15)
+    } else {
+        (EstimateConfidence::Low, 0.30)
+    }
+}
+
+async fn encode_estimate_sample(
     input_path: &Path,
-    segment_paths: &[PathBuf],
-    segment_durations: &[f64],
     options: &TranscodeOptions,
+    sample: EstimateSampleWindow,
+    sample_index: usize,
     cleanup: &mut TempCleanup,
     emit: Option<(&tauri::AppHandle, &str)>,
     progress_ctx: Option<&PreviewProgressCtx>,
-) -> Result<u64, AppError> {
-    if segment_paths.is_empty() {
-        return Ok(0);
+) -> Result<f64, AppError> {
+    if sample.duration_seconds <= 0.0 {
+        return Err(AppError::from(
+            "Estimate sample duration must be greater than zero",
+        ));
     }
-    let output_paths: Vec<PathBuf> = (0..segment_paths.len())
-        .map(|i| {
-            TempFileManager
-                .create(&format!("preview-estimate-{}.mp4", i), None)
-                .map_err(AppError::from)
-        })
-        .collect::<Result<Vec<_>, _>>()?;
-    for path in &output_paths {
-        cleanup.add(path.clone());
-    }
-    let estimate_opts = preview_transcode_options(options);
-
-    for (i, (orig, out)) in segment_paths.iter().zip(output_paths.iter()).enumerate() {
-        let output_duration = segment_durations.get(i).copied().filter(|d| *d > 0.0);
-        let args = build_ffmpeg_command(
-            &path_to_string(orig),
-            &path_to_string(out),
-            &estimate_opts,
-            output_duration,
-            Some("mp4"),
+    let output_format = options.effective_output_format();
+    let output_path = TempFileManager
+        .create(
+            &format!("preview-estimate-{}.{}", sample_index, output_format),
             None,
-        )?;
-        run_ffmpeg_with_progress(
-            args,
-            output_duration,
-            emit,
-            progress_ctx,
-            "preview_estimate",
         )
-        .await?;
-    }
+        .map_err(AppError::from)?;
+    cleanup.add(output_path.clone());
 
-    let input_size = fs::metadata(input_path)?.len();
-    let mut total_orig: u64 = 0;
-    let mut total_comp: u64 = 0;
-    for (orig, compressed) in segment_paths.iter().zip(output_paths.iter()) {
-        let orig_size = fs::metadata(orig)?.len();
-        let comp_size = fs::metadata(compressed)?.len();
-        total_orig = total_orig.saturating_add(orig_size);
-        total_comp = total_comp.saturating_add(comp_size);
-    }
-    let ratio = if total_orig > 0 {
-        total_comp as f64 / total_orig as f64
-    } else {
-        0.0
-    };
-    let estimated_size = (input_size as f64 * ratio) as u64;
-    let max_reasonable = input_size.saturating_mul(2);
-    Ok(estimated_size.min(max_reasonable))
-}
-
-async fn compute_estimate_size(
-    input_path: &Path,
-    input_str: &str,
-    preview_duration_u32: u32,
-    preview_duration: f64,
-    video_duration: f64,
-    options: &TranscodeOptions,
-    emit: Option<(&tauri::AppHandle, &str)>,
-    progress_ctx: Option<&PreviewProgressCtx>,
-) -> Result<u64, AppError> {
-    let segments = compute_preview_segments(video_duration, preview_duration);
-    let segment_durations: Vec<f64> = segments.iter().map(|(_, dur)| *dur).collect();
-    let temp = TempFileManager;
-    let mut cleanup = TempCleanup::new();
-    // file_signature: None — estimate segments (begin/mid/end) are ephemeral; we transcode and discard.
-    // We don't use the segment cache here to avoid key overlap with preview segments (which use
-    // user-selected start) and to keep the segment store focused on preview reuse.
-    let segment_set = extract_segments_or_use_cache(
-        input_str,
-        preview_duration_u32,
-        0,
-        &segments,
-        &temp,
+    let args = build_ffmpeg_command(
+        &path_to_string(input_path),
+        &path_to_string(&output_path),
+        options,
+        Some(sample.duration_seconds),
         None,
+        Some(sample.start_seconds),
+    )?;
+    run_ffmpeg_with_progress(
+        args,
+        Some(sample.duration_seconds),
         emit,
         progress_ctx,
         "preview_estimate",
     )
     .await?;
-    for path in &segment_set.paths {
-        cleanup.add(path.clone());
-    }
-    estimate_size_from_segments(
-        input_path,
-        &segment_set.paths,
-        &segment_durations,
-        options,
-        &mut cleanup,
-        emit,
-        progress_ctx,
-    )
-    .await
+
+    let output_size = fs::metadata(&output_path)?.len() as f64;
+    Ok(output_size / sample.duration_seconds.max(0.001))
 }
 
-/// Segment positions for estimation: (start_offset_secs, duration_secs).
-/// Uses begin/mid/end sampling; when video is shorter, returns a single segment.
-pub fn compute_preview_segments(video_duration: f64, preview_duration: f64) -> Vec<(f64, f64)> {
-    if video_duration <= 0.0 || preview_duration <= 0.0 {
-        return vec![(0.0, preview_duration.max(1.0))];
+async fn compute_estimate_size(
+    input_path: &Path,
+    video_duration: f64,
+    options: &TranscodeOptions,
+    emit: Option<(&tauri::AppHandle, &str)>,
+    progress_ctx: Option<&PreviewProgressCtx>,
+) -> Result<SizeEstimate, AppError> {
+    if !video_duration.is_finite() || video_duration <= 0.0 {
+        return Err(AppError::from("Invalid video duration for size estimation"));
     }
-    if video_duration <= preview_duration {
-        return vec![(0.0, video_duration)];
+
+    let input_size = fs::metadata(input_path)?.len();
+    let max_reasonable = input_size.saturating_mul(2);
+
+    let base_samples = base_estimate_samples(video_duration);
+    if base_samples.is_empty() {
+        return Err(AppError::from("No estimate samples were planned"));
     }
-    let segment_duration = preview_duration / 3.0;
-    let mid_start = (video_duration / 2.0) - (segment_duration / 2.0);
-    let end_start = (video_duration - segment_duration).max(0.0);
-    vec![
-        (0.0, preview_duration),
-        (mid_start.max(0.0), segment_duration),
-        (end_start, segment_duration),
-    ]
+    let mut remaining_extra_steps = if base_samples.len() == 3 {
+        estimate_step_count(video_duration).saturating_sub(base_samples.len())
+    } else {
+        0
+    };
+
+    let mut cleanup = TempCleanup::new();
+    let mut sample_rates = Vec::new();
+    let mut sample_seconds_total = 0.0;
+    let mut sample_index = 0usize;
+
+    for sample in &base_samples {
+        let bytes_per_sec = encode_estimate_sample(
+            input_path,
+            options,
+            *sample,
+            sample_index,
+            &mut cleanup,
+            emit,
+            progress_ctx,
+        )
+        .await?;
+        sample_rates.push(bytes_per_sec);
+        sample_seconds_total += sample.duration_seconds;
+        sample_index += 1;
+    }
+
+    let base_cv = coefficient_of_variation(&sample_rates);
+    let should_add_extra_samples = video_duration >= ESTIMATE_ADAPTIVE_MIN_DURATION_SECS
+        && base_cv > ESTIMATE_EXTRA_SAMPLE_CV_THRESHOLD
+        && sample_seconds_total < ESTIMATE_MAX_SAMPLED_SECONDS;
+    if should_add_extra_samples {
+        for sample in extra_estimate_samples(video_duration) {
+            if sample_seconds_total + sample.duration_seconds > ESTIMATE_MAX_SAMPLED_SECONDS {
+                break;
+            }
+            let bytes_per_sec = encode_estimate_sample(
+                input_path,
+                options,
+                sample,
+                sample_index,
+                &mut cleanup,
+                emit,
+                progress_ctx,
+            )
+            .await?;
+            sample_rates.push(bytes_per_sec);
+            sample_seconds_total += sample.duration_seconds;
+            sample_index += 1;
+            remaining_extra_steps = remaining_extra_steps.saturating_sub(1);
+        }
+    }
+    complete_progress_steps(progress_ctx, remaining_extra_steps, "preview_estimate");
+
+    let aggregate_bps = aggregate_bytes_per_sec(&sample_rates)
+        .ok_or_else(|| AppError::from("Unable to aggregate estimate sample bitrates"))?;
+    let best_size = ((aggregate_bps * video_duration).max(0.0) as u64).min(max_reasonable);
+    let cv = coefficient_of_variation(&sample_rates);
+    let (confidence, band) = confidence_band_for_cv(cv);
+    let low_size = ((best_size as f64 * (1.0 - band)).max(0.0) as u64).min(best_size);
+    let high_size = ((best_size as f64 * (1.0 + band)) as u64)
+        .max(best_size)
+        .min(max_reasonable);
+
+    Ok(SizeEstimate {
+        best_size,
+        low_size,
+        high_size,
+        confidence,
+        method: ESTIMATE_METHOD.to_string(),
+        sample_count: sample_rates.len() as u32,
+        sample_seconds_total,
+    })
 }
 
 #[derive(serde::Serialize)]
@@ -572,7 +706,7 @@ pub(crate) struct PreviewWithEstimateResult {
     #[serde(flatten)]
     pub(crate) preview: PreviewResult,
     #[serde(skip_serializing_if = "Option::is_none")]
-    pub(crate) estimated_size: Option<u64>,
+    pub(crate) estimate: Option<SizeEstimate>,
 }
 
 /// Unified preview + estimate. Runs both phases with a single progress stream 0-1.
@@ -586,9 +720,8 @@ pub(crate) async fn run_preview_with_estimate_core(
     emit: PreviewEmit,
 ) -> Result<PreviewWithEstimateResult, AppError> {
     let meta = get_video_metadata_async(input_path).await?;
-    let preview_duration = options.effective_preview_duration() as f64;
-    let segment_count = compute_preview_segments(meta.duration, preview_duration).len();
-    let total_steps = PREVIEW_STEPS + estimate_step_count(segment_count);
+    let estimate_steps = estimate_step_count(meta.duration);
+    let total_steps = PREVIEW_STEPS + estimate_steps;
     let emit_ref = emit.as_ref().map(|(a, l)| (a, l.as_str()));
 
     let (preview_ctx, estimate_ctx) = match emit.as_ref() {
@@ -624,44 +757,44 @@ pub(crate) async fn run_preview_with_estimate_core(
     let preview_duration_u32 = options.effective_preview_duration();
     let file_sig = file_signature(input_path);
 
-    let mut estimated_size =
+    let mut estimate =
         get_cached_estimate(&input_str, preview_duration_u32, options, file_sig.as_ref());
-    if estimated_size.is_none() {
-        let fresh = compute_estimate_size(
+    if estimate.is_some() {
+        complete_progress_steps(estimate_ctx.as_ref(), estimate_steps, "preview_estimate");
+    } else {
+        match compute_estimate_size(
             input_path,
-            &input_str,
-            preview_duration_u32,
-            preview_duration,
             meta.duration,
             options,
             emit_ref,
             estimate_ctx.as_ref(),
         )
-        .await?;
-        set_cached_estimate(
-            &input_str,
-            preview_duration_u32,
-            options,
-            fresh,
-            file_sig.as_ref(),
-        );
-        estimated_size = Some(fresh);
-    }
-
-    let mut total_estimate = estimated_size.unwrap_or(0);
-    if options.effective_preserve_additional_audio_streams()
-        && options.effective_audio_stream_count() > 1
-    {
-        let extra_tracks = options.effective_audio_stream_count() - 1;
-        let audio_bitrate_bps: u64 = (options.effective_audio_bitrate() as u64) * 1000;
-        let extras = (extra_tracks as u64)
-            .saturating_mul((meta.duration * (audio_bitrate_bps as f64) / 8.0) as u64);
-        total_estimate = total_estimate.saturating_add(extras);
+        .await
+        {
+            Ok(fresh) => {
+                set_cached_estimate(
+                    &input_str,
+                    preview_duration_u32,
+                    options,
+                    fresh.clone(),
+                    file_sig.as_ref(),
+                );
+                estimate = Some(fresh);
+            }
+            Err(err) => {
+                log::warn!(
+                    target: "tiny_vid::preview",
+                    "run_preview_with_estimate_core: failed to compute estimate: {}",
+                    err
+                );
+                estimate = None;
+            }
+        }
     }
 
     Ok(PreviewWithEstimateResult {
         preview: preview_result,
-        estimated_size: Some(total_estimate),
+        estimate,
     })
 }
 
@@ -844,7 +977,7 @@ pub(crate) async fn run_preview_core(
         &segment_set.paths[0],
         &output_path,
         options,
-        Some(preview_duration),
+        None,
         emit_ref,
         progress_ctx.as_ref(),
     )
@@ -879,65 +1012,31 @@ pub(crate) async fn run_preview_core(
 
 #[cfg(test)]
 mod tests {
-    use super::{clamp_preview_start_seconds, compute_preview_segments};
+    use super::{
+        ESTIMATE_BASE_SAMPLE_DURATION_SECS, EstimateConfidence, EstimateSampleWindow,
+        base_estimate_samples, clamp_preview_start_seconds, coefficient_of_variation,
+        confidence_band_for_cv,
+    };
 
     #[test]
-    fn single_segment_when_video_shorter_than_preview() {
-        let segs = compute_preview_segments(2.0, 3.0);
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], (0.0, 2.0));
+    fn base_estimate_samples_short_video_uses_single_full_sample() {
+        let segs = base_estimate_samples(10.0);
+        assert_eq!(
+            segs,
+            vec![EstimateSampleWindow {
+                start_seconds: 0.0,
+                duration_seconds: 10.0
+            }]
+        );
     }
 
     #[test]
-    fn three_segments_when_video_longer_than_preview() {
-        let segs = compute_preview_segments(60.0, 3.0);
+    fn base_estimate_samples_long_video_uses_three_positions() {
+        let segs = base_estimate_samples(60.0);
         assert_eq!(segs.len(), 3);
-        assert_eq!(segs[0], (0.0, 3.0), "first segment samples start");
-        assert_eq!(segs[1], (29.5, 1.0));
-        assert_eq!(segs[2], (59.0, 1.0));
-    }
-
-    #[test]
-    fn estimate_segments_sample_begin_mid_end() {
-        let segs = compute_preview_segments(10.0, 3.0);
-        assert_eq!(segs.len(), 3);
-        assert_eq!(segs[0], (0.0, 3.0));
-        assert_eq!(segs[1], (4.5, 1.0));
-        assert_eq!(segs[2], (9.0, 1.0));
-    }
-
-    #[test]
-    fn single_segment_when_duration_equals_preview() {
-        let segs = compute_preview_segments(3.0, 3.0);
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], (0.0, 3.0));
-    }
-
-    #[test]
-    fn handles_zero_duration() {
-        let segs = compute_preview_segments(0.0, 3.0);
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0].1, 3.0);
-    }
-
-    #[test]
-    fn segment_positions_dont_overlap_for_short_video() {
-        let segs = compute_preview_segments(5.0, 6.0);
-        assert_eq!(segs.len(), 1);
-        assert_eq!(segs[0], (0.0, 5.0));
-    }
-
-    #[test]
-    fn mid_segment_never_negative() {
-        let segs = compute_preview_segments(4.0, 3.0);
-        assert_eq!(segs.len(), 3);
-        for (start, _dur) in &segs {
-            assert!(
-                *start >= 0.0,
-                "segment start should never be negative: {}",
-                start
-            );
-        }
+        assert_eq!(segs[0].duration_seconds, ESTIMATE_BASE_SAMPLE_DURATION_SECS);
+        assert!(segs[0].start_seconds >= 0.0);
+        assert!(segs[2].start_seconds >= segs[1].start_seconds);
     }
 
     #[test]
@@ -958,5 +1057,27 @@ mod tests {
         assert_eq!(clamped, 0.0, "video_duration <= 0 should return 0");
         let clamped2 = clamp_preview_start_seconds(5.0, 10.0, 0.0);
         assert_eq!(clamped2, 0.0, "preview_duration <= 0 should return 0");
+    }
+
+    #[test]
+    fn coefficient_of_variation_is_zero_for_uniform_values() {
+        let cv = coefficient_of_variation(&[10.0, 10.0, 10.0]);
+        assert_eq!(cv, 0.0);
+    }
+
+    #[test]
+    fn coefficient_of_variation_is_positive_for_varied_values() {
+        let cv = coefficient_of_variation(&[10.0, 20.0, 30.0]);
+        assert!(cv > 0.0);
+    }
+
+    #[test]
+    fn confidence_mapping_uses_cv_buckets() {
+        let (high, _) = confidence_band_for_cv(0.10);
+        let (medium, _) = confidence_band_for_cv(0.20);
+        let (low, _) = confidence_band_for_cv(0.40);
+        assert_eq!(high, EstimateConfidence::High);
+        assert_eq!(medium, EstimateConfidence::Medium);
+        assert_eq!(low, EstimateConfidence::Low);
     }
 }

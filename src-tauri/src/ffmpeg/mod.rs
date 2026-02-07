@@ -37,6 +37,31 @@ pub use verify::verify_video;
 
 use serde::Deserialize;
 
+/// Version token for estimate cache key invalidation.
+pub const ESTIMATE_CACHE_VERSION: &str = "estimate-sampled-bitrate";
+
+/// Confidence bucket for size estimate range.
+#[derive(Debug, Clone, Copy, PartialEq, Eq, serde::Serialize, serde::Deserialize)]
+#[serde(rename_all = "lowercase")]
+pub enum EstimateConfidence {
+    High,
+    Medium,
+    Low,
+}
+
+/// Structured output size estimate with uncertainty and sampling stats.
+#[derive(Debug, Clone, serde::Serialize, serde::Deserialize, PartialEq)]
+#[serde(rename_all = "camelCase")]
+pub struct SizeEstimate {
+    pub best_size: u64,
+    pub low_size: u64,
+    pub high_size: u64,
+    pub confidence: EstimateConfidence,
+    pub method: String,
+    pub sample_count: u32,
+    pub sample_seconds_total: f64,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscodeOptions {
@@ -178,9 +203,19 @@ impl TranscodeOptions {
         )
     }
 
-    /// Cache key for preview/estimate (excludes output_format).
+    /// Cache key for preview (excludes output_format).
     pub fn options_cache_key_for_preview(&self) -> String {
         self.options_cache_key_common()
+    }
+
+    /// Cache key for estimate (includes output_format and estimate version).
+    pub fn options_cache_key_for_estimate(&self) -> String {
+        format!(
+            "{}|{}|{}",
+            ESTIMATE_CACHE_VERSION,
+            self.options_cache_key_common(),
+            self.effective_output_format()
+        )
     }
 
     fn options_cache_key_common(&self) -> String {
@@ -210,6 +245,34 @@ impl TranscodeOptions {
 }
 
 /// Path to string for FFmpeg args or logging.
-pub fn path_to_string(path: &impl AsRef<std::path::Path>) -> String {
+pub fn path_to_string(path: &(impl AsRef<std::path::Path> + ?Sized)) -> String {
     path.as_ref().to_string_lossy().to_string()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{ESTIMATE_CACHE_VERSION, TranscodeOptions};
+
+    #[test]
+    fn estimate_cache_key_includes_output_format() {
+        let mut opts_a = TranscodeOptions::default();
+        opts_a.output_format = Some("mp4".into());
+        let mut opts_b = TranscodeOptions::default();
+        opts_b.output_format = Some("webm".into());
+
+        assert_ne!(
+            opts_a.options_cache_key_for_estimate(),
+            opts_b.options_cache_key_for_estimate()
+        );
+    }
+
+    #[test]
+    fn estimate_cache_key_is_versioned() {
+        let opts = TranscodeOptions::default();
+        let key = opts.options_cache_key_for_estimate();
+        assert!(
+            key.starts_with(ESTIMATE_CACHE_VERSION),
+            "estimate cache key should be prefixed with version token"
+        );
+    }
 }

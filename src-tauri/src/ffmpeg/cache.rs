@@ -10,7 +10,7 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::UNIX_EPOCH;
 
-use super::TranscodeOptions;
+use super::{SizeEstimate, TranscodeOptions};
 use parking_lot::Mutex;
 
 const PREVIEW_CACHE_MAX_ENTRIES: usize = 16;
@@ -73,7 +73,7 @@ struct SegmentEntry {
     ref_count: u32,
 }
 
-/// LRU entry: output path and estimated size. Segment paths come from segment store.
+/// LRU entry: output path. Segment paths come from segment store.
 struct PreviewEntry {
     output_path: PathBuf,
 }
@@ -84,8 +84,8 @@ struct PreviewCache {
     lru: VecDeque<(PreviewCacheKey, PreviewEntry)>,
     /// Segments keyed by (input, duration, preview_start_ms). Ref count = number of LRU entries using them.
     segments: HashMap<SegmentKey, SegmentEntry>,
-    /// Estimated sizes keyed by (input, duration, options_key).
-    estimates: HashMap<EstimateKey, u64>,
+    /// Structured estimates keyed by (input, duration, options_key).
+    estimates: HashMap<EstimateKey, SizeEstimate>,
 }
 
 impl PreviewCache {
@@ -234,9 +234,9 @@ pub fn get_cached_estimate(
     preview_duration: u32,
     options: &TranscodeOptions,
     file_signature: Option<&FileSignature>,
-) -> Option<u64> {
+) -> Option<SizeEstimate> {
     let file_signature = file_signature?.clone();
-    let options_key = options.options_cache_key_for_preview();
+    let options_key = options.options_cache_key_for_estimate();
     let key = EstimateKey {
         input_path: input_path.to_string(),
         preview_duration,
@@ -244,7 +244,7 @@ pub fn get_cached_estimate(
         file_signature,
     };
     let guard = preview_cache().lock();
-    guard.estimates.get(&key).copied()
+    guard.estimates.get(&key).cloned()
 }
 
 /// Store cached estimate for (input, duration, options).
@@ -252,13 +252,13 @@ pub fn set_cached_estimate(
     input_path: &str,
     preview_duration: u32,
     options: &TranscodeOptions,
-    estimated_size: u64,
+    estimate: SizeEstimate,
     file_signature: Option<&FileSignature>,
 ) {
     let Some(file_signature) = file_signature.cloned() else {
         return;
     };
-    let options_key = options.options_cache_key_for_preview();
+    let options_key = options.options_cache_key_for_estimate();
     let key = EstimateKey {
         input_path: input_path.to_string(),
         preview_duration,
@@ -266,7 +266,7 @@ pub fn set_cached_estimate(
         file_signature,
     };
     let mut guard = preview_cache().lock();
-    guard.estimates.insert(key, estimated_size);
+    guard.estimates.insert(key, estimate);
 }
 
 /// Returns all cached paths (segments + outputs).
@@ -539,9 +539,18 @@ mod tests {
         let mut opts = TranscodeOptions::default();
         opts.preset = Some("fast".into());
 
-        set_cached_estimate(&input_str, 3, &opts, 123, Some(&sig));
+        let estimate = SizeEstimate {
+            best_size: 123,
+            low_size: 100,
+            high_size: 150,
+            confidence: crate::ffmpeg::EstimateConfidence::Medium,
+            method: "sampled_bitrate".into(),
+            sample_count: 3,
+            sample_seconds_total: 4.5,
+        };
+        set_cached_estimate(&input_str, 3, &opts, estimate.clone(), Some(&sig));
         let cached = get_cached_estimate(&input_str, 3, &opts, Some(&sig));
-        assert_eq!(cached, Some(123));
+        assert_eq!(cached, Some(estimate));
 
         cleanup_preview_transcode_cache();
         let _ = fs::remove_file(&input);

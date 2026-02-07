@@ -61,15 +61,14 @@ export function useVideoSync(
       const initAt = performance.now();
 
       const writeLog = (level: "info" | "debug", event: string, data?: unknown) => {
-        if (DEBUG) {
-          const now = performance.now();
-          const sinceInitMs = Math.round(now - initAt);
-          const prefix = `[video-sync] +${String(sinceInitMs)}ms ${event}`;
-          if (level === "info") {
-            console.info(prefix, data);
-          } else {
-            console.debug(prefix, data);
-          }
+        if (!DEBUG) return;
+        const now = performance.now();
+        const sinceInitMs = Math.round(now - initAt);
+        const prefix = `[video-sync] +${String(sinceInitMs)}ms ${event}`;
+        if (level === "info") {
+          console.info(prefix, data);
+        } else {
+          console.debug(prefix, data);
         }
       };
 

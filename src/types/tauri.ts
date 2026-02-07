@@ -9,7 +9,17 @@ export interface FfmpegPreviewResult {
   /** Start offset (seconds) of original. Delay compressed playback by this to sync. */
   startOffsetSeconds?: number;
   /** Present when includeEstimate was true. */
-  estimatedSize?: number;
+  estimate?: FfmpegSizeEstimate;
+}
+
+export interface FfmpegSizeEstimate {
+  bestSize: number;
+  lowSize: number;
+  highSize: number;
+  confidence: "high" | "medium" | "low";
+  method: "sampled_bitrate";
+  sampleCount: number;
+  sampleSecondsTotal: number;
 }
 
 export interface FfmpegProgressPayload {

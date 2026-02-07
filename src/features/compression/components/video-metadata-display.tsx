@@ -1,12 +1,20 @@
+import { ArrowDown, ArrowUp, Info, Minus } from "lucide-react";
+
 import {
   Accordion,
   AccordionContent,
   AccordionItem,
   AccordionTrigger,
 } from "@/components/ui/accordion";
+import { Badge } from "@/components/ui/badge";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
+import {
+  computeEstimateDisplayState,
+  hasExtendedDetails,
+} from "@/features/compression/components/estimate-display-state";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
-import { secondsToTimestamp } from "@/features/compression/lib/seconds-to-timestamp";
 import { cn } from "@/lib/utils";
+import type { FfmpegSizeEstimate } from "@/types/tauri";
 
 interface COptions {
   scale?: number;
@@ -15,77 +23,118 @@ interface COptions {
 interface VideoMetadataDisplayProps {
   videoMetadata: VideoMetadata;
   cOptions: COptions;
-  estimatedSize?: number | null;
+  estimate?: FfmpegSizeEstimate | null;
 }
 
 function formatBitrateMbps(bps: number): string {
   return `${(bps / 1_000_000).toFixed(2)} Mbps`;
 }
 
+function formatSizeMB(sizeMB: number): string {
+  return `${sizeMB.toFixed(2)} MB`;
+}
+
 export function VideoMetadataDisplay({
   videoMetadata,
   cOptions,
-  estimatedSize,
+  estimate,
 }: VideoMetadataDisplayProps) {
-  const estimatedSizeMB = estimatedSize != null ? estimatedSize / (1024 * 1024) : null;
-  const percent =
-    estimatedSizeMB != null && videoMetadata.sizeMB !== 0
-      ? (((videoMetadata.sizeMB - estimatedSizeMB) / videoMetadata.sizeMB) * 100).toFixed(2)
-      : null;
+  const estimateState = computeEstimateDisplayState(estimate, videoMetadata.sizeMB);
+  const DeltaIcon =
+    estimateState?.deltaVariant === "smaller"
+      ? ArrowDown
+      : estimateState?.deltaVariant === "larger"
+        ? ArrowUp
+        : Minus;
 
-  const hasExtendedDetails = [
-    videoMetadata.fps > 0,
-    videoMetadata.codecName != null,
-    videoMetadata.codecLongName != null,
-    videoMetadata.videoBitRate != null,
-    videoMetadata.formatBitRate != null,
-    videoMetadata.formatName != null,
-    videoMetadata.formatLongName != null,
-    videoMetadata.nbStreams != null,
-    videoMetadata.audioStreamCount > 0,
-    (videoMetadata.subtitleStreamCount ?? 0) > 0,
-    videoMetadata.audioCodecName != null,
-    videoMetadata.audioChannels != null,
-    videoMetadata.encoder != null,
-  ].some(Boolean);
+  const deltaBadgeClass = cn({
+    "border-emerald-500/40 bg-emerald-500/10 text-emerald-700 dark:text-emerald-300":
+      estimateState?.deltaVariant === "smaller",
+    "border-red-500/40 bg-red-500/10 text-red-700 dark:text-red-300":
+      estimateState?.deltaVariant === "larger",
+    "border-border bg-muted text-muted-foreground":
+      estimateState?.deltaVariant === "unchanged" || estimateState == null,
+  });
 
   return (
     <div className={cn("flex flex-col gap-1")}>
       {/* Primary section - always visible */}
-      <p className={cn("text-sm text-foreground")}>
-        <b>Duration:</b> {secondsToTimestamp(videoMetadata.duration)}
-      </p>
-      <div className={cn("text-sm text-foreground")}>
-        <b>Resolution:</b>{" "}
-        {cOptions.scale != null && cOptions.scale !== 1 ? (
-          <>
-            <span className={cn("line-through")}>
-              {String(videoMetadata.width)}x{String(videoMetadata.height)}
-            </span>{" "}
-            <span>
-              {(videoMetadata.width * cOptions.scale).toFixed(0)}x
-              {(videoMetadata.height * cOptions.scale).toFixed(0)}
+      <div className={cn("mt-0.5 rounded-md border border-border/60 bg-muted/30 px-2.5 py-2")}>
+        <div className={cn("flex items-center justify-between gap-2")}>
+          <span
+            className={cn("text-[11px] font-medium tracking-wide text-muted-foreground uppercase")}
+          >
+            File size
+          </span>
+          {estimateState != null && estimateState.hasTooltipDetails && (
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <button
+                  type="button"
+                  className={cn(
+                    `
+                      inline-flex size-5 items-center justify-center rounded-full text-muted-foreground
+                      hover:text-foreground
+                    `
+                  )}
+                  aria-label="Show estimation details"
+                >
+                  <Info className={cn("size-3.5")} />
+                </button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={8} className={cn("max-w-60")}>
+                <div className={cn("flex flex-col gap-1")}>
+                  <p>
+                    Range: {formatSizeMB(estimateState.estimateLowMB)} -{" "}
+                    {formatSizeMB(estimateState.estimateHighMB)}
+                  </p>
+                  <p>Confidence: {estimateState.confidenceLabel}</p>
+                </div>
+              </TooltipContent>
+            </Tooltip>
+          )}
+        </div>
+        <div className={cn("mt-0.5 text-xs text-muted-foreground")}>
+          <span>Resolution: </span>
+          {cOptions.scale != null && cOptions.scale !== 1 ? (
+            <>
+              <span className={cn("line-through")}>
+                {String(videoMetadata.width)}x{String(videoMetadata.height)}
+              </span>{" "}
+              <span>
+                {(videoMetadata.width * cOptions.scale).toFixed(0)}x
+                {(videoMetadata.height * cOptions.scale).toFixed(0)}
+              </span>
+            </>
+          ) : (
+            `${String(videoMetadata.width)}x${String(videoMetadata.height)}`
+          )}
+        </div>
+
+        {estimateState != null ? (
+          <div className={cn("mt-1 flex flex-wrap items-center gap-2")}>
+            <span className={cn("text-muted-foreground line-through")}>
+              {formatSizeMB(videoMetadata.sizeMB)}
             </span>
-          </>
+            <span className={cn("font-semibold text-foreground")}>
+              ~{formatSizeMB(estimateState.estimatedSizeMB)}
+            </span>
+            <Badge variant="outline" className={cn("gap-1", deltaBadgeClass)}>
+              <DeltaIcon className={cn("size-3")} />
+              {estimateState.deltaLabel}
+            </Badge>
+          </div>
         ) : (
-          `${String(videoMetadata.width)}x${String(videoMetadata.height)}`
-        )}
-      </div>
-      <div className={cn("text-sm text-foreground")}>
-        <b>File size:</b>{" "}
-        {estimatedSizeMB != null ? (
-          <>
-            <span className={cn("line-through")}>{videoMetadata.sizeMB.toFixed(2)} MB</span>{" "}
-            <span>{estimatedSizeMB.toFixed(2)} MB</span>{" "}
-            {percent != null && <span>({percent}% reduction)</span>}
-          </>
-        ) : (
-          `${videoMetadata.sizeMB.toFixed(2)} MB`
+          <div className={cn("mt-1 flex items-center")}>
+            <span className={cn("font-semibold text-foreground")}>
+              {formatSizeMB(videoMetadata.sizeMB)}
+            </span>
+          </div>
         )}
       </div>
 
       {/* Expandable section - all details */}
-      {hasExtendedDetails && (
+      {hasExtendedDetails(videoMetadata) && (
         <Accordion type="single" collapsible className={cn("w-full")}>
           <AccordionItem value="all-details" className={cn("border-none")}>
             <AccordionTrigger className={cn("py-2", "hover:no-underline")}>

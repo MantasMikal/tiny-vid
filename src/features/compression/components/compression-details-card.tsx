@@ -14,7 +14,7 @@ export function CompressionDetailsCard() {
     inputPath,
     videoMetadata,
     compressionOptions: cOptions,
-    estimatedSize,
+    estimate,
     workerState,
     isDisabled,
   } = useCompressionStore(
@@ -22,7 +22,7 @@ export function CompressionDetailsCard() {
       inputPath: s.inputPath,
       videoMetadata: s.videoMetadata,
       compressionOptions: s.compressionOptions,
-      estimatedSize: s.estimatedSize,
+      estimate: s.estimate,
       workerState: s.workerState,
       isDisabled: selectIsActionsDisabled(s),
     }))
@@ -74,7 +74,7 @@ export function CompressionDetailsCard() {
             <VideoMetadataDisplay
               videoMetadata={videoMetadata}
               cOptions={cOptions}
-              estimatedSize={estimatedSize}
+              estimate={estimate}
             />
           )}
           <div className={cn("mt-2 flex w-full gap-2")}>

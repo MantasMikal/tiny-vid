@@ -191,7 +191,7 @@ pub async fn ffmpeg_preview(
         .await?;
         Ok(PreviewWithEstimateResult {
             preview: result,
-            estimated_size: None,
+            estimate: None,
         })
     }
 }
