@@ -7,6 +7,8 @@ const SYNC_INTERVAL_MS = 75; // Ms between sync checks; wall-clock based,
 const HOLD_THRESHOLD_MULTIPLIER = 1.2; // Secondary is paused when drift exceeds allowedDrift × this;
 const BEHIND_RESYNC_THRESHOLD_SECONDS = 0.03; // Seek to catch up when secondary is behind by more than this
 const PRIMING_THRESHOLD_SECONDS = 0.15; // Seconds to wait for primary to advance; only used after we've seen a hold (heavy decode).
+const PRIMING_MIN_STEP_SECONDS = 0.015; // Minimum per-tick primary progress to count as real advancement during priming.
+const PRIMING_REQUIRED_PROGRESS_TICKS = 2; // Consecutive advancing ticks required before releasing secondary after a hold.
 
 enum SyncState {
   Waiting = "waiting",
@@ -110,6 +112,10 @@ export function useVideoSync(
       let skipNextResyncCooldown = false;
       /** True after we've entered holding; enables priming on subsequent loops for heavy-decode videos. */
       let hasEverHeld = false;
+      /** Primary time sampled during priming; NaN means priming sample not initialized for current wait cycle. */
+      let primingLastPrimaryTime = Number.NaN;
+      /** Consecutive sync ticks where primary advanced by at least PRIMING_MIN_STEP_SECONDS during priming. */
+      let primingProgressTicks = 0;
       let lastDriftLogAt = 0;
 
       const offset = Number.isFinite(startOffsetSeconds) ? Math.max(0, startOffsetSeconds) : 0;
@@ -147,7 +153,12 @@ export function useVideoSync(
 
       // Waiting means secondary is paused and ready to align on next frame.
       const setWaiting = (resetTime: boolean) => {
+        const wasWaiting = syncState === SyncState.Waiting;
         syncState = SyncState.Waiting;
+        if (!wasWaiting) {
+          primingLastPrimaryTime = Number.NaN;
+          primingProgressTicks = 0;
+        }
         if (
           resetTime &&
           secondary.readyState >= HTMLMediaElement.HAVE_METADATA &&
@@ -264,16 +275,51 @@ export function useVideoSync(
         if (syncState === SyncState.Waiting) {
           const loopStart = getPrimaryLoopStart();
           const primaryAdvance = sanitizedPrimaryTime - loopStart;
-          const usePriming = hasEverHeld && primaryAdvance < PRIMING_THRESHOLD_SECONDS;
+          const usePriming = hasEverHeld;
           if (usePriming) {
-            logDebug("priming-wait", {
+            const hasPrimingSample = Number.isFinite(primingLastPrimaryTime);
+            const primaryStep = hasPrimingSample ? sanitizedPrimaryTime - primingLastPrimaryTime : 0;
+            primingLastPrimaryTime = sanitizedPrimaryTime;
+            if (!hasPrimingSample) {
+              logDebug("priming-arm", {
+                primaryTime: round3(sanitizedPrimaryTime),
+                loopStart: round3(loopStart),
+                targetTimeWhenReady: round3(targetTime),
+              });
+              return;
+            }
+            if (primaryStep >= PRIMING_MIN_STEP_SECONDS) {
+              primingProgressTicks += 1;
+            } else {
+              primingProgressTicks = 0;
+            }
+            const hasEnoughAdvance = primaryAdvance >= PRIMING_THRESHOLD_SECONDS;
+            const hasStableAdvance = primingProgressTicks >= PRIMING_REQUIRED_PROGRESS_TICKS;
+            if (!hasEnoughAdvance || !hasStableAdvance) {
+              logDebug("priming-wait", {
+                primaryAdvance: round3(primaryAdvance),
+                threshold: PRIMING_THRESHOLD_SECONDS,
+                primaryStep: round3(primaryStep),
+                minStep: PRIMING_MIN_STEP_SECONDS,
+                progressTicks: primingProgressTicks,
+                requiredTicks: PRIMING_REQUIRED_PROGRESS_TICKS,
+                primaryTime: round3(sanitizedPrimaryTime),
+                targetTimeWhenReady: round3(targetTime),
+                secondaryTime: round3(secondary.currentTime),
+              });
+              return;
+            }
+            logDebug("priming-ready", {
               primaryAdvance: round3(primaryAdvance),
               threshold: PRIMING_THRESHOLD_SECONDS,
+              primaryStep: round3(primaryStep),
+              minStep: PRIMING_MIN_STEP_SECONDS,
+              progressTicks: primingProgressTicks,
+              requiredTicks: PRIMING_REQUIRED_PROGRESS_TICKS,
               primaryTime: round3(sanitizedPrimaryTime),
               targetTimeWhenReady: round3(targetTime),
               secondaryTime: round3(secondary.currentTime),
             });
-            return;
           }
           const didSeek = seekSecondaryTo(targetTime, now, true);
           if (didSeek) skipNextResyncCooldown = true;

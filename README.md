@@ -1,6 +1,6 @@
 # Tiny Vid
 
-Tiny Vid is a desktop app for compressing video with FFmpeg on macOS, Windows, and Linux.
+Tiny Vid is a desktop app for compressing video with real time preview on macOS, Windows, and Linux using ffmpeg.
 
 Supports H.264, H.265, VP9, and AV1. Web version: [handy.tools](https://handy.tools)
 
