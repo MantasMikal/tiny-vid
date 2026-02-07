@@ -43,8 +43,8 @@ fn common_paths() -> Vec<PathBuf> {
     ];
     #[cfg(all(unix, not(target_os = "macos")))]
     return vec![
-        PathBuf::from("/usr/bin/ffmpeg"),
         PathBuf::from("/usr/local/bin/ffmpeg"),
+        PathBuf::from("/usr/bin/ffmpeg"),
     ];
     #[cfg(not(any(target_os = "macos", target_os = "windows", unix)))]
     return vec![];

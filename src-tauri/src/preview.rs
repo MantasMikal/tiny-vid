@@ -9,9 +9,9 @@ use crate::error::AppError;
 use crate::ffmpeg::{
     build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
     file_signature, get_cached_estimate, get_cached_preview, get_cached_segments,
-    is_browser_playable_codec, path_to_string, run_ffmpeg_blocking, set_cached_estimate,
-    set_cached_preview, store_preview_paths_for_cleanup, FfmpegProgressPayload, FileSignature,
-    TempFileManager, TranscodeOptions,
+    is_preview_stream_copy_safe_audio_codec, is_preview_stream_copy_safe_codec, path_to_string,
+    run_ffmpeg_blocking, set_cached_estimate, set_cached_preview, store_preview_paths_for_cleanup,
+    FfmpegProgressPayload, FileSignature, TempFileManager, TranscodeOptions,
 };
 use crate::ffmpeg::ffprobe::{get_video_metadata_impl, VideoMetadata};
 use crate::ffmpeg::parse_ffmpeg_error;
@@ -182,6 +182,17 @@ fn preview_start_ms_from_seconds(start_seconds: f64) -> u64 {
     (start_seconds.max(0.0) * 1000.0).round() as u64
 }
 
+fn preview_original_transcode_codec() -> &'static str {
+    #[cfg(feature = "lgpl")]
+    {
+        "h264_videotoolbox"
+    }
+    #[cfg(not(feature = "lgpl"))]
+    {
+        "libx264"
+    }
+}
+
 struct TempCleanup {
     paths: Vec<PathBuf>,
     keep: bool,
@@ -218,6 +229,20 @@ impl Drop for TempCleanup {
 struct SegmentSet {
     paths: Vec<PathBuf>,
     created: bool,
+}
+
+struct OriginalPreviewTranscodeCtx<'a> {
+    input_str: &'a str,
+    preview_duration_u32: u32,
+    preview_start_ms: u64,
+    preview_start_seconds: f64,
+    preview_duration: f64,
+    source_fps: f64,
+    remove_audio: bool,
+    temp: &'a TempFileManager,
+    file_signature: Option<&'a FileSignature>,
+    emit: Option<(&'a tauri::AppHandle, &'a str)>,
+    progress_ctx: Option<&'a PreviewProgressCtx>,
 }
 
 async fn get_video_metadata_async(path: &Path) -> Result<VideoMetadata, AppError> {
@@ -276,14 +301,20 @@ async fn extract_segments_or_use_cache(
 
             for ((start, dur), path) in segments.iter().zip(paths.iter()) {
                 let args = build_extract_args(input_str, *start, *dur, &path_to_string(path));
-                run_ffmpeg_with_progress(
+                if let Err(err) = run_ffmpeg_with_progress(
                     args,
                     Some(*dur),
                     emit,
                     progress_ctx,
                     step_label,
                 )
-                .await?;
+                .await
+                {
+                    for created in &paths {
+                        let _ = fs::remove_file(created);
+                    }
+                    return Err(err);
+                }
             }
             Ok(SegmentSet {
                 paths,
@@ -301,10 +332,11 @@ async fn transcode_preview_segment(
     emit: Option<(&tauri::AppHandle, &str)>,
     progress_ctx: Option<&PreviewProgressCtx>,
 ) -> Result<(), AppError> {
+    let preview_opts = preview_transcode_options(options);
     let args = build_ffmpeg_command(
         &path_to_string(segment_path),
         &path_to_string(output_path),
-        options,
+        &preview_opts,
         output_duration,
         Some("mp4"),
         None,
@@ -319,6 +351,95 @@ async fn transcode_preview_segment(
     )
     .await?;
     Ok(())
+}
+
+fn preview_transcode_options(options: &TranscodeOptions) -> TranscodeOptions {
+    #[cfg(target_os = "linux")]
+    let mut preview_opts = options.clone();
+    #[cfg(not(target_os = "linux"))]
+    let preview_opts = options.clone();
+    #[cfg(target_os = "linux")]
+    {
+        if !preview_opts.effective_remove_audio() && !preview_opts.effective_downmix_to_stereo() {
+            log::info!(
+                target: "tiny_vid::preview",
+                "preview transcode audio compatibility: forcing stereo downmix on linux"
+            );
+            preview_opts.downmix_to_stereo = Some(true);
+        }
+    }
+    preview_opts
+}
+
+async fn transcode_original_preview_segment_or_use_cache(
+    ctx: OriginalPreviewTranscodeCtx<'_>,
+) -> Result<SegmentSet, AppError> {
+    match get_cached_segments(
+        ctx.input_str,
+        ctx.preview_duration_u32,
+        ctx.preview_start_ms,
+        ctx.file_signature,
+    ) {
+        Some(cached) => {
+            log::info!(
+                target: "tiny_vid::preview",
+                "transcode_original_preview_segment_or_use_cache: cache hit, reusing transcoded segment"
+            );
+            if let Some(progress_ctx) = ctx.progress_ctx {
+                let cb = progress_ctx.make_callback("preview_extract");
+                cb(1.0);
+                progress_ctx.advance();
+            }
+            Ok(SegmentSet {
+                paths: cached,
+                created: false,
+            })
+        }
+        None => {
+            let orig_path = ctx
+                .temp
+                .create("preview-original-transcoded.mp4", None)
+                .map_err(AppError::from)?;
+            let orig_transcode_opts = preview_transcode_options(&TranscodeOptions {
+                codec: Some(preview_original_transcode_codec().to_string()),
+                quality: Some(90),
+                preset: Some("fast".to_string()),
+                output_format: Some("mp4".to_string()),
+                remove_audio: Some(ctx.remove_audio),
+                scale: None,
+                fps: Some(if ctx.source_fps > 0.0 {
+                    ctx.source_fps
+                } else {
+                    30.0
+                }),
+                ..TranscodeOptions::default()
+            });
+            let args = build_ffmpeg_command(
+                ctx.input_str,
+                &path_to_string(&orig_path),
+                &orig_transcode_opts,
+                Some(ctx.preview_duration),
+                Some("mp4"),
+                Some(ctx.preview_start_seconds),
+            )?;
+            if let Err(err) = run_ffmpeg_with_progress(
+                args,
+                Some(ctx.preview_duration),
+                ctx.emit,
+                ctx.progress_ctx,
+                "preview_extract",
+            )
+            .await
+            {
+                let _ = fs::remove_file(&orig_path);
+                return Err(err);
+            }
+            Ok(SegmentSet {
+                paths: vec![orig_path],
+                created: true,
+            })
+        }
+    }
 }
 
 
@@ -346,6 +467,7 @@ async fn estimate_size_from_segments(
     for path in &output_paths {
         cleanup.add(path.clone());
     }
+    let estimate_opts = preview_transcode_options(options);
 
     for (i, (orig, out)) in segment_paths.iter().zip(output_paths.iter()).enumerate() {
         let output_duration = segment_durations
@@ -355,7 +477,7 @@ async fn estimate_size_from_segments(
         let args = build_ffmpeg_command(
             &path_to_string(orig),
             &path_to_string(out),
-            options,
+            &estimate_opts,
             output_duration,
             Some("mp4"),
             None,
@@ -614,11 +736,24 @@ pub(crate) async fn run_preview_core(
         get_video_metadata_async(input_path).await?
     };
     let video_duration = video_duration_override.unwrap_or(meta.duration);
-    let codec_playable = meta
-        .codec_name
-        .as_deref()
-        .map(is_browser_playable_codec)
-        .unwrap_or(false);
+    let source_codec = meta.codec_name.as_deref().unwrap_or("unknown");
+    let source_audio_codec = meta.audio_codec_name.as_deref().unwrap_or("none");
+    let can_stream_copy_video = is_preview_stream_copy_safe_codec(source_codec);
+    let can_stream_copy_audio = is_preview_stream_copy_safe_audio_codec(
+        meta.audio_codec_name.as_deref(),
+        meta.audio_stream_count,
+    );
+    let can_stream_copy_original_preview = can_stream_copy_video && can_stream_copy_audio;
+    log::info!(
+        target: "tiny_vid::preview",
+        "run_preview_core: stream-copy policy (video_codec={}, audio_codec={}, audio_streams={}, video_safe={}, audio_safe={}, can_stream_copy={})",
+        source_codec,
+        source_audio_codec,
+        meta.audio_stream_count,
+        can_stream_copy_video,
+        can_stream_copy_audio,
+        can_stream_copy_original_preview
+    );
     let preview_start_seconds = clamp_preview_start_seconds(
         preview_start_seconds.unwrap_or(0.0),
         video_duration,
@@ -661,80 +796,70 @@ pub(crate) async fn run_preview_core(
     cleanup.add(output_path.clone());
 
     let preview_segments = vec![(preview_start_seconds, preview_duration)];
-    let segment_set = if codec_playable {
-        extract_segments_or_use_cache(
+    let segment_set = if can_stream_copy_original_preview {
+        match extract_segments_or_use_cache(
             &input_str,
             preview_duration_u32,
             preview_start_ms,
             &preview_segments,
             &temp,
             file_sig.as_ref(),
-            emit_ref,
+            None,
             progress_ctx.as_ref(),
             "preview_extract",
         )
-        .await?
-    } else {
-        // Non-playable codec (ProRes, DNxHD, etc.): transcode segment to H.264/MP4 for display.
-        // Segment cache reuses the transcoded original when only options change.
-        match get_cached_segments(
-            &input_str,
-            preview_duration_u32,
-            preview_start_ms,
-            file_sig.as_ref(),
-        ) {
-            Some(cached) => {
+        .await
+        {
+            Ok(segment_set) => segment_set,
+            Err(err) => {
+                log::warn!(
+                    target: "tiny_vid::preview",
+                    "run_preview_core: stream-copy preview extract failed, retrying with H.264 transcode: {}",
+                    err
+                );
                 log::info!(
                     target: "tiny_vid::preview",
-                    "run_preview_core: non-playable segment cache hit, reusing transcoded segment"
+                    "run_preview_core: stream-copy unavailable, using transcode fallback (video_codec={}, audio_codec={}, reason=extract_failed)",
+                    source_codec,
+                    source_audio_codec
                 );
-                if let Some(ctx) = progress_ctx.as_ref() {
-                    let cb = ctx.make_callback("preview_extract");
-                    cb(1.0);
-                    ctx.advance();
-                }
-                SegmentSet {
-                    paths: cached,
-                    created: false,
-                }
-            }
-            None => {
-                let orig_path = temp
-                    .create("preview-original-transcoded.mp4", None)
-                    .map_err(AppError::from)?;
-                cleanup.add(orig_path.clone());
-                let orig_transcode_opts = TranscodeOptions {
-                    codec: Some("libx264".to_string()),
-                    quality: Some(90),
-                    preset: Some("fast".to_string()),
-                    output_format: Some("mp4".to_string()),
-                    remove_audio: Some(options.effective_remove_audio()),
-                    scale: None, // Preserve original resolution
-                    fps: Some(if meta.fps > 0.0 { meta.fps } else { 30.0 }), // Preserve original fps
-                    ..TranscodeOptions::default()
-                };
-                let args = build_ffmpeg_command(
-                    &input_str,
-                    &path_to_string(&orig_path),
-                    &orig_transcode_opts,
-                    Some(preview_duration),
-                    Some("mp4"),
-                    Some(preview_start_seconds),
-                )?;
-                run_ffmpeg_with_progress(
-                    args,
-                    Some(preview_duration),
-                    emit_ref,
-                    progress_ctx.as_ref(),
-                    "preview_extract",
-                )
-                .await?;
-                SegmentSet {
-                    paths: vec![orig_path],
-                    created: true,
-                }
+                transcode_original_preview_segment_or_use_cache(OriginalPreviewTranscodeCtx {
+                    input_str: &input_str,
+                    preview_duration_u32,
+                    preview_start_ms,
+                    preview_start_seconds,
+                    preview_duration,
+                    source_fps: meta.fps,
+                    remove_audio: options.effective_remove_audio(),
+                    temp: &temp,
+                    file_signature: file_sig.as_ref(),
+                    emit: emit_ref,
+                    progress_ctx: progress_ctx.as_ref(),
+                })
+                .await?
             }
         }
+    } else {
+        log::info!(
+            target: "tiny_vid::preview",
+            "run_preview_core: stream-copy unavailable, using transcode fallback (video_codec={}, audio_codec={}, reason=unsupported_stream_policy)",
+            source_codec,
+            source_audio_codec
+        );
+        transcode_original_preview_segment_or_use_cache(OriginalPreviewTranscodeCtx {
+            input_str: &input_str,
+            preview_duration_u32,
+            preview_start_ms,
+            preview_start_seconds,
+            preview_duration,
+            source_fps: meta.fps,
+            remove_audio: options.effective_remove_audio(),
+            temp: &temp,
+            file_signature: file_sig.as_ref(),
+            emit: emit_ref,
+            progress_ctx: progress_ctx.as_ref(),
+        })
+        .await?
     };
     if segment_set.created {
         for path in &segment_set.paths {

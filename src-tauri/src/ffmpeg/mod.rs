@@ -10,7 +10,7 @@ mod verify;
 
 pub use builder::{
     build_extract_args, build_ffmpeg_command, format_args_for_display_multiline,
-    is_browser_playable_codec,
+    is_preview_stream_copy_safe_audio_codec, is_preview_stream_copy_safe_codec,
 };
 pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
 

@@ -244,13 +244,45 @@ fn get_output_config(format: &str, video_codec: &str) -> OutputFormatConfig {
     }
 }
 
-/// Returns true if the codec is widely playable in browsers (H.264, HEVC, VP9, AV1).
-pub fn is_browser_playable_codec(codec_name: &str) -> bool {
+/// Returns true when preview original segment extraction can safely stream-copy to MP4.
+pub fn is_preview_stream_copy_safe_codec(codec_name: &str) -> bool {
     let lower = codec_name.to_lowercase();
-    matches!(
-        lower.as_str(),
-        "h264" | "avc" | "avc1" | "hevc" | "h265" | "vp9" | "av1"
-    )
+    #[cfg(target_os = "linux")]
+    {
+        return matches!(lower.as_str(), "h264" | "avc" | "avc1");
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        matches!(
+            lower.as_str(),
+            "h264" | "avc" | "avc1" | "hevc" | "h265" | "vp9" | "av1"
+        )
+    }
+}
+
+/// Returns true when preview original segment extraction can safely stream-copy audio to MP4.
+pub fn is_preview_stream_copy_safe_audio_codec(
+    audio_codec_name: Option<&str>,
+    audio_stream_count: u32,
+) -> bool {
+    #[cfg(target_os = "linux")]
+    {
+        if audio_stream_count == 0 {
+            return true;
+        }
+        return audio_codec_name
+            .map(|codec| codec.to_lowercase())
+            .map(|codec| matches!(codec.as_str(), "aac"))
+            .unwrap_or(false);
+    }
+
+    #[cfg(not(target_os = "linux"))]
+    {
+        let _ = audio_codec_name;
+        let _ = audio_stream_count;
+        true
+    }
 }
 
 /// Base args shared by FFmpeg invocations: nostdin, threads, thread_queue_size.
@@ -1010,6 +1042,57 @@ mod tests {
         assert!(args.contains(&"-c:a".to_string()));
         let ca_idx = args.iter().position(|a| a == "-c:a").unwrap();
         assert_eq!(args.get(ca_idx + 1).unwrap(), "copy");
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn preview_stream_copy_safe_codecs_match_linux_allow_list() {
+        assert!(is_preview_stream_copy_safe_codec("h264"));
+        assert!(is_preview_stream_copy_safe_codec("avc"));
+        assert!(is_preview_stream_copy_safe_codec("avc1"));
+        assert!(!is_preview_stream_copy_safe_codec("hevc"));
+        assert!(!is_preview_stream_copy_safe_codec("h265"));
+        assert!(!is_preview_stream_copy_safe_codec("vp9"));
+        assert!(!is_preview_stream_copy_safe_codec("av1"));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "linux"))]
+    fn preview_stream_copy_safe_codecs_match_non_linux_allow_list() {
+        assert!(is_preview_stream_copy_safe_codec("h264"));
+        assert!(is_preview_stream_copy_safe_codec("avc"));
+        assert!(is_preview_stream_copy_safe_codec("avc1"));
+        assert!(is_preview_stream_copy_safe_codec("hevc"));
+        assert!(is_preview_stream_copy_safe_codec("h265"));
+        assert!(is_preview_stream_copy_safe_codec("vp9"));
+        assert!(is_preview_stream_copy_safe_codec("av1"));
+    }
+
+    #[test]
+    fn preview_stream_copy_rejects_unknown_codecs() {
+        assert!(!is_preview_stream_copy_safe_codec("prores"));
+        assert!(!is_preview_stream_copy_safe_codec("unknown"));
+    }
+
+    #[test]
+    #[cfg(target_os = "linux")]
+    fn preview_stream_copy_safe_audio_codecs_match_linux_allow_list() {
+        assert!(is_preview_stream_copy_safe_audio_codec(None, 0));
+        assert!(is_preview_stream_copy_safe_audio_codec(Some("aac"), 1));
+        assert!(is_preview_stream_copy_safe_audio_codec(Some("AAC"), 2));
+        assert!(!is_preview_stream_copy_safe_audio_codec(Some("mp3"), 1));
+        assert!(!is_preview_stream_copy_safe_audio_codec(Some("pcm_s16le"), 1));
+        assert!(!is_preview_stream_copy_safe_audio_codec(None, 1));
+    }
+
+    #[test]
+    #[cfg(not(target_os = "linux"))]
+    fn preview_stream_copy_safe_audio_codecs_allow_non_linux_values() {
+        assert!(is_preview_stream_copy_safe_audio_codec(None, 0));
+        assert!(is_preview_stream_copy_safe_audio_codec(Some("aac"), 1));
+        assert!(is_preview_stream_copy_safe_audio_codec(Some("mp3"), 1));
+        assert!(is_preview_stream_copy_safe_audio_codec(Some("pcm_s16le"), 1));
+        assert!(is_preview_stream_copy_safe_audio_codec(None, 2));
     }
 
     #[test]

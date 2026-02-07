@@ -207,6 +207,50 @@ pub fn run_preview_and_assert_exists(
     result
 }
 
+pub fn run_preview_with_meta_codec_override_and_assert_exists(
+    input_path: &Path,
+    options: &TranscodeOptions,
+    preview_start_seconds: Option<f64>,
+    source_codec_override: &str,
+) -> tiny_vid_tauri_lib::test_support::PreviewResultForTest {
+    let result = tauri::async_runtime::block_on(
+        tiny_vid_tauri_lib::test_support::run_preview_for_test_with_meta_codec_override(
+            input_path,
+            options,
+            preview_start_seconds,
+            source_codec_override,
+        ),
+    )
+    .expect("run_preview_for_test_with_meta_codec_override");
+    assert!(Path::new(&result.original_path).exists());
+    assert!(Path::new(&result.compressed_path).exists());
+    result
+}
+
+pub fn run_preview_with_meta_codec_and_audio_override_and_assert_exists(
+    input_path: &Path,
+    options: &TranscodeOptions,
+    preview_start_seconds: Option<f64>,
+    source_codec_override: &str,
+    source_audio_codec_override: &str,
+    source_audio_stream_count_override: u32,
+) -> tiny_vid_tauri_lib::test_support::PreviewResultForTest {
+    let result = tauri::async_runtime::block_on(
+        tiny_vid_tauri_lib::test_support::run_preview_for_test_with_meta_codec_and_audio_override(
+            input_path,
+            options,
+            preview_start_seconds,
+            source_codec_override,
+            source_audio_codec_override,
+            source_audio_stream_count_override,
+        ),
+    )
+    .expect("run_preview_for_test_with_meta_codec_and_audio_override");
+    assert!(Path::new(&result.original_path).exists());
+    assert!(Path::new(&result.compressed_path).exists());
+    result
+}
+
 pub fn run_preview_with_estimate_and_assert(
     input_path: &Path,
     options: &TranscodeOptions,
