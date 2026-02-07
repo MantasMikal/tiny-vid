@@ -185,7 +185,9 @@ export function VideoSettingsAdvanced({
             disabled={isDisabled}
             onValueChange={(v) => {
               if (!isFormat(v)) return;
-              setOptions(resolve({ ...cOptions, outputFormat: v }, availableCodecs));
+              setOptions(resolve({ ...cOptions, outputFormat: v }, availableCodecs), {
+                triggerPreview: false,
+              });
             }}
           >
             <SelectTrigger className={cn("w-full")}>
