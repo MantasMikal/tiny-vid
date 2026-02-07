@@ -13,7 +13,9 @@ use super::discovery::get_ffmpeg_path;
 
 fn run_verify(ffmpeg: &std::path::Path, path_str: &str, use_dav1d: bool) -> (bool, i32, String) {
     let args: Vec<&str> = if use_dav1d {
-        vec!["-v", "error", "-c:v", "libdav1d", "-i", path_str, "-f", "null", "-"]
+        vec![
+            "-v", "error", "-c:v", "libdav1d", "-i", path_str, "-f", "null", "-",
+        ]
     } else {
         vec!["-v", "error", "-i", path_str, "-f", "null", "-"]
     };
@@ -49,8 +51,7 @@ pub fn verify_video(path: &Path, codec: Option<&str>) -> Result<(), String> {
         .map(|c| c.to_lowercase().contains("svtav1") || c.to_lowercase().contains("av1"))
         .unwrap_or(false);
 
-    let (success, exit_code, stderr) =
-        run_verify(ffmpeg, path_str.as_ref(), use_dav1d);
+    let (success, exit_code, stderr) = run_verify(ffmpeg, path_str.as_ref(), use_dav1d);
 
     if success {
         return Ok(());

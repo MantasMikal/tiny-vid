@@ -50,7 +50,9 @@ export function PreviewRegionTimeline({
         <span className={cn("px-2 font-medium text-foreground")}>
           {formatRangeLabel(clampedStart, endSeconds, rangeSeconds)}
         </span>
-        <span className={cn("text-right text-foreground/70")}>{secondsToTimestamp(safeDuration)}</span>
+        <span className={cn("text-right text-foreground/70")}>
+          {secondsToTimestamp(safeDuration)}
+        </span>
       </div>
       <SliderPrimitive.Root
         className={cn(

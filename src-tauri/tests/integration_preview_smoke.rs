@@ -6,11 +6,10 @@ use std::fs;
 use std::path::Path;
 
 use support::{
-    assert_codec_contract, default_codec, opts_with, preview_options, run_preview_and_assert_exists,
-    run_preview_with_estimate_and_assert,
+    CodecContract, IntegrationEnv, VideoKind, assert_codec_contract, default_codec, opts_with,
+    preview_options, run_preview_and_assert_exists, run_preview_with_estimate_and_assert,
     run_preview_with_meta_codec_and_audio_override_and_assert_exists,
-    run_preview_with_meta_codec_override_and_assert_exists, CodecContract, IntegrationEnv,
-    VideoKind,
+    run_preview_with_meta_codec_override_and_assert_exists,
 };
 use tiny_vid_tauri_lib::ffmpeg::ffprobe::get_video_metadata_impl;
 use tiny_vid_tauri_lib::ffmpeg::{cleanup_preview_transcode_cache, verify_video};
@@ -72,7 +71,8 @@ fn preview_estimate_increases_with_preserved_additional_audio_streams() {
 
     let result_without =
         run_preview_with_estimate_and_assert(&input_path, &options_without_preserve, None);
-    let result_with = run_preview_with_estimate_and_assert(&input_path, &options_with_preserve, None);
+    let result_with =
+        run_preview_with_estimate_and_assert(&input_path, &options_with_preserve, None);
 
     let estimate_without = result_without.estimated_size.expect("estimate_without");
     let estimate_with = result_with.estimated_size.expect("estimate_with");

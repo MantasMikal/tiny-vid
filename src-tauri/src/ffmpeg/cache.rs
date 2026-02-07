@@ -10,8 +10,8 @@ use std::path::{Path, PathBuf};
 use std::sync::OnceLock;
 use std::time::UNIX_EPOCH;
 
-use parking_lot::Mutex;
 use super::TranscodeOptions;
+use parking_lot::Mutex;
 
 const PREVIEW_CACHE_MAX_ENTRIES: usize = 16;
 
@@ -376,10 +376,7 @@ pub fn set_cached_preview(
         preview_duration,
         preview_start_ms
     );
-    guard.lru.push_back((
-        key,
-        PreviewEntry { output_path },
-    ));
+    guard.lru.push_back((key, PreviewEntry { output_path }));
 }
 
 /// Remove all cached files and clear the cache. Call on app exit.
@@ -425,26 +422,25 @@ mod tests {
         let temp = TempFileManager::default();
         let mut first_output: Option<PathBuf> = None;
         for i in 0..PREVIEW_CACHE_MAX_ENTRIES + 1 {
-            let seg = temp.create(&format!("lru-seg-{}.mp4", i), Some(b"s")).unwrap();
-            let out = temp.create(&format!("lru-out-{}.mp4", i), Some(b"x")).unwrap();
+            let seg = temp
+                .create(&format!("lru-seg-{}.mp4", i), Some(b"s"))
+                .unwrap();
+            let out = temp
+                .create(&format!("lru-out-{}.mp4", i), Some(b"x"))
+                .unwrap();
             if i == 0 {
                 first_output = Some(out.clone());
             }
             let mut opts = TranscodeOptions::default();
             opts.preset = Some(format!("preset_{}", i));
-            set_cached_preview(
-                &input_str,
-                3,
-                0,
-                &opts,
-                vec![seg],
-                out,
-                Some(&sig),
-            );
+            set_cached_preview(&input_str, 3, 0, &opts, vec![seg], out, Some(&sig));
         }
 
         let p = first_output.unwrap();
-        assert!(!p.exists(), "LRU should have evicted the first entry's output");
+        assert!(
+            !p.exists(),
+            "LRU should have evicted the first entry's output"
+        );
         cleanup_preview_transcode_cache();
         let _ = fs::remove_file(&input);
     }

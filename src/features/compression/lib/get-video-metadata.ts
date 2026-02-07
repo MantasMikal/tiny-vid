@@ -20,6 +20,7 @@ export interface VideoMetadata {
   subtitleStreamCount?: number;
   audioCodecName?: string;
   audioChannels?: number;
+  encoder?: string;
 }
 
 export async function getVideoMetadataFromPath(filePath: string): Promise<VideoMetadata> {
@@ -44,5 +45,6 @@ export async function getVideoMetadataFromPath(filePath: string): Promise<VideoM
     subtitleStreamCount: meta.subtitleStreamCount,
     audioCodecName: meta.audioCodecName,
     audioChannels: meta.audioChannels,
+    encoder: meta.encoder,
   };
 }

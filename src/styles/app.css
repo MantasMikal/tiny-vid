@@ -1,6 +1,15 @@
 @import "tailwindcss";
+@import "tw-animate-css";
 
 @source '../';
+
+@font-face {
+  font-family: "Lexend";
+  src: url("/font/lexend.ttf") format("truetype");
+  font-weight: normal;
+  font-style: normal;
+  font-display: swap;
+}
 
 @theme {
   --color-background: var(--background);
@@ -25,62 +34,40 @@
   --radius-lg: var(--radius);
   --radius-md: calc(var(--radius) - 2px);
   --radius-sm: calc(var(--radius) - 4px);
-
-  @keyframes accordion-down {
-    from {
-      height: 0;
-    }
-    to {
-      height: var(--radix-accordion-content-height);
-    }
-  }
-
-  @keyframes accordion-up {
-    from {
-      height: var(--radix-accordion-content-height);
-    }
-    to {
-      height: 0;
-    }
-  }
-
-  --animate-accordion-down: accordion-down 0.2s ease-out;
-  --animate-accordion-up: accordion-up 0.2s ease-out;
 }
 
-@layer base {
+:root {
+  --background: hsl(0 0% 100%);
+  --foreground: hsl(0 0% 3.9%);
+  --muted: hsl(0 0% 96.1%);
+  --muted-foreground: hsl(0 0% 45.1%);
+  --popover: hsl(0 0% 100%);
+  --popover-foreground: hsl(0 0% 3.9%);
+  --card: hsl(0 0% 99.4%);
+  --card-foreground: hsl(0 0% 3.9%);
+  --border: hsl(0 0% 89.8%);
+  --input: hsl(0 0% 89.8%);
+  --primary: hsl(0 72.2% 50.6%);
+  --primary-foreground: hsl(0 85.7% 97.3%);
+  --secondary: hsl(0 0% 90.1%);
+  --secondary-foreground: hsl(0 0% 9%);
+  --accent: hsl(0 0% 90.1%);
+  --accent-foreground: hsl(0 0% 9%);
+  --destructive: hsl(0 84.2% 60.2%);
+  --destructive-foreground: hsl(0 0% 98%);
+  --ring: hsl(0 72.2% 50.6%);
+  --radius: 0.8rem;
+
+  --window-scrollbar-width: 12px;
+  --window-background-transition-duration: 0.3s;
+  --window-c-background: hsl(0 0% 3.9%);
+  --window-c-scrollbar-track: #e5e5e5;
+  --window-c-scrollbar-thumb: #a3a3a3;
+  --window-c-scrollbar-thumb-hover: #737373;
+}
+
+@media (prefers-color-scheme: dark) {
   :root {
-    color-scheme: light;
-    --background: hsl(0 0% 100%);
-    --foreground: hsl(0 0% 3.9%);
-    --muted: hsl(0 0% 96.1%);
-    --muted-foreground: hsl(0 0% 45.1%);
-    --popover: hsl(0 0% 100%);
-    --popover-foreground: hsl(0 0% 3.9%);
-    --card: hsl(0 0% 99.4%);
-    --card-foreground: hsl(0 0% 3.9%);
-    --border: hsl(0 0% 89.8%);
-    --input: hsl(0 0% 89.8%);
-    --primary: hsl(0 72.2% 50.6%);
-    --primary-foreground: hsl(0 85.7% 97.3%);
-    --secondary: hsl(0 0% 90.1%);
-    --secondary-foreground: hsl(0 0% 9%);
-    --accent: hsl(0 0% 90.1%);
-    --accent-foreground: hsl(0 0% 9%);
-    --destructive: hsl(0 84.2% 60.2%);
-    --destructive-foreground: hsl(0 0% 98%);
-    --ring: hsl(0 72.2% 50.6%);
-    --radius: 0.8rem;
-
-    --window-scrollbar-width: 12px;
-    --window-background-transition-duration: 0.3s;
-    --window-c-background: hsl(0 0% 3.9%);
-    --window-c-scrollbar-track: #e5e5e5;
-    --window-c-scrollbar-thumb: #a3a3a3;
-    --window-c-scrollbar-thumb-hover: #737373;
-  }
-
-  .dark {
     color-scheme: dark;
     --background: hsl(0 0% 3.9%);
     --foreground: hsl(0 0% 98%);
@@ -101,19 +88,14 @@
     --destructive: hsl(0 90% 40%);
     --destructive-foreground: hsl(0 0% 98%);
     --ring: hsl(0 72.2% 50.6%);
+
     --window-c-scrollbar-track: #1e1e1ec6;
     --window-c-scrollbar-thumb: #88888863;
     --window-c-scrollbar-thumb-hover: #555;
   }
+}
 
-  @font-face {
-    font-family: "Lexend";
-    src: url("/font/lexend.ttf") format("truetype");
-    font-weight: normal;
-    font-style: normal;
-    font-display: swap;
-  }
-
+@layer base {
   html,
   body,
   #root {
@@ -121,6 +103,9 @@
     margin: 0;
     background-color: var(--background);
     overscroll-behavior: none;
+    transition:
+      background-color 0.2s ease-in-out,
+      color 0.2s ease-in-out;
   }
 
   #root {
@@ -145,22 +130,25 @@
   }
 }
 
-/* Custom scrollbar - webkit pseudo-elements cannot be done with Tailwind */
-.window-content::-webkit-scrollbar {
-  width: var(--window-scrollbar-width);
+html {
+  scrollbar-color: var(--window-c-scrollbar-thumb) var(--window-c-scrollbar-track);
 }
 
-.window-content::-webkit-scrollbar-track {
+html::-webkit-scrollbar {
+  width: var(--window-scrollbar-width);
+  height: var(--window-scrollbar-width);
+}
+
+html::-webkit-scrollbar-track {
   background-color: var(--window-c-scrollbar-track);
 }
 
-.window-content::-webkit-scrollbar-thumb {
+html::-webkit-scrollbar-thumb {
   background-color: var(--window-c-scrollbar-thumb);
   border-radius: 4px;
-  border: 3px solid var(--window-c-scrollbar-track);
 }
 
-.window-content::-webkit-scrollbar-thumb:hover {
+html::-webkit-scrollbar-thumb:hover {
   background-color: var(--window-c-scrollbar-thumb-hover);
 }
 

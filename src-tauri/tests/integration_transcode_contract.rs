@@ -5,15 +5,12 @@ mod support;
 use std::fs;
 
 use support::{
-    assert_codec_contract, metadata, opts_with, run_transcode_and_verify, CodecContract,
-    IntegrationEnv, VideoKind,
+    CodecContract, IntegrationEnv, VideoKind, assert_codec_contract, metadata, opts_with,
+    run_transcode_and_verify,
 };
-use tiny_vid_tauri_lib::ffmpeg::{build_ffmpeg_command, run_ffmpeg_blocking, TranscodeOptions};
+use tiny_vid_tauri_lib::ffmpeg::{TranscodeOptions, build_ffmpeg_command, run_ffmpeg_blocking};
 
-fn run_transcode_case(
-    options: TranscodeOptions,
-    duration_secs: f32,
-) {
+fn run_transcode_case(options: TranscodeOptions, duration_secs: f32) {
     let env = IntegrationEnv::new();
     let input_path = env.with_test_video("input.mp4", duration_secs, VideoKind::Plain);
     let output_path = env.path("output.mp4");

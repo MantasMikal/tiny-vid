@@ -1,8 +1,9 @@
 use regex::Regex;
 use std::sync::LazyLock;
 
-static DURATION_RE: LazyLock<Regex> =
-    LazyLock::new(|| Regex::new(r"Duration: (\d+):(\d+):([\d.]+)").expect("invalid duration regex"));
+static DURATION_RE: LazyLock<Regex> = LazyLock::new(|| {
+    Regex::new(r"Duration: (\d+):(\d+):([\d.]+)").expect("invalid duration regex")
+});
 static TIME_RE: LazyLock<Regex> =
     LazyLock::new(|| Regex::new(r"out_time_ms=(\d+)").expect("invalid time regex"));
 
@@ -20,13 +21,15 @@ pub fn parse_ffmpeg_progress(
     }
 
     if let Some(caps) = TIME_RE.captures(output)
-        && let (Some(dur), Ok(current_time_ms)) =
-            (current_duration.filter(|&d| d > 0.0), caps[1].parse::<i64>())
-        {
-            let current_time = current_time_ms as f64 / 1_000_000.0;
-            let progress = (current_time / dur).min(1.0);
-            return (Some(progress), Some(dur));
-        }
+        && let (Some(dur), Ok(current_time_ms)) = (
+            current_duration.filter(|&d| d > 0.0),
+            caps[1].parse::<i64>(),
+        )
+    {
+        let current_time = current_time_ms as f64 / 1_000_000.0;
+        let progress = (current_time / dur).min(1.0);
+        return (Some(progress), Some(dur));
+    }
 
     (None, current_duration)
 }
@@ -50,16 +53,14 @@ mod tests {
 
     #[test]
     fn out_time_ms_progress() {
-        let (prog, dur) =
-            parse_ffmpeg_progress("out_time_ms=5000000", Some(10.0));
+        let (prog, dur) = parse_ffmpeg_progress("out_time_ms=5000000", Some(10.0));
         assert_eq!(prog, Some(0.5));
         assert_eq!(dur, Some(10.0));
     }
 
     #[test]
     fn out_time_ms_complete() {
-        let (prog, dur) =
-            parse_ffmpeg_progress("out_time_ms=10000000", Some(10.0));
+        let (prog, dur) = parse_ffmpeg_progress("out_time_ms=10000000", Some(10.0));
         assert_eq!(prog, Some(1.0));
         assert_eq!(dur, Some(10.0));
     }

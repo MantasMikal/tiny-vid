@@ -3,9 +3,11 @@
 
 use std::env;
 use std::fs;
-use tiny_vid_tauri_lib::ffmpeg::discovery::{get_ffmpeg_path, get_ffprobe_path, resolve_sidecar_path};
 #[cfg(feature = "discovery-test-helpers")]
 use tiny_vid_tauri_lib::ffmpeg::discovery::__test_reset_ffmpeg_path_cache;
+use tiny_vid_tauri_lib::ffmpeg::discovery::{
+    get_ffmpeg_path, get_ffprobe_path, resolve_sidecar_path,
+};
 
 /// Derive bundled suffix from target at compile time.
 fn bundled_suffix() -> String {
@@ -91,10 +93,7 @@ fn prefer_bundled_sidecar_when_present() {
         format!("ffprobe-{}.exe", target),
     );
     #[cfg(not(windows))]
-    let (ffmpeg_name, ffprobe_name) = (
-        format!("ffmpeg-{}", target),
-        format!("ffprobe-{}", target),
-    );
+    let (ffmpeg_name, ffprobe_name) = (format!("ffmpeg-{}", target), format!("ffprobe-{}", target));
 
     let mock_ffmpeg = exe_dir.join(&ffmpeg_name);
     let mock_ffprobe = exe_dir.join(&ffprobe_name);
@@ -124,8 +123,7 @@ fn prefer_bundled_sidecar_when_present() {
         "get_ffmpeg_path should return the suffixed bundled sidecar when present"
     );
     assert_eq!(
-        got_ffprobe,
-        mock_ffprobe,
+        got_ffprobe, mock_ffprobe,
         "get_ffprobe_path should return the suffixed bundled ffprobe"
     );
 }

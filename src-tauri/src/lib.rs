@@ -9,7 +9,23 @@ pub mod test_support;
 
 use std::path::PathBuf;
 
-use tauri::Emitter;
+use tauri::{Emitter, Manager, Theme, WindowEvent, window::Color};
+
+const LIGHT_WINDOW_BACKGROUND: Color = Color(255, 255, 255, 255);
+const DARK_WINDOW_BACKGROUND: Color = Color(10, 10, 10, 255);
+
+fn window_background_for_theme(theme: Theme) -> Color {
+    match theme {
+        Theme::Dark => DARK_WINDOW_BACKGROUND,
+        Theme::Light => LIGHT_WINDOW_BACKGROUND,
+        _ => LIGHT_WINDOW_BACKGROUND,
+    }
+}
+
+fn sync_main_window_background(window: &tauri::WebviewWindow) {
+    let theme = window.theme().unwrap_or(Theme::Light);
+    let _ = window.set_background_color(Some(window_background_for_theme(theme)));
+}
 
 #[cfg(target_os = "macos")]
 fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
@@ -23,9 +39,7 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
             name: Some(pkg.name.clone()),
             version: Some(pkg.version.to_string()),
             copyright: Some("Copyright © 2025 Mantas Mikalauskis".into()),
-            credits: Some(
-                "Compress and optimize video files with H.264, H.265, and AV1.".into(),
-            ),
+            credits: Some("Compress and optimize video files with H.264, H.265, and AV1.".into()),
             ..Default::default()
         }),
     )?;
@@ -41,9 +55,7 @@ fn setup_menu(app: &tauri::App) -> tauri::Result<()> {
         .build()?;
 
     let fullscreen = PredefinedMenuItem::fullscreen(app, None)?;
-    let view_menu = SubmenuBuilder::new(app, "View")
-        .item(&fullscreen)
-        .build()?;
+    let view_menu = SubmenuBuilder::new(app, "View").item(&fullscreen).build()?;
 
     let minimize = PredefinedMenuItem::minimize(app, None)?;
     let maximize = PredefinedMenuItem::maximize(app, None)?;
@@ -105,32 +117,39 @@ pub fn run() {
         .plugin(tauri_plugin_fs::init())
         .plugin(tauri_plugin_os::init())
         .manage(AppState::default())
-        .setup(|app: &mut tauri::App| -> Result<(), Box<dyn std::error::Error>> {
-            #[cfg(any(windows, target_os = "linux"))]
-            {
-                let mut files = Vec::new();
-                for maybe_file in std::env::args().skip(1) {
-                    if maybe_file.starts_with('-') {
-                        continue;
-                    }
-                    if let Ok(url) = url::Url::parse(&maybe_file) {
-                        if let Ok(path) = url.to_file_path() {
-                            files.push(path);
+        .setup(
+            |app: &mut tauri::App| -> Result<(), Box<dyn std::error::Error>> {
+                #[cfg(any(windows, target_os = "linux"))]
+                {
+                    let mut files = Vec::new();
+                    for maybe_file in std::env::args().skip(1) {
+                        if maybe_file.starts_with('-') {
+                            continue;
                         }
-                    } else {
-                        files.push(PathBuf::from(maybe_file));
+                        if let Ok(url) = url::Url::parse(&maybe_file) {
+                            if let Ok(path) = url.to_file_path() {
+                                files.push(path);
+                            }
+                        } else {
+                            files.push(PathBuf::from(maybe_file));
+                        }
+                    }
+                    if !files.is_empty() {
+                        let handle = app.handle();
+                        commands::buffer_opened_files(&handle, files);
                     }
                 }
-                if !files.is_empty() {
-                    let handle = app.handle();
-                    commands::buffer_opened_files(&handle, files);
-                }
-            }
 
-            #[cfg(target_os = "macos")]
-            setup_menu(app)?;
-            Ok(())
-        })
+                #[cfg(target_os = "macos")]
+                setup_menu(app)?;
+
+                if let Some(main_window) = app.get_webview_window("main") {
+                    sync_main_window_background(&main_window);
+                    let _ = main_window.show();
+                }
+                Ok(())
+            },
+        )
         .invoke_handler(tauri::generate_handler![
             commands::ffmpeg_transcode_to_temp,
             commands::ffmpeg_preview,
@@ -147,24 +166,33 @@ pub fn run() {
         .build(tauri::generate_context!())
         .expect("error while building tauri application");
 
-    app.run(|app, event| {
-        match &event {
-            #[cfg(any(target_os = "macos", target_os = "ios"))]
-            tauri::RunEvent::Opened { urls } => {
-                let files: Vec<PathBuf> = urls
-                    .iter()
-                    .filter_map(|u| u.to_file_path().ok())
-                    .collect();
-                if !files.is_empty() {
-                    commands::buffer_opened_files(app, files);
-                }
+    app.run(|app, event| match &event {
+        #[cfg(any(target_os = "macos", target_os = "ios"))]
+        tauri::RunEvent::Opened { urls } => {
+            let files: Vec<PathBuf> = urls.iter().filter_map(|u| u.to_file_path().ok()).collect();
+            if !files.is_empty() {
+                commands::buffer_opened_files(app, files);
             }
-            tauri::RunEvent::ExitRequested { .. } => {
-                log::info!(target: "tiny_vid::commands", "app exit requested, cleaning up");
-                cleanup_transcode_temp();
-                cleanup_preview_transcode_cache();
-            }
-            _ => {}
         }
+        tauri::RunEvent::ExitRequested { .. } => {
+            log::info!(target: "tiny_vid::commands", "app exit requested, cleaning up");
+            cleanup_transcode_temp();
+            cleanup_preview_transcode_cache();
+        }
+        tauri::RunEvent::WindowEvent { label, event, .. } => {
+            if label != "main" {
+                return;
+            }
+
+            let theme = match event {
+                WindowEvent::ThemeChanged(theme) => *theme,
+                _ => return,
+            };
+
+            if let Some(main_window) = app.get_webview_window("main") {
+                let _ = main_window.set_background_color(Some(window_background_for_theme(theme)));
+            }
+        }
+        _ => {}
     });
 }

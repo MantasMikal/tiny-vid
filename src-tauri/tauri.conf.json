@@ -19,12 +19,13 @@
         "height": 670,
         "minWidth": 375,
         "minHeight": 640,
+        "visible": false,
         "resizable": true,
         "maximizable": true,
         "decorations": true,
         "label": "main",
         "titleBarStyle": "Transparent",
-        "backgroundColor": "#0a0a0a"
+        "backgroundColor": "#ffffff"
       }
     ],
     "security": {

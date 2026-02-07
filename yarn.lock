@@ -34,7 +34,7 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@babel/core@npm:^7.24.4, @babel/core@npm:^7.28.5":
+"@babel/core@npm:^7.24.4, @babel/core@npm:^7.29.0":
   version: 7.29.0
   resolution: "@babel/core@npm:7.29.0"
   dependencies:
@@ -633,10 +633,22 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@eslint/js@npm:9.39.2, @eslint/js@npm:^9.39.2":
+"@eslint/js@npm:9.39.2":
   version: 9.39.2
   resolution: "@eslint/js@npm:9.39.2"
   checksum: 10c0/00f51c52b04ac79faebfaa65a9652b2093b9c924e945479f1f3945473f78aee83cbc76c8d70bbffbf06f7024626575b16d97b66eab16182e1d0d39daff2f26f5
+  languageName: node
+  linkType: hard
+
+"@eslint/js@npm:^10.0.1":
+  version: 10.0.1
+  resolution: "@eslint/js@npm:10.0.1"
+  peerDependencies:
+    eslint: ^10.0.0
+  peerDependenciesMeta:
+    eslint:
+      optional: true
+  checksum: 10c0/9f3fcaf71ba7fdf65d82e8faad6ecfe97e11801cc3c362b306a88ea1ed1344ae0d35330dddb0e8ad18f010f6687a70b75491b9e01c8af57acd7987cee6b3ec6c
   languageName: node
   linkType: hard
 
@@ -2683,10 +2695,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@rolldown/pluginutils@npm:1.0.0-beta.53":
-  version: 1.0.0-beta.53
-  resolution: "@rolldown/pluginutils@npm:1.0.0-beta.53"
-  checksum: 10c0/e8b0a7eb76be22f6f103171f28072de821525a4e400454850516da91a7381957932ff0ce495f227bcb168e86815788b0c1d249ca9e34dca366a82c8825b714ce
+"@rolldown/pluginutils@npm:1.0.0-rc.2":
+  version: 1.0.0-rc.2
+  resolution: "@rolldown/pluginutils@npm:1.0.0-rc.2"
+  checksum: 10c0/35d3dec35e00ab090d5ff8287e27af98a15da897dc8b034fe0e00d03e0931b9e993603c054be9e8925e2bde040c44c18b48cb8aeea6a261fd1c8f46837038927
   languageName: node
   linkType: hard
 
@@ -3029,105 +3041,112 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/api@npm:^2.8.0, @tauri-apps/api@npm:^2.9.1":
+"@tauri-apps/api@npm:^2.10.1":
+  version: 2.10.1
+  resolution: "@tauri-apps/api@npm:2.10.1"
+  checksum: 10c0/f3c0b2ba67a0b887440a7faa1e0589e847760ee30ec29b964f22573a46b817cb3af2199d6f5f7dfdda54d65b465ebaaa280454c610a5c53d808a0911fa15e45d
+  languageName: node
+  linkType: hard
+
+"@tauri-apps/api@npm:^2.8.0":
   version: 2.9.1
   resolution: "@tauri-apps/api@npm:2.9.1"
   checksum: 10c0/18c76ec58b579860bfde5cd5b5ea6c3b13019d356c17d436bf395cafdf15dd1f277364cacd24cc94e5d4aa3816f39698f231773d2a18625e98702295ab0c2c8f
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-darwin-arm64@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-darwin-arm64@npm:2.9.6"
+"@tauri-apps/cli-darwin-arm64@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-darwin-arm64@npm:2.10.0"
   conditions: os=darwin & cpu=arm64
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-darwin-x64@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-darwin-x64@npm:2.9.6"
+"@tauri-apps/cli-darwin-x64@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-darwin-x64@npm:2.10.0"
   conditions: os=darwin & cpu=x64
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-linux-arm-gnueabihf@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-linux-arm-gnueabihf@npm:2.9.6"
+"@tauri-apps/cli-linux-arm-gnueabihf@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-linux-arm-gnueabihf@npm:2.10.0"
   conditions: os=linux & cpu=arm
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-linux-arm64-gnu@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-linux-arm64-gnu@npm:2.9.6"
+"@tauri-apps/cli-linux-arm64-gnu@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-linux-arm64-gnu@npm:2.10.0"
   conditions: os=linux & cpu=arm64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-linux-arm64-musl@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-linux-arm64-musl@npm:2.9.6"
+"@tauri-apps/cli-linux-arm64-musl@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-linux-arm64-musl@npm:2.10.0"
   conditions: os=linux & cpu=arm64 & libc=musl
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-linux-riscv64-gnu@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-linux-riscv64-gnu@npm:2.9.6"
+"@tauri-apps/cli-linux-riscv64-gnu@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-linux-riscv64-gnu@npm:2.10.0"
   conditions: os=linux & cpu=riscv64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-linux-x64-gnu@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-linux-x64-gnu@npm:2.9.6"
+"@tauri-apps/cli-linux-x64-gnu@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-linux-x64-gnu@npm:2.10.0"
   conditions: os=linux & cpu=x64 & libc=glibc
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-linux-x64-musl@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-linux-x64-musl@npm:2.9.6"
+"@tauri-apps/cli-linux-x64-musl@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-linux-x64-musl@npm:2.10.0"
   conditions: os=linux & cpu=x64 & libc=musl
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-win32-arm64-msvc@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-win32-arm64-msvc@npm:2.9.6"
+"@tauri-apps/cli-win32-arm64-msvc@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-win32-arm64-msvc@npm:2.10.0"
   conditions: os=win32 & cpu=arm64
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-win32-ia32-msvc@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-win32-ia32-msvc@npm:2.9.6"
+"@tauri-apps/cli-win32-ia32-msvc@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-win32-ia32-msvc@npm:2.10.0"
   conditions: os=win32 & cpu=ia32
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli-win32-x64-msvc@npm:2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli-win32-x64-msvc@npm:2.9.6"
+"@tauri-apps/cli-win32-x64-msvc@npm:2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli-win32-x64-msvc@npm:2.10.0"
   conditions: os=win32 & cpu=x64
   languageName: node
   linkType: hard
 
-"@tauri-apps/cli@npm:^2.9.6":
-  version: 2.9.6
-  resolution: "@tauri-apps/cli@npm:2.9.6"
+"@tauri-apps/cli@npm:^2.10.0":
+  version: 2.10.0
+  resolution: "@tauri-apps/cli@npm:2.10.0"
   dependencies:
-    "@tauri-apps/cli-darwin-arm64": "npm:2.9.6"
-    "@tauri-apps/cli-darwin-x64": "npm:2.9.6"
-    "@tauri-apps/cli-linux-arm-gnueabihf": "npm:2.9.6"
-    "@tauri-apps/cli-linux-arm64-gnu": "npm:2.9.6"
-    "@tauri-apps/cli-linux-arm64-musl": "npm:2.9.6"
-    "@tauri-apps/cli-linux-riscv64-gnu": "npm:2.9.6"
-    "@tauri-apps/cli-linux-x64-gnu": "npm:2.9.6"
-    "@tauri-apps/cli-linux-x64-musl": "npm:2.9.6"
-    "@tauri-apps/cli-win32-arm64-msvc": "npm:2.9.6"
-    "@tauri-apps/cli-win32-ia32-msvc": "npm:2.9.6"
-    "@tauri-apps/cli-win32-x64-msvc": "npm:2.9.6"
+    "@tauri-apps/cli-darwin-arm64": "npm:2.10.0"
+    "@tauri-apps/cli-darwin-x64": "npm:2.10.0"
+    "@tauri-apps/cli-linux-arm-gnueabihf": "npm:2.10.0"
+    "@tauri-apps/cli-linux-arm64-gnu": "npm:2.10.0"
+    "@tauri-apps/cli-linux-arm64-musl": "npm:2.10.0"
+    "@tauri-apps/cli-linux-riscv64-gnu": "npm:2.10.0"
+    "@tauri-apps/cli-linux-x64-gnu": "npm:2.10.0"
+    "@tauri-apps/cli-linux-x64-musl": "npm:2.10.0"
+    "@tauri-apps/cli-win32-arm64-msvc": "npm:2.10.0"
+    "@tauri-apps/cli-win32-ia32-msvc": "npm:2.10.0"
+    "@tauri-apps/cli-win32-x64-msvc": "npm:2.10.0"
   dependenciesMeta:
     "@tauri-apps/cli-darwin-arm64":
       optional: true
@@ -3153,7 +3172,7 @@ __metadata:
       optional: true
   bin:
     tauri: tauri.js
-  checksum: 10c0/f8aed97b4dec2ad99720315d8bf392624e5db13eff30e89340849d14b17020a3f65af847f1ebdad88f187ccb0f00512e77a17af8c607350fc9a7c68c05414b8b
+  checksum: 10c0/23b41ee1fe635a8b60f2a3011d50f3ca10aa8f86f885e9345acce899b0062833c139a26e0c41667a515888363de9ea5bfd29aea0721eeb61a75b45a125296f55
   languageName: node
   linkType: hard
 
@@ -3193,12 +3212,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@tauri-apps/plugin-shell@npm:^2.3.4":
-  version: 2.3.4
-  resolution: "@tauri-apps/plugin-shell@npm:2.3.4"
+"@tauri-apps/plugin-shell@npm:^2.3.5":
+  version: 2.3.5
+  resolution: "@tauri-apps/plugin-shell@npm:2.3.5"
   dependencies:
-    "@tauri-apps/api": "npm:^2.8.0"
-  checksum: 10c0/5a7cccb2dddf7fd252767cd07fee24d10bc31105a72e45f27a958c3b7be4bab610af6d6ffe58969b0816d12ffe39a884a082a8a79e32eb537f9d51059ef79a2f
+    "@tauri-apps/api": "npm:^2.10.1"
+  checksum: 10c0/555f33efb997a0e1b21c9540b0bb30dcda073009f55f7cdb89eb0587427fdec27b1e6a1df4ab5c08065b7f3f0a61cfefd059ec8be9eafb157c9b6344eb856df2
   languageName: node
   linkType: hard
 
@@ -3308,12 +3327,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/node@npm:^22.15.0":
-  version: 22.19.7
-  resolution: "@types/node@npm:22.19.7"
+"@types/node@npm:^24.10.11":
+  version: 24.10.11
+  resolution: "@types/node@npm:24.10.11"
   dependencies:
-    undici-types: "npm:~6.21.0"
-  checksum: 10c0/0a4b13fd51306a72393f145693063e074be1bf884bdc642c879436d2c053ac9d573cc0a0d69867f60b14d3f1b9d03317e8ec0e4377f7527cb645e7b2a5d34045
+    undici-types: "npm:~7.16.0"
+  checksum: 10c0/2578baa9443d62b0f13444b7965790912eca6d25c205e594cfa96689fa9bc6a676d2d4d7024a95a92e42e4be52133e5608ece2ef86edb12ee110c8b52f603a35
   languageName: node
   linkType: hard
 
@@ -3333,12 +3352,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@types/react@npm:^19.2.10":
-  version: 19.2.10
-  resolution: "@types/react@npm:19.2.10"
+"@types/react@npm:^19.2.13":
+  version: 19.2.13
+  resolution: "@types/react@npm:19.2.13"
   dependencies:
     csstype: "npm:^3.2.2"
-  checksum: 10c0/17b96203a79ad3fa3cee8f1f1f324b93f005bc125755e29ac149402807275feaf3f00a4e65b8405f633923ac993da5737fd9800d27ee49911f3ed51dc27478f9
+  checksum: 10c0/e512dc53b805b9066f5c6ad42944372e1204290d618dbaec634d8bbd80d3aadcc1b8cdd7251329936bbdafae0425c02f531083213473bb370df903f20bb66e91
   languageName: node
   linkType: hard
 
@@ -3486,19 +3505,19 @@ __metadata:
   languageName: node
   linkType: hard
 
-"@vitejs/plugin-react@npm:^5.1.2":
-  version: 5.1.2
-  resolution: "@vitejs/plugin-react@npm:5.1.2"
+"@vitejs/plugin-react@npm:^5.1.3":
+  version: 5.1.3
+  resolution: "@vitejs/plugin-react@npm:5.1.3"
   dependencies:
-    "@babel/core": "npm:^7.28.5"
+    "@babel/core": "npm:^7.29.0"
     "@babel/plugin-transform-react-jsx-self": "npm:^7.27.1"
     "@babel/plugin-transform-react-jsx-source": "npm:^7.27.1"
-    "@rolldown/pluginutils": "npm:1.0.0-beta.53"
+    "@rolldown/pluginutils": "npm:1.0.0-rc.2"
     "@types/babel__core": "npm:^7.20.5"
     react-refresh: "npm:^0.18.0"
   peerDependencies:
     vite: ^4.2.0 || ^5.0.0 || ^6.0.0 || ^7.0.0
-  checksum: 10c0/d788f269cdf7474425071ba7c4ea7013f174ddaef12b758defe809a551a03ac62a4a80cd858872deb618e7936ccc7cffe178bc12b62e9c836a467e13f15b9390
+  checksum: 10c0/814d950f398f13ab5261593952b0a3a10a8b21220923c99817c99456890e1c0df4f1dd4cb2fc538ce4db4f525695e82ba1771a9e13ae1821283b659a7cfedc12
   languageName: node
   linkType: hard
 
@@ -3718,12 +3737,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"babel-plugin-react-compiler@npm:^1.0.0":
-  version: 1.0.0
-  resolution: "babel-plugin-react-compiler@npm:1.0.0"
+"babel-plugin-react-compiler@npm:19.1.0-rc.3":
+  version: 19.1.0-rc.3
+  resolution: "babel-plugin-react-compiler@npm:19.1.0-rc.3"
   dependencies:
     "@babel/types": "npm:^7.26.0"
-  checksum: 10c0/9406267ada8d7dbdfe8906b40ecadb816a5f4cee2922bee23f7729293b369624ee135b5a9b0f263851c263c9787522ac5d97016c9a2b82d1668300e42b18aff8
+  checksum: 10c0/6811500cf81a309f104ec1de3fa9336932a1105e3c0e747b81a1d12e80c2cd4f531f7c42ec4441f96527ee20e19342af58d958241061d47a02b0d8bee66fbe35
   languageName: node
   linkType: hard
 
@@ -4697,9 +4716,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eslint-plugin-better-tailwindcss@npm:^4.0.2":
-  version: 4.0.2
-  resolution: "eslint-plugin-better-tailwindcss@npm:4.0.2"
+"eslint-plugin-better-tailwindcss@npm:^4.1.1":
+  version: 4.1.1
+  resolution: "eslint-plugin-better-tailwindcss@npm:4.1.1"
   dependencies:
     "@eslint/css-tree": "npm:^3.6.8"
     "@valibot/to-json-schema": "npm:^1.5.0"
@@ -4718,7 +4737,7 @@ __metadata:
       optional: true
     oxlint:
       optional: true
-  checksum: 10c0/827ee4f826163f56829cb9c7ecc4eacda66e50d66511ad28223f66138eb61eccb2af8f3692fc277496ba219a8a5c9cbcbebff40614298c3cee31d768c360cac5
+  checksum: 10c0/e9413faabf9e2797c8583e6fc4805451fdae9bf2dee87cf8a2b2a7a6fbe3353799f38e5f9312ed980c620ea17205526fb38299708035c3ad7c640a4a75698df2
   languageName: node
   linkType: hard
 
@@ -4729,9 +4748,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"eslint-plugin-react-compiler@npm:^19.0.0-beta-0f996e7-20250624":
-  version: 19.0.0-beta-ebf51a3-20250411
-  resolution: "eslint-plugin-react-compiler@npm:19.0.0-beta-ebf51a3-20250411"
+"eslint-plugin-react-compiler@npm:^19.1.0-rc.3":
+  version: 19.1.0-rc.1-rc-af1b7da-20250421
+  resolution: "eslint-plugin-react-compiler@npm:19.1.0-rc.1-rc-af1b7da-20250421"
   dependencies:
     "@babel/core": "npm:^7.24.4"
     "@babel/parser": "npm:^7.24.4"
@@ -4741,7 +4760,7 @@ __metadata:
     zod-validation-error: "npm:^3.0.3"
   peerDependencies:
     eslint: ">=7"
-  checksum: 10c0/d98a930d696e7325b1ef603a0167fdedb8ad937875cb168a96271370434122633c46f9e632e1810beb6f1f6f8aa1f836c304ac1d83fd73bfeb6c6268aae8b060
+  checksum: 10c0/ae03ebcfa3fce941517426aa2be4a2ee1e7f0e753d50c18ed9040550329795b0f7dc8bc059222418a9fa99cdeff1b8f0a8972873f8219a942a39cd6b14c2d64f
   languageName: node
   linkType: hard
 
@@ -5090,11 +5109,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"framer-motion@npm:^12.29.2":
-  version: 12.29.2
-  resolution: "framer-motion@npm:12.29.2"
+"framer-motion@npm:^12.33.0":
+  version: 12.33.0
+  resolution: "framer-motion@npm:12.33.0"
   dependencies:
-    motion-dom: "npm:^12.29.2"
+    motion-dom: "npm:^12.33.0"
     motion-utils: "npm:^12.29.2"
     tslib: "npm:^2.4.0"
   peerDependencies:
@@ -5108,7 +5127,7 @@ __metadata:
       optional: true
     react-dom:
       optional: true
-  checksum: 10c0/a753e2a74a4e847df60b2f28cfaafec5ec8037774503834bbb80f6433df80b03d00e8d1030be117a70b6ad49b2e457a206d04fbf4d0f8ba783ea5ba6468e603e
+  checksum: 10c0/c8b1d628c98763f784a039897727709a1bccfad53d1cf2d58656c3bd2b79934b66d8b41981b0109799cf5c5953812f32027e6bc5748637648e360b1d647583ad
   languageName: node
   linkType: hard
 
@@ -5327,10 +5346,10 @@ __metadata:
   languageName: node
   linkType: hard
 
-"globals@npm:^17.2.0":
-  version: 17.2.0
-  resolution: "globals@npm:17.2.0"
-  checksum: 10c0/fd25a98b08c1d31082337cbbb5ff1b90b9980e1db69a8621fb942bdb2cdca8aa54d61466742e8bf4910578ea5fa903b8bf83bffd1b2d45551cc614830dba910b
+"globals@npm:^17.3.0":
+  version: 17.3.0
+  resolution: "globals@npm:17.3.0"
+  checksum: 10c0/7f21443ecaa60c6e9ff56d9fb6f10a9b5f9514e7f22e5392f715472bb220ce31c865ebf414a32695150e733fb3e1013e6322dbce70fddd1e066f372b8d55a4b8
   languageName: node
   linkType: hard
 
@@ -6475,12 +6494,12 @@ __metadata:
   languageName: node
   linkType: hard
 
-"motion-dom@npm:^12.29.2":
-  version: 12.29.2
-  resolution: "motion-dom@npm:12.29.2"
+"motion-dom@npm:^12.33.0":
+  version: 12.33.0
+  resolution: "motion-dom@npm:12.33.0"
   dependencies:
     motion-utils: "npm:^12.29.2"
-  checksum: 10c0/a8c51e016ecb109a8b63dd762d98d15075f62816f56e34a2b2faf05fae36fcd8174732f2c442fdffe059d6cb570eb8dae54da16b3aaa16456b0ae83f2873ebce
+  checksum: 10c0/1155014069e92fd3e975b47a8d3ec5dd63c4ef095561fdc12127890548101c41ee93b1fc3498948a7ee6035b46e3ac7244d66acd3c45899b9e0a85aea92ea0e9
   languageName: node
   linkType: hard
 
@@ -6491,11 +6510,11 @@ __metadata:
   languageName: node
   linkType: hard
 
-"motion@npm:^12.29.2":
-  version: 12.29.2
-  resolution: "motion@npm:12.29.2"
+"motion@npm:^12.33.0":
+  version: 12.33.0
+  resolution: "motion@npm:12.33.0"
   dependencies:
-    framer-motion: "npm:^12.29.2"
+    framer-motion: "npm:^12.33.0"
     tslib: "npm:^2.4.0"
   peerDependencies:
     "@emotion/is-prop-valid": "*"
@@ -6508,7 +6527,7 @@ __metadata:
       optional: true
     react-dom:
       optional: true
-  checksum: 10c0/7d719793ef21d505e48b6c8ff9764c8b00843b211d7f87be2c4adf6b77f1c1e6b8b6e34a1ed11c36178f1f4ea329319fb9e26abaf2d0f09695490a04c407da6a
+  checksum: 10c0/a858cc2961ab6d402967b758958395bbc841e136aa10b8e5136252ec01a95cc986a2894a034b708a9e01f83c9d876e14739067e209edbe860b342c96e9877990
   languageName: node
   linkType: hard
 
@@ -7251,16 +7270,6 @@ __metadata:
   languageName: node
   linkType: hard
 
-"react-resizable-panels@npm:^4.5.6":
-  version: 4.5.6
-  resolution: "react-resizable-panels@npm:4.5.6"
-  peerDependencies:
-    react: ^18.0.0 || ^19.0.0
-    react-dom: ^18.0.0 || ^19.0.0
-  checksum: 10c0/21416596839596ba9329b02a18b97b9af4ea64908b85ac15155a37a140aa667f31c5e76275e8c16fb15fcb684a3ca1b8953cadd948073eeee29d4c1990825936
-  languageName: node
-  linkType: hard
-
 "react-style-singleton@npm:^2.2.2, react-style-singleton@npm:^2.2.3":
   version: 2.2.3
   resolution: "react-style-singleton@npm:2.2.3"
@@ -7981,7 +7990,7 @@ __metadata:
   version: 0.0.0-use.local
   resolution: "tiny-vid@workspace:."
   dependencies:
-    "@eslint/js": "npm:^9.39.2"
+    "@eslint/js": "npm:^10.0.1"
     "@radix-ui/react-accordion": "npm:^1.2.12"
     "@radix-ui/react-checkbox": "npm:^1.3.3"
     "@radix-ui/react-icons": "npm:^1.3.2"
@@ -8000,42 +8009,41 @@ __metadata:
     "@radix-ui/react-tooltip": "npm:^1.2.8"
     "@release-it/bumper": "npm:^7.0.5"
     "@tailwindcss/vite": "npm:^4.1.18"
-    "@tauri-apps/api": "npm:^2.9.1"
-    "@tauri-apps/cli": "npm:^2.9.6"
+    "@tauri-apps/api": "npm:^2.10.1"
+    "@tauri-apps/cli": "npm:^2.10.0"
     "@tauri-apps/plugin-dialog": "npm:^2.6.0"
     "@tauri-apps/plugin-fs": "npm:^2.4.5"
     "@tauri-apps/plugin-opener": "npm:^2.5.3"
     "@tauri-apps/plugin-os": "npm:^2.3.2"
-    "@tauri-apps/plugin-shell": "npm:^2.3.4"
+    "@tauri-apps/plugin-shell": "npm:^2.3.5"
     "@types/fs-extra": "npm:^11.0.4"
     "@types/json-merge-patch": "npm:^1"
-    "@types/node": "npm:^22.15.0"
-    "@types/react": "npm:^19.2.10"
+    "@types/node": "npm:^24.10.11"
+    "@types/react": "npm:^19.2.13"
     "@types/react-dom": "npm:^19.2.3"
-    "@vitejs/plugin-react": "npm:^5.1.2"
-    babel-plugin-react-compiler: "npm:^1.0.0"
+    "@vitejs/plugin-react": "npm:^5.1.3"
+    babel-plugin-react-compiler: "npm:19.1.0-rc.3"
     class-variance-authority: "npm:^0.7.1"
     clsx: "npm:^2.1.1"
     commander: "npm:^14.0.3"
     eslint: "npm:^9.39.2"
     eslint-config-prettier: "npm:^10.1.8"
-    eslint-plugin-better-tailwindcss: "npm:^4.0.2"
+    eslint-plugin-better-tailwindcss: "npm:^4.1.1"
     eslint-plugin-no-relative-import-paths: "npm:^1.6.1"
     eslint-plugin-react: "npm:^7.37.5"
-    eslint-plugin-react-compiler: "npm:^19.0.0-beta-0f996e7-20250624"
+    eslint-plugin-react-compiler: "npm:^19.1.0-rc.3"
     eslint-plugin-react-hooks: "npm:^7.0.1"
     eslint-plugin-simple-import-sort: "npm:^12.1.1"
     eslint-plugin-unused-imports: "npm:^4.3.0"
-    globals: "npm:^17.2.0"
+    globals: "npm:^17.3.0"
     json-merge-patch: "npm:^1.0.2"
     lucide-react: "npm:^0.563.0"
-    motion: "npm:^12.29.2"
+    motion: "npm:^12.33.0"
     prettier: "npm:^3.8.1"
     radix-ui: "npm:^1.4.3"
     react: "npm:^19.2.4"
     react-compare-slider: "npm:^3.1.0"
     react-dom: "npm:^19.2.4"
-    react-resizable-panels: "npm:^4.5.6"
     release-it: "npm:^19.2.4"
     tailwind-merge: "npm:^3.4.0"
     tailwindcss: "npm:^4.1.18"
@@ -8043,8 +8051,8 @@ __metadata:
     typescript: "npm:~5.9.3"
     typescript-eslint: "npm:^8.54.0"
     vite: "npm:^7.3.1"
-    zustand: "npm:^5.0.10"
-    zx: "npm:^8.8.4"
+    zustand: "npm:^5.0.11"
+    zx: "npm:^8.8.5"
   languageName: unknown
   linkType: soft
 
@@ -8233,13 +8241,6 @@ __metadata:
     has-symbols: "npm:^1.1.0"
     which-boxed-primitive: "npm:^1.1.1"
   checksum: 10c0/7dbd35ab02b0e05fe07136c72cb9355091242455473ec15057c11430129bab38b7b3624019b8778d02a881c13de44d63cd02d122ee782fb519e1de7775b5b982
-  languageName: node
-  linkType: hard
-
-"undici-types@npm:~6.21.0":
-  version: 6.21.0
-  resolution: "undici-types@npm:6.21.0"
-  checksum: 10c0/c01ed51829b10aa72fc3ce64b747f8e74ae9b60eafa19a7b46ef624403508a54c526ffab06a14a26b3120d055e1104d7abe7c9017e83ced038ea5cf52f8d5e04
   languageName: node
   linkType: hard
 
@@ -8649,9 +8650,9 @@ __metadata:
   languageName: node
   linkType: hard
 
-"zustand@npm:^5.0.10":
-  version: 5.0.10
-  resolution: "zustand@npm:5.0.10"
+"zustand@npm:^5.0.11":
+  version: 5.0.11
+  resolution: "zustand@npm:5.0.11"
   peerDependencies:
     "@types/react": ">=18.0.0"
     immer: ">=9.0.6"
@@ -8666,11 +8667,11 @@ __metadata:
       optional: true
     use-sync-external-store:
       optional: true
-  checksum: 10c0/e6ddabf2b44f2c0b7362b0f549cb457d25516caa4c0465132037b62b6173552a43d48bb494c1707286f8d60b389fa249eb4242aa810f1c1d4b4d0b96df789cb8
+  checksum: 10c0/61836b48dac5978c9d1b8289d5162a151bee77828371b9aba6431a079b77faca0635ba53da3f7b331295fbc4e78318a109a4527f7a051cb63abfe79b69ccbecf
   languageName: node
   linkType: hard
 
-"zx@npm:^8.8.4":
+"zx@npm:^8.8.5":
   version: 8.8.5
   resolution: "zx@npm:8.8.5"
   bin:

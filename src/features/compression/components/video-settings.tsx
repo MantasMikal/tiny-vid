@@ -133,6 +133,7 @@ export function VideoSettings() {
   };
 
   if (!cOptions) return null;
+  console.log("SETTINGS RENDERED");
 
   return (
     <TooltipProvider>
@@ -162,13 +163,11 @@ export function VideoSettings() {
                     <ToggleGroupItem
                       key={config.value}
                       variant="outline"
-                      className={cn(
-                        `flex h-16 w-full min-w-0 flex-row items-center justify-start gap-3 whitespace-normal`
-                      )}
+                      className="flex h-16 w-full min-w-0 flex-row items-center justify-start gap-3 text-left"
                       value={config.value}
                     >
                       <config.icon className={cn("size-7 shrink-0")} />
-                      <div className={cn("flex min-w-0 flex-1 flex-col text-left")}>
+                      <div className={cn("flex min-w-0 flex-1 flex-col whitespace-normal")}>
                         <div className={cn("text-sm font-semibold")}>{config.title}</div>
                         <p className={cn("text-xs wrap-break-word")}>{config.description}</p>
                       </div>

@@ -3,15 +3,12 @@
 mod support;
 
 use support::{
-    assert_codec_contract, default_codec, metadata, opts_with, run_transcode_and_verify,
-    CodecContract, IntegrationEnv, VideoKind,
+    CodecContract, IntegrationEnv, VideoKind, assert_codec_contract, default_codec, metadata,
+    opts_with, run_transcode_and_verify,
 };
 use tiny_vid_tauri_lib::ffmpeg::TranscodeOptions;
 
-fn run_transcode_case(
-    options: TranscodeOptions,
-    duration_secs: f32,
-) {
+fn run_transcode_case(options: TranscodeOptions, duration_secs: f32) {
     let env = IntegrationEnv::new();
     let input_path = env.with_test_video("input.mp4", duration_secs, VideoKind::Plain);
     let output_path = env.path("output.mp4");
@@ -160,7 +157,11 @@ fn transcode_preserve_subtitles_optional_map_succeeds_without_input_subtitles() 
 fn transcode_preserves_subtitles_when_input_has_no_audio() {
     assert_codec_contract(CodecContract::IntegrationSmoke);
     let env = IntegrationEnv::new();
-    let input_path = env.with_test_video("input_with_subs_no_audio.mp4", 2.0, VideoKind::SubtitlesNoAudio);
+    let input_path = env.with_test_video(
+        "input_with_subs_no_audio.mp4",
+        2.0,
+        VideoKind::SubtitlesNoAudio,
+    );
     let output_path = env.path("output.mp4");
 
     let input_meta = metadata(&input_path);

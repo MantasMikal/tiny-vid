@@ -132,8 +132,8 @@ fn resolve_bundled_ffmpeg_path() -> Option<PathBuf> {
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        let prefer_system = std::env::var("TINY_VID_USE_SYSTEM_FFMPEG")
-            .is_ok_and(|v| !v.is_empty() && v != "0");
+        let prefer_system =
+            std::env::var("TINY_VID_USE_SYSTEM_FFMPEG").is_ok_and(|v| !v.is_empty() && v != "0");
         if !prefer_system && let Some(path) = resolve_bundled_ffmpeg_path() {
             return Ok(path);
         }
@@ -150,14 +150,15 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
         }
     }
     if let Some(p) = find_in_path()
-        && p.exists() {
-            log::debug!(
-                target: "tiny_vid::ffmpeg::discovery",
-                "FFmpeg found in PATH: {}",
-                p.display()
-            );
-            return Ok(p);
-        }
+        && p.exists()
+    {
+        log::debug!(
+            target: "tiny_vid::ffmpeg::discovery",
+            "FFmpeg found in PATH: {}",
+            p.display()
+        );
+        return Ok(p);
+    }
 
     log::error!(
         target: "tiny_vid::ffmpeg::discovery",
@@ -225,12 +226,13 @@ pub fn ffprobe_candidates(ffmpeg_path: &Path) -> Vec<PathBuf> {
     let stem = ffmpeg_path.file_stem().and_then(|s| s.to_str());
     if let Some(stem) = stem
         && let Some(suffix) = stem.strip_prefix("ffmpeg")
-            && !suffix.is_empty() {
-                #[cfg(target_os = "windows")]
-                candidates.push(parent.join(format!("ffprobe{suffix}.exe")));
-                #[cfg(not(target_os = "windows"))]
-                candidates.push(parent.join(format!("ffprobe{suffix}")));
-            }
+        && !suffix.is_empty()
+    {
+        #[cfg(target_os = "windows")]
+        candidates.push(parent.join(format!("ffprobe{suffix}.exe")));
+        #[cfg(not(target_os = "windows"))]
+        candidates.push(parent.join(format!("ffprobe{suffix}")));
+    }
     #[cfg(target_os = "windows")]
     candidates.push(parent.join("ffprobe.exe"));
     #[cfg(not(target_os = "windows"))]
@@ -270,9 +272,10 @@ fn parse_encoder_output(stdout: &str) -> Vec<String> {
     for line in stdout.lines() {
         if line.starts_with(" V")
             && let Some(codec_name) = line.split_whitespace().nth(1)
-                && SUPPORTED_CODEC_NAMES.contains(&codec_name) {
-                    codecs.push(codec_name.to_string());
-                }
+            && SUPPORTED_CODEC_NAMES.contains(&codec_name)
+        {
+            codecs.push(codec_name.to_string());
+        }
     }
     codecs
 }
@@ -294,7 +297,10 @@ pub fn get_available_codecs() -> Result<Vec<String>, AppError> {
         .map_err(|e| AppError::from(format!("Failed to run ffmpeg -encoders: {}", e)))?;
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(AppError::from(format!("ffmpeg -encoders failed: {}", stderr)));
+        return Err(AppError::from(format!(
+            "ffmpeg -encoders failed: {}",
+            stderr
+        )));
     }
     let stdout = String::from_utf8_lossy(&output.stdout);
     let codecs = parse_encoder_output(&stdout);
@@ -332,8 +338,7 @@ mod tests {
     fn ffprobe_candidates_bundled_suffix_unix() {
         #[cfg(not(target_os = "windows"))]
         {
-            let candidates =
-                ffprobe_candidates(Path::new("/app/bin/ffmpeg-aarch64-apple-darwin"));
+            let candidates = ffprobe_candidates(Path::new("/app/bin/ffmpeg-aarch64-apple-darwin"));
             assert_eq!(candidates.len(), 2);
             assert_eq!(
                 candidates[0],
@@ -347,9 +352,8 @@ mod tests {
     fn ffprobe_candidates_bundled_suffix_windows() {
         #[cfg(target_os = "windows")]
         {
-            let candidates = ffprobe_candidates(Path::new(
-                "C:\\app\\bin\\ffmpeg-x86_64-pc-windows-msvc.exe",
-            ));
+            let candidates =
+                ffprobe_candidates(Path::new("C:\\app\\bin\\ffmpeg-x86_64-pc-windows-msvc.exe"));
             assert_eq!(candidates.len(), 2);
             assert_eq!(
                 candidates[0],
@@ -379,5 +383,4 @@ Encoders:
         assert!(!codecs.contains(&"mpeg4".to_string()));
         assert!(!codecs.contains(&"aac".to_string()));
     }
-
 }

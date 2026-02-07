@@ -2,10 +2,10 @@
 
 use std::path::PathBuf;
 
-use crate::commands;
 use crate::AppState;
+use crate::commands;
 use tauri::ipc::{CallbackFn, InvokeBody};
-use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
+use tauri::test::{INVOKE_KEY, mock_builder, mock_context, noop_assets};
 use tauri::webview::InvokeRequest;
 
 pub fn create_test_app() -> tauri::App<tauri::test::MockRuntime> {

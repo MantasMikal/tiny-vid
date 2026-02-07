@@ -3,8 +3,8 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use crate::error::AppError;
 use super::TranscodeOptions;
+use crate::error::AppError;
 
 /// Codec variant for FFmpeg argument construction. Each variant handles its own quality, preset, and tags.
 #[derive(Clone, Copy)]
@@ -28,7 +28,8 @@ impl CodecKind {
             CodecKind::VP9
         } else if lower.contains("svtav1") {
             CodecKind::SvtAv1
-        } else if (lower.contains("x265") || lower.contains("hevc")) && !lower.contains("videotoolbox")
+        } else if (lower.contains("x265") || lower.contains("hevc"))
+            && !lower.contains("videotoolbox")
         {
             CodecKind::X265
         } else {
@@ -102,9 +103,11 @@ impl CodecKind {
 
         if self.supports_tune()
             && let Some(tune_val) = tune
-                && !tune_val.is_empty() && tune_val != "none" {
-                    args.extend(["-tune".to_string(), tune_val.to_string()]);
-                }
+            && !tune_val.is_empty()
+            && tune_val != "none"
+        {
+            args.extend(["-tune".to_string(), tune_val.to_string()]);
+        }
 
         match self {
             CodecKind::X264 | CodecKind::X265 | CodecKind::VP9 | CodecKind::SvtAv1 => {
@@ -405,10 +408,7 @@ pub fn build_ffmpeg_command(
         }
     }
 
-    args.extend([
-        "-c:v".to_string(),
-        codec_kind.ffmpeg_name().to_string(),
-    ]);
+    args.extend(["-c:v".to_string(), codec_kind.ffmpeg_name().to_string()]);
 
     if remove_audio {
         args.push("-an".to_string());
@@ -496,10 +496,11 @@ pub fn format_args_for_display_multiline(args: &[String]) -> String {
     let mut lines = Vec::new();
     let mut iter = args.iter().peekable();
     while let Some(arg) = iter.next() {
-        let line = if arg.starts_with('-')
-            && iter.peek().is_some_and(|next| !next.starts_with('-'))
+        let line = if arg.starts_with('-') && iter.peek().is_some_and(|next| !next.starts_with('-'))
         {
-            let value = iter.next().unwrap_or_else(|| unreachable!("peek confirmed next arg exists"));
+            let value = iter
+                .next()
+                .unwrap_or_else(|| unreachable!("peek confirmed next arg exists"));
             format!("  {} {}", arg, value)
         } else {
             format!("  {}", arg)
@@ -551,10 +552,7 @@ mod tests {
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
         assert!(args.contains(&"-vf".to_string()));
         let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
-        assert_eq!(
-            args.get(vf_idx + 1).unwrap(),
-            "scale=round(iw*0.5/2)*2:-2"
-        );
+        assert_eq!(args.get(vf_idx + 1).unwrap(), "scale=round(iw*0.5/2)*2:-2");
     }
 
     #[test]
@@ -753,7 +751,10 @@ mod tests {
         o.remove_audio = Some(false);
         let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None, None, None).unwrap();
         assert!(args.contains(&"libopus".to_string()));
-        assert!(args.contains(&"-ac".to_string()), "WebM+Opus should downmix to stereo (-ac 2)");
+        assert!(
+            args.contains(&"-ac".to_string()),
+            "WebM+Opus should downmix to stereo (-ac 2)"
+        );
         assert!(!args.contains(&"-movflags".to_string()));
         assert!(args.last() == Some(&"/out.webm".to_string()));
     }
@@ -798,11 +799,19 @@ mod tests {
         o.quality = Some(0);
         let args = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None, None, None).unwrap();
         let crf_idx = args.iter().position(|a| a == "-crf").unwrap();
-        assert_eq!(args.get(crf_idx + 1).unwrap(), "63", "quality 0 -> worst CRF");
+        assert_eq!(
+            args.get(crf_idx + 1).unwrap(),
+            "63",
+            "quality 0 -> worst CRF"
+        );
         o.quality = Some(100);
         let args2 = build_ffmpeg_command("/in.mp4", "/out.webm", &o, None, None, None).unwrap();
         let crf_idx2 = args2.iter().position(|a| a == "-crf").unwrap();
-        assert_eq!(args2.get(crf_idx2 + 1).unwrap(), "20", "quality 100 -> best CRF");
+        assert_eq!(
+            args2.get(crf_idx2 + 1).unwrap(),
+            "20",
+            "quality 100 -> best CRF"
+        );
     }
 
     #[test]
@@ -811,10 +820,16 @@ mod tests {
         o.codec = Some("h264_videotoolbox".to_string());
         o.quality = Some(75);
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
-        assert!(args.contains(&"-q:v".to_string()), "VideoToolbox should use -q:v");
+        assert!(
+            args.contains(&"-q:v".to_string()),
+            "VideoToolbox should use -q:v"
+        );
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
         assert_eq!(args.get(qv_idx + 1).unwrap(), "75", "quality 75 -> -q:v 75");
-        assert!(!args.contains(&"-crf".to_string()), "VideoToolbox should not use -crf");
+        assert!(
+            !args.contains(&"-crf".to_string()),
+            "VideoToolbox should not use -crf"
+        );
     }
 
     #[test]
@@ -824,8 +839,14 @@ mod tests {
         o.preset = Some("fast".to_string());
         o.tune = Some("film".to_string());
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
-        assert!(!args.contains(&"-preset".to_string()), "VideoToolbox should not use -preset");
-        assert!(!args.contains(&"-tune".to_string()), "VideoToolbox should not use -tune");
+        assert!(
+            !args.contains(&"-preset".to_string()),
+            "VideoToolbox should not use -preset"
+        );
+        assert!(
+            !args.contains(&"-tune".to_string()),
+            "VideoToolbox should not use -tune"
+        );
     }
 
     #[test]
@@ -835,7 +856,11 @@ mod tests {
         o.quality = Some(100);
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
-        assert_eq!(args.get(qv_idx + 1).unwrap(), "100", "quality 100 -> -q:v 100 (best)");
+        assert_eq!(
+            args.get(qv_idx + 1).unwrap(),
+            "100",
+            "quality 100 -> -q:v 100 (best)"
+        );
     }
 
     #[test]
@@ -845,7 +870,11 @@ mod tests {
         o.quality = Some(0);
         let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
         let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
-        assert_eq!(args.get(qv_idx + 1).unwrap(), "0", "quality 0 -> -q:v 0 (worst)");
+        assert_eq!(
+            args.get(qv_idx + 1).unwrap(),
+            "0",
+            "quality 0 -> -q:v 0 (worst)"
+        );
     }
 
     #[test]
@@ -880,7 +909,11 @@ mod tests {
         o.output_format = Some("mkv".to_string());
         o.codec = Some("h264_videotoolbox".to_string());
         let result = build_ffmpeg_command("/in.mp4", "/out.mkv", &o, None, None, None);
-        assert!(result.is_ok(), "lgpl build should accept MKV output: {:?}", result.err());
+        assert!(
+            result.is_ok(),
+            "lgpl build should accept MKV output: {:?}",
+            result.err()
+        );
     }
 
     #[test]
@@ -908,16 +941,12 @@ mod tests {
         o.preserve_additional_audio_streams = Some(true);
         o.audio_stream_count = Some(3);
         o.remove_audio = Some(false);
-        let args = build_ffmpeg_command(
-            "/in.mkv",
-            "/out.mp4",
-            &o,
-            Some(3.0),
-            Some("mp4"),
-            None,
-        )
-        .unwrap();
-        assert!(!args.contains(&"0:a:1".to_string()), "Preview uses single audio");
+        let args =
+            build_ffmpeg_command("/in.mkv", "/out.mp4", &o, Some(3.0), Some("mp4"), None).unwrap();
+        assert!(
+            !args.contains(&"0:a:1".to_string()),
+            "Preview uses single audio"
+        );
     }
 
     #[test]
@@ -930,7 +959,10 @@ mod tests {
         o.output_format = Some("webm".to_string());
         o.codec = Some("libvpx-vp9".to_string());
         let args = build_ffmpeg_command("/in.mkv", "/out.webm", &o, None, None, None).unwrap();
-        assert!(!args.contains(&"0:a:1".to_string()), "WebM supports single audio only");
+        assert!(
+            !args.contains(&"0:a:1".to_string()),
+            "WebM supports single audio only"
+        );
     }
 
     #[test]
@@ -1020,16 +1052,12 @@ mod tests {
         o.preserve_subtitles = Some(true);
         o.subtitle_stream_count = Some(2);
         o.remove_audio = Some(false);
-        let args = build_ffmpeg_command(
-            "/in.mkv",
-            "/out.mp4",
-            &o,
-            Some(3.0),
-            Some("mp4"),
-            None,
-        )
-        .unwrap();
-        assert!(!args.contains(&"0:s?".to_string()), "Preview omits subtitle mapping");
+        let args =
+            build_ffmpeg_command("/in.mkv", "/out.mp4", &o, Some(3.0), Some("mp4"), None).unwrap();
+        assert!(
+            !args.contains(&"0:s?".to_string()),
+            "Preview omits subtitle mapping"
+        );
     }
 
     #[test]
@@ -1081,7 +1109,10 @@ mod tests {
         assert!(is_preview_stream_copy_safe_audio_codec(Some("aac"), 1));
         assert!(is_preview_stream_copy_safe_audio_codec(Some("AAC"), 2));
         assert!(!is_preview_stream_copy_safe_audio_codec(Some("mp3"), 1));
-        assert!(!is_preview_stream_copy_safe_audio_codec(Some("pcm_s16le"), 1));
+        assert!(!is_preview_stream_copy_safe_audio_codec(
+            Some("pcm_s16le"),
+            1
+        ));
         assert!(!is_preview_stream_copy_safe_audio_codec(None, 1));
     }
 
@@ -1091,7 +1122,10 @@ mod tests {
         assert!(is_preview_stream_copy_safe_audio_codec(None, 0));
         assert!(is_preview_stream_copy_safe_audio_codec(Some("aac"), 1));
         assert!(is_preview_stream_copy_safe_audio_codec(Some("mp3"), 1));
-        assert!(is_preview_stream_copy_safe_audio_codec(Some("pcm_s16le"), 1));
+        assert!(is_preview_stream_copy_safe_audio_codec(
+            Some("pcm_s16le"),
+            1
+        ));
         assert!(is_preview_stream_copy_safe_audio_codec(None, 2));
     }
 

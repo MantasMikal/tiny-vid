@@ -18,9 +18,7 @@ pub fn build_log_plugin() -> tauri_plugin_log::Builder {
         .timezone_strategy(timezone.clone())
         .format(move |out, message, record| {
             let now = timezone.get_now();
-            let ts = now
-                .format(&time_fmt)
-                .unwrap_or_else(|_| "??:??:??".into());
+            let ts = now.format(&time_fmt).unwrap_or_else(|_| "??:??:??".into());
             let target = record
                 .target()
                 .strip_prefix("tiny_vid_tauri::")

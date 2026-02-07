@@ -1,6 +1,6 @@
 import { type DependencyList, type RefObject, useEffect } from "react";
 
-const DEBUG = import.meta.env.DEV;
+const DEBUG = import.meta.env.DEV && import.meta.env.VITE_VIDEO_SYNC_DEBUG === "1";
 
 const MIN_DRIFT_SECONDS = 0.1; // Minimum drift (seconds) before we consider videos out of sync
 const SYNC_INTERVAL_MS = 75; // Ms between sync checks; wall-clock based,

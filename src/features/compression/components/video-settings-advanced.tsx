@@ -63,12 +63,15 @@ function LabeledControl({
       <div className={cn("flex items-center gap-2")}>
         <Label className={cn("font-bold")}>{label}</Label>
         <Tooltip>
-          <TooltipTrigger asChild>
-            <button type="button">
-              <InfoIcon className={cn("size-4 text-muted-foreground")} />
-            </button>
+          <TooltipTrigger>
+            <InfoIcon className={cn("size-4 text-muted-foreground")} />
           </TooltipTrigger>
-          <TooltipContent className={cn("max-w-72")}>
+          <TooltipContent
+            align="start"
+            avoidCollisions
+            sideOffset={4}
+            className={cn("max-w-[255px]")}
+          >
             <p>{tooltip}</p>
           </TooltipContent>
         </Tooltip>
@@ -107,7 +110,12 @@ function CheckboxWithTooltip({
             <Label htmlFor={id}>{label}</Label>
           </div>
         </TooltipTrigger>
-        <TooltipContent className={cn("max-w-72")}>
+        <TooltipContent
+          align="start"
+          avoidCollisions
+          sideOffset={4}
+          className={cn("max-w-[255px]")}
+        >
           <p>{tooltip}</p>
         </TooltipContent>
       </Tooltip>
@@ -126,9 +134,7 @@ function InputGroup({
 }) {
   return (
     <AccordionItem value={value} className={cn("border-b last:border-b-0")}>
-      <AccordionTrigger className={cn("py-2 text-base font-bold", "hover:no-underline")}>
-        {title}
-      </AccordionTrigger>
+      <AccordionTrigger className={cn("py-2 text-base font-bold")}>{title}</AccordionTrigger>
       <AccordionContent className={cn("flex min-w-0 flex-col gap-4 pt-2")}>
         {children}
       </AccordionContent>

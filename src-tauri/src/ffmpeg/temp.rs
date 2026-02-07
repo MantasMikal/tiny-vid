@@ -5,8 +5,8 @@ use std::io;
 use std::path::PathBuf;
 use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
-use parking_lot::Mutex;
 use super::cache::get_all_cached_paths;
+use parking_lot::Mutex;
 
 static PREVIOUS_PREVIEW_PATHS: Mutex<Vec<PathBuf>> = Mutex::new(Vec::new());
 static TRANSCODE_TEMP_PATH: Mutex<Option<PathBuf>> = Mutex::new(None);
@@ -33,10 +33,7 @@ pub fn cleanup_transcode_temp() {
 
 /// Delete temp files from the previous preview. Call at the start of each new preview.
 /// Preserves any paths that are still referenced by the preview cache.
-pub fn cleanup_previous_preview_paths(
-    _new_input_path: &str,
-    _new_preview_duration: u32,
-) {
+pub fn cleanup_previous_preview_paths(_new_input_path: &str, _new_preview_duration: u32) {
     let mut guard = PREVIOUS_PREVIEW_PATHS.lock();
     let paths: Vec<_> = guard.drain(..).collect();
 
@@ -191,7 +188,10 @@ mod tests {
             tmp
         );
         assert!(
-            path.file_name().unwrap().to_string_lossy().ends_with("suffix.mp4"),
+            path.file_name()
+                .unwrap()
+                .to_string_lossy()
+                .ends_with("suffix.mp4"),
             "file name should end with suffix: {:?}",
             path.file_name()
         );
@@ -213,6 +213,9 @@ mod tests {
         let manager = TempFileManager::default();
         let path1 = manager.create("x", None).unwrap();
         let path2 = manager.create("x", None).unwrap();
-        assert_ne!(path1, path2, "two create calls should yield different paths");
+        assert_ne!(
+            path1, path2,
+            "two create calls should yield different paths"
+        );
     }
 }

@@ -1,9 +1,7 @@
 //! Tauri IPC command tests. Uses test_util for app and invoke helpers.
 
-use crate::test_util::{
-    create_test_app, create_test_app_with_file_assoc, invoke_request,
-};
 use crate::CodecInfo;
+use crate::test_util::{create_test_app, create_test_app_with_file_assoc, invoke_request};
 use std::fs;
 use std::time::{SystemTime, UNIX_EPOCH};
 use tauri::ipc::InvokeBody;
@@ -36,12 +34,18 @@ fn get_build_variant_returns_variant_and_codecs() {
 
     #[cfg(feature = "lgpl")]
     {
-        assert_eq!(result.variant, "lgpl", "lgpl build should return variant lgpl");
+        assert_eq!(
+            result.variant, "lgpl",
+            "lgpl build should return variant lgpl"
+        );
     }
 
     #[cfg(not(feature = "lgpl"))]
     {
-        assert_eq!(result.variant, "standalone", "standalone build should return variant standalone");
+        assert_eq!(
+            result.variant, "standalone",
+            "standalone build should return variant standalone"
+        );
     }
 }
 
@@ -117,7 +121,10 @@ fn preview_media_bytes_rejects_non_tiny_vid_temp_file() {
     let body = InvokeBody::from(serde_json::json!({ "path": path.to_string_lossy() }));
     let res = tauri::test::get_ipc_response(&window, invoke_request("preview_media_bytes", body));
     let _ = fs::remove_file(&path);
-    assert!(res.is_err(), "preview_media_bytes should reject non tiny-vid temp file");
+    assert!(
+        res.is_err(),
+        "preview_media_bytes should reject non tiny-vid temp file"
+    );
 }
 
 #[test]
@@ -147,8 +154,7 @@ fn move_compressed_file_renames() {
         "source": source.to_string_lossy(),
         "dest": dest.to_string_lossy()
     }));
-    let res =
-        tauri::test::get_ipc_response(&window, invoke_request("move_compressed_file", body));
+    let res = tauri::test::get_ipc_response(&window, invoke_request("move_compressed_file", body));
     assert!(res.is_ok(), "move_compressed_file failed: {:?}", res.err());
     assert!(!source.exists());
     assert!(dest.exists());
@@ -166,7 +172,10 @@ fn get_video_metadata_nonexistent_returns_error() {
         "path": "/nonexistent/path/video.mp4"
     }));
     let res = tauri::test::get_ipc_response(&window, invoke_request("get_video_metadata", body));
-    assert!(res.is_err(), "get_video_metadata should fail for nonexistent path");
+    assert!(
+        res.is_err(),
+        "get_video_metadata should fail for nonexistent path"
+    );
 }
 
 #[test]
@@ -177,11 +186,13 @@ fn get_pending_opened_files_returns_empty_when_buffer_empty() {
         .expect("failed to create window");
 
     let body = InvokeBody::default();
-    let res = tauri::test::get_ipc_response(
-        &window,
-        invoke_request("get_pending_opened_files", body),
+    let res =
+        tauri::test::get_ipc_response(&window, invoke_request("get_pending_opened_files", body));
+    assert!(
+        res.is_ok(),
+        "get_pending_opened_files failed: {:?}",
+        res.err()
     );
-    assert!(res.is_ok(), "get_pending_opened_files failed: {:?}", res.err());
     let body = res.unwrap();
     let paths: Vec<String> = body.deserialize().unwrap();
     assert!(paths.is_empty(), "expected empty vec, got {:?}", paths);
@@ -215,13 +226,14 @@ fn get_pending_opened_files_returns_and_clears_buffered_paths() {
         "first invoke should return buffered paths"
     );
 
-    let res = tauri::test::get_ipc_response(
-        &window,
-        invoke_request("get_pending_opened_files", body),
-    );
+    let res =
+        tauri::test::get_ipc_response(&window, invoke_request("get_pending_opened_files", body));
     assert!(res.is_ok(), "second invoke failed: {:?}", res.err());
     let second: Vec<String> = res.unwrap().deserialize().unwrap();
-    assert!(second.is_empty(), "second invoke should return empty (buffer drained)");
+    assert!(
+        second.is_empty(),
+        "second invoke should return empty (buffer drained)"
+    );
 }
 
 #[test]
@@ -236,8 +248,7 @@ fn cleanup_temp_file_removes_file() {
     fs::write(&path, b"temp").unwrap();
 
     let body = InvokeBody::from(serde_json::json!({ "path": path.to_string_lossy() }));
-    let res =
-        tauri::test::get_ipc_response(&window, invoke_request("cleanup_temp_file", body));
+    let res = tauri::test::get_ipc_response(&window, invoke_request("cleanup_temp_file", body));
     assert!(res.is_ok());
     assert!(!path.exists());
 }

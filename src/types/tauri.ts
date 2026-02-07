@@ -35,6 +35,7 @@ export interface GetVideoMetadataResult {
   subtitleStreamCount?: number;
   audioCodecName?: string;
   audioChannels?: number;
+  encoder?: string;
 }
 
 export interface CodecInfo {

@@ -13,7 +13,6 @@ import { PreviewRegionTimeline } from "@/features/compression/components/preview
 import { VideoDropZone } from "@/features/compression/components/video-drop-zone";
 import { VideoPreview } from "@/features/compression/components/video-preview";
 import { VideoSettings } from "@/features/compression/components/video-settings";
-import { getProgressStepLabel } from "@/features/compression/lib/preview-progress";
 import { selectIsInitialized } from "@/features/compression/store/compression-selectors";
 import {
   getCompressionState,
@@ -30,8 +29,6 @@ export default function Compressor() {
     videoUploading,
     error,
     workerState,
-    progress,
-    progressStep,
     videoDuration,
     previewDuration,
     previewStartSeconds,
@@ -46,8 +43,6 @@ export default function Compressor() {
       videoUploading: s.videoUploading,
       error: s.error,
       workerState: s.workerState,
-      progress: s.progress,
-      progressStep: s.progressStep,
       videoDuration: s.videoMetadata?.duration,
       previewDuration: s.compressionOptions?.previewDuration,
       previewStartSeconds: s.previewStartSeconds,
@@ -57,9 +52,7 @@ export default function Compressor() {
     }))
   );
 
-  const progressStepLabel = getProgressStepLabel(progressStep);
-  const showProgressOverlay =
-    workerState === WorkerState.Transcoding || workerState === WorkerState.GeneratingPreview;
+  const showProgressOverlay = WorkerState.Idle !== workerState;
   const showPreviewTimeline =
     videoPreview && !videoUploading && previewDuration != null && videoDuration != null;
   const showFpsBadges =
@@ -107,7 +100,7 @@ export default function Compressor() {
                   delay={0.1}
                   className={cn("absolute top-2 left-2 z-20 w-full max-w-xs")}
                 >
-                  <CompressionProgress progress={progress} progressStepLabel={progressStepLabel} />
+                  <CompressionProgress />
                 </FadeIn>
               )}
               {showFpsBadges && (

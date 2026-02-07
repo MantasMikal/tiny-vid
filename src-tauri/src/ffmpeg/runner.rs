@@ -9,18 +9,18 @@ use std::process::{Child, Command, Stdio};
 
 #[cfg(windows)]
 use std::os::windows::process::CommandExt;
-use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicU64, Ordering};
 use std::thread;
 use std::time::{Duration, Instant};
 
 use parking_lot::Mutex;
 use tauri::Emitter;
 
-use crate::error::AppError;
+use super::FfmpegProgressPayload;
 use super::discovery::get_ffmpeg_path;
 use super::progress::parse_ffmpeg_progress;
-use super::FfmpegProgressPayload;
+use crate::error::AppError;
 
 /// Sentinel for "duration not yet known". AtomicU64 cannot hold Option<f64>,
 /// so we encode duration as f64 bits; u64::MAX means "not yet known".
@@ -136,7 +136,10 @@ pub fn run_ffmpeg_blocking(
     let ffmpeg_path = get_ffmpeg_path()?;
     let path_str = ffmpeg_path.to_string_lossy();
 
-    let input_arg = args.iter().position(|a| a == "-i").and_then(|i| args.get(i + 1));
+    let input_arg = args
+        .iter()
+        .position(|a| a == "-i")
+        .and_then(|i| args.get(i + 1));
     let output_arg = args.last();
     log::debug!(
         target: "tiny_vid::ffmpeg::runner",

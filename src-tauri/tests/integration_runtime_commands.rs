@@ -2,7 +2,7 @@
 
 mod support;
 
-use support::{assert_codec_contract, CodecContract, IntegrationEnv, VideoKind};
+use support::{CodecContract, IntegrationEnv, VideoKind, assert_codec_contract};
 
 #[test]
 fn command_get_video_metadata_returns_metadata_for_video() {

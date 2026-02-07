@@ -3,6 +3,7 @@
 
 use crate::error::AppError;
 use serde::Deserialize;
+use std::collections::HashMap;
 use std::path::Path;
 use std::process::Command;
 
@@ -25,6 +26,8 @@ struct FfprobeFormat {
     format_long_name: Option<String>,
     #[serde(default)]
     nb_streams: Option<u32>,
+    #[serde(default)]
+    tags: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -41,6 +44,8 @@ struct FfprobeStream {
     bit_rate: Option<String>,
     #[serde(default)]
     channels: Option<u32>,
+    #[serde(default)]
+    tags: Option<HashMap<String, String>>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -91,13 +96,14 @@ pub struct VideoMetadata {
     pub audio_codec_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     pub audio_channels: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub encoder: Option<String>,
 }
 
 /// Parse ffprobe JSON output into VideoMetadata.
 pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
-    let output: FfprobeOutput = serde_json::from_str(json).map_err(|e| {
-        AppError::from(format!("Failed to parse ffprobe JSON: {}", e))
-    })?;
+    let output: FfprobeOutput = serde_json::from_str(json)
+        .map_err(|e| AppError::from(format!("Failed to parse ffprobe JSON: {}", e)))?;
 
     let format = output.format.as_ref();
     let duration = format
@@ -113,10 +119,11 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
         .and_then(|s| s.parse::<u64>().ok())
         .unwrap_or(0);
 
-    let video_stream = output
-        .streams
-        .as_ref()
-        .and_then(|streams| streams.iter().find(|s| s.codec_type.as_deref() == Some("video")));
+    let video_stream = output.streams.as_ref().and_then(|streams| {
+        streams
+            .iter()
+            .find(|s| s.codec_type.as_deref() == Some("video"))
+    });
     let width = video_stream.and_then(|s| s.width).unwrap_or(0);
     let height = video_stream.and_then(|s| s.height).unwrap_or(0);
     let fps = video_stream
@@ -138,19 +145,38 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
     let audio_stream_count = output
         .streams
         .as_ref()
-        .map(|s| s.iter().filter(|st| st.codec_type.as_deref() == Some("audio")).count() as u32)
+        .map(|s| {
+            s.iter()
+                .filter(|st| st.codec_type.as_deref() == Some("audio"))
+                .count() as u32
+        })
         .unwrap_or(0);
     let subtitle_stream_count = output
         .streams
         .as_ref()
-        .map(|s| s.iter().filter(|st| st.codec_type.as_deref() == Some("subtitle")).count() as u32)
+        .map(|s| {
+            s.iter()
+                .filter(|st| st.codec_type.as_deref() == Some("subtitle"))
+                .count() as u32
+        })
         .unwrap_or(0);
-    let first_audio = output
-        .streams
-        .as_ref()
-        .and_then(|s| s.iter().find(|st| st.codec_type.as_deref() == Some("audio")));
+    let first_audio = output.streams.as_ref().and_then(|s| {
+        s.iter()
+            .find(|st| st.codec_type.as_deref() == Some("audio"))
+    });
     let audio_codec_name = first_audio.and_then(|a| a.codec_name.clone());
     let audio_channels = first_audio.and_then(|a| a.channels);
+
+    let encoder = video_stream
+        .and_then(|s| s.tags.as_ref())
+        .and_then(|t| t.get("encoder"))
+        .cloned()
+        .or_else(|| {
+            format
+                .and_then(|f| f.tags.as_ref())
+                .and_then(|t| t.get("encoder"))
+                .cloned()
+        });
 
     Ok(VideoMetadata {
         duration,
@@ -170,6 +196,7 @@ pub fn parse_ffprobe_json(json: &str) -> Result<VideoMetadata, AppError> {
         subtitle_stream_count,
         audio_codec_name,
         audio_channels,
+        encoder,
     })
 }
 
@@ -202,10 +229,7 @@ pub fn get_video_metadata_impl(path: &Path) -> Result<VideoMetadata, AppError> {
 
     if !output.status.success() {
         let stderr = String::from_utf8_lossy(&output.stderr);
-        return Err(AppError::from(format!(
-            "ffprobe failed: {}",
-            stderr.trim()
-        )));
+        return Err(AppError::from(format!("ffprobe failed: {}", stderr.trim())));
     }
 
     let json = String::from_utf8(output.stdout)
@@ -323,5 +347,41 @@ mod tests {
         let meta = parse_ffprobe_json(json).unwrap();
         assert_eq!(meta.start_time, Some(0.083));
         assert!((meta.fps - 23.976).abs() < 0.001);
+    }
+
+    #[test]
+    fn parse_ffprobe_json_extracts_encoder() {
+        let json = r#"{
+            "format": {
+                "duration": "10.0",
+                "size": "1000",
+                "tags": {"encoder": "Lavf59.16.100"}
+            },
+            "streams": [
+                {
+                    "codec_type": "video",
+                    "width": 1920,
+                    "height": 1080,
+                    "r_frame_rate": "30/1",
+                    "tags": {"encoder": "Lavc59.18.100 libx264"}
+                }
+            ]
+        }"#;
+        let meta = parse_ffprobe_json(json).unwrap();
+        assert_eq!(meta.encoder.as_deref(), Some("Lavc59.18.100 libx264"));
+    }
+
+    #[test]
+    fn parse_ffprobe_json_encoder_fallback_to_format_tags() {
+        let json = r#"{
+            "format": {
+                "duration": "10.0",
+                "size": "1000",
+                "tags": {"encoder": "Lavf59.16.100"}
+            },
+            "streams": [{"codec_type": "video", "width": 1920, "height": 1080, "r_frame_rate": "30/1"}]
+        }"#;
+        let meta = parse_ffprobe_json(json).unwrap();
+        assert_eq!(meta.encoder.as_deref(), Some("Lavf59.16.100"));
     }
 }

@@ -48,12 +48,48 @@ macro_rules! codec_table {
 }
 
 codec_table!(
-    ["libx264", "H.264 (Widest support)", &["mp4", "mkv"], true, "x264"],
-    ["libx265", "H.265 (Smaller files)", &["mp4", "mkv"], false, "x265"],
-    ["libsvtav1", "AV1 (Smallest files)", &["mp4", "webm", "mkv"], false, "av1"],
-    ["libvpx-vp9", "VP9 (Browser-friendly WebM)", &["webm", "mkv"], false, "vp9"],
-    ["h264_videotoolbox", "H.264 (VideoToolbox)", &["mp4", "mkv"], false, "vt"],
-    ["hevc_videotoolbox", "H.265 (VideoToolbox)", &["mp4", "mkv"], false, "vt"],
+    [
+        "libx264",
+        "H.264 (Widest support)",
+        &["mp4", "mkv"],
+        true,
+        "x264"
+    ],
+    [
+        "libx265",
+        "H.265 (Smaller files)",
+        &["mp4", "mkv"],
+        false,
+        "x265"
+    ],
+    [
+        "libsvtav1",
+        "AV1 (Smallest files)",
+        &["mp4", "webm", "mkv"],
+        false,
+        "av1"
+    ],
+    [
+        "libvpx-vp9",
+        "VP9 (Browser-friendly WebM)",
+        &["webm", "mkv"],
+        false,
+        "vp9"
+    ],
+    [
+        "h264_videotoolbox",
+        "H.264 (VideoToolbox)",
+        &["mp4", "mkv"],
+        false,
+        "vt"
+    ],
+    [
+        "hevc_videotoolbox",
+        "H.265 (VideoToolbox)",
+        &["mp4", "mkv"],
+        false,
+        "vt"
+    ],
 );
 
 /// Return CodecInfo for a known codec string. Panics on unknown codec.
@@ -93,7 +129,7 @@ pub fn get_build_variant(available: Vec<String>) -> Result<BuildVariantResult, A
 
     if codecs.is_empty() {
         return Err(AppError::from(
-            "No supported video codecs found in FFmpeg. Please ensure FFmpeg is properly installed with codec support."
+            "No supported video codecs found in FFmpeg. Please ensure FFmpeg is properly installed with codec support.",
         ));
     }
 
@@ -110,7 +146,7 @@ pub fn get_build_variant(available: Vec<String>) -> Result<BuildVariantResult, A
 
 #[cfg(test)]
 mod tests {
-    use super::{filter_codecs_for_display, get_codec_info, CODEC_TABLE, SUPPORTED_CODEC_NAMES};
+    use super::{CODEC_TABLE, SUPPORTED_CODEC_NAMES, filter_codecs_for_display, get_codec_info};
 
     #[test]
     fn codec_info_has_correct_metadata() {

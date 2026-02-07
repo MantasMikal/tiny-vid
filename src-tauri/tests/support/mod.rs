@@ -5,7 +5,9 @@ use std::path::{Path, PathBuf};
 use std::process::{Command, ExitStatus, Stdio};
 
 use tiny_vid_tauri_lib::ffmpeg::ffprobe::get_video_metadata_impl;
-use tiny_vid_tauri_lib::ffmpeg::{build_ffmpeg_command, run_ffmpeg_blocking, verify_video, TranscodeOptions};
+use tiny_vid_tauri_lib::ffmpeg::{
+    TranscodeOptions, build_ffmpeg_command, run_ffmpeg_blocking, verify_video,
+};
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum CodecContract {
@@ -44,8 +46,8 @@ pub fn assert_codec_contract(contract: CodecContract) {
         );
     }
 
-    let mut available =
-        tiny_vid_tauri_lib::ffmpeg::discovery::get_available_codecs().unwrap_or_else(|e| {
+    let mut available = tiny_vid_tauri_lib::ffmpeg::discovery::get_available_codecs()
+        .unwrap_or_else(|e| {
             panic!(
                 "Codec contract `{}` failed.\nFFmpeg path: {}\nFailed to detect codecs: {}",
                 contract.as_str(),
@@ -141,7 +143,12 @@ impl IntegrationEnv {
         self.dir.path().join(name)
     }
 
-    pub fn with_test_video(&self, input_name: &str, duration_secs: f32, kind: VideoKind) -> PathBuf {
+    pub fn with_test_video(
+        &self,
+        input_name: &str,
+        duration_secs: f32,
+        kind: VideoKind,
+    ) -> PathBuf {
         let output_path = self.path(input_name);
         let status = match kind {
             VideoKind::Plain => create_test_video(&self.ffmpeg, &output_path, duration_secs),
@@ -196,12 +203,13 @@ pub fn run_preview_and_assert_exists(
     options: &TranscodeOptions,
     preview_start_seconds: Option<f64>,
 ) -> tiny_vid_tauri_lib::test_support::PreviewResultForTest {
-    let result = tauri::async_runtime::block_on(tiny_vid_tauri_lib::test_support::run_preview_for_test(
-        input_path,
-        options,
-        preview_start_seconds,
-    ))
-    .expect("run_preview_for_test");
+    let result =
+        tauri::async_runtime::block_on(tiny_vid_tauri_lib::test_support::run_preview_for_test(
+            input_path,
+            options,
+            preview_start_seconds,
+        ))
+        .expect("run_preview_for_test");
     assert!(Path::new(&result.original_path).exists());
     assert!(Path::new(&result.compressed_path).exists());
     result

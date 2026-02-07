@@ -3,15 +3,15 @@
 use std::path::{Path, PathBuf};
 
 use tauri::ipc::{CallbackFn, InvokeBody};
-use tauri::test::{mock_builder, mock_context, noop_assets, INVOKE_KEY};
+use tauri::test::{INVOKE_KEY, mock_builder, mock_context, noop_assets};
 use tauri::webview::InvokeRequest;
 
+use crate::CodecInfo;
 use crate::commands;
 use crate::error::AppError;
-use crate::ffmpeg::ffprobe::get_video_metadata_impl;
 use crate::ffmpeg::TranscodeOptions;
+use crate::ffmpeg::ffprobe::get_video_metadata_impl;
 use crate::preview::{run_preview_core, run_preview_with_estimate_core};
-use crate::CodecInfo;
 
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "camelCase")]
@@ -156,11 +156,9 @@ pub fn get_video_metadata_via_command_for_test(
     let body = InvokeBody::from(serde_json::json!({
         "path": path.to_string_lossy()
     }));
-    let response = tauri::test::get_ipc_response(
-        &window,
-        invoke_request("get_video_metadata", body),
-    )
-    .map_err(|e| format!("{:?}", e))?;
+    let response =
+        tauri::test::get_ipc_response(&window, invoke_request("get_video_metadata", body))
+            .map_err(|e| format!("{:?}", e))?;
     response.deserialize().map_err(|e| e.to_string())
 }
 

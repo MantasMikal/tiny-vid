@@ -2,19 +2,19 @@
 
 use std::fs;
 use std::path::{Path, PathBuf};
-use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
+use std::sync::atomic::{AtomicUsize, Ordering};
 
 use crate::error::AppError;
-use crate::ffmpeg::{
-    build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
-    file_signature, get_cached_estimate, get_cached_preview, get_cached_segments,
-    is_preview_stream_copy_safe_audio_codec, is_preview_stream_copy_safe_codec, path_to_string,
-    run_ffmpeg_blocking, set_cached_estimate, set_cached_preview, store_preview_paths_for_cleanup,
-    FfmpegProgressPayload, FileSignature, TempFileManager, TranscodeOptions,
-};
-use crate::ffmpeg::ffprobe::{get_video_metadata_impl, VideoMetadata};
+use crate::ffmpeg::ffprobe::{VideoMetadata, get_video_metadata_impl};
 use crate::ffmpeg::parse_ffmpeg_error;
+use crate::ffmpeg::{
+    FfmpegProgressPayload, FileSignature, TempFileManager, TranscodeOptions, build_extract_args,
+    build_ffmpeg_command, cleanup_previous_preview_paths, file_signature, get_cached_estimate,
+    get_cached_preview, get_cached_segments, is_preview_stream_copy_safe_audio_codec,
+    is_preview_stream_copy_safe_codec, path_to_string, run_ffmpeg_blocking, set_cached_estimate,
+    set_cached_preview, store_preview_paths_for_cleanup,
+};
 use tauri::Emitter;
 
 /// Optional emit context for progress events: (AppHandle, window label).
@@ -37,12 +37,7 @@ pub(crate) struct PreviewProgressCtx {
 }
 
 impl PreviewProgressCtx {
-    fn new(
-        app: tauri::AppHandle,
-        label: String,
-        base_step: usize,
-        total_steps: usize,
-    ) -> Self {
+    fn new(app: tauri::AppHandle, label: String, base_step: usize, total_steps: usize) -> Self {
         Self {
             app,
             label,
@@ -160,11 +155,7 @@ async fn run_ffmpeg_with_progress(
     Ok(())
 }
 
-fn clamp_preview_start_seconds(
-    requested: f64,
-    video_duration: f64,
-    preview_duration: f64,
-) -> f64 {
+fn clamp_preview_start_seconds(requested: f64, video_duration: f64, preview_duration: f64) -> f64 {
     if !requested.is_finite() {
         return 0.0;
     }
@@ -301,14 +292,8 @@ async fn extract_segments_or_use_cache(
 
             for ((start, dur), path) in segments.iter().zip(paths.iter()) {
                 let args = build_extract_args(input_str, *start, *dur, &path_to_string(path));
-                if let Err(err) = run_ffmpeg_with_progress(
-                    args,
-                    Some(*dur),
-                    emit,
-                    progress_ctx,
-                    step_label,
-                )
-                .await
+                if let Err(err) =
+                    run_ffmpeg_with_progress(args, Some(*dur), emit, progress_ctx, step_label).await
                 {
                     for created in &paths {
                         let _ = fs::remove_file(created);
@@ -442,7 +427,6 @@ async fn transcode_original_preview_segment_or_use_cache(
     }
 }
 
-
 /// Transcodes estimation segments (begin/mid/end) and computes size estimate.
 /// Uses provided segment durations to avoid ffprobe calls on the extracted samples.
 async fn estimate_size_from_segments(
@@ -470,10 +454,7 @@ async fn estimate_size_from_segments(
     let estimate_opts = preview_transcode_options(options);
 
     for (i, (orig, out)) in segment_paths.iter().zip(output_paths.iter()).enumerate() {
-        let output_duration = segment_durations
-            .get(i)
-            .copied()
-            .filter(|d| *d > 0.0);
+        let output_duration = segment_durations.get(i).copied().filter(|d| *d > 0.0);
         let args = build_ffmpeg_command(
             &path_to_string(orig),
             &path_to_string(out),
@@ -557,10 +538,7 @@ async fn compute_estimate_size(
 
 /// Segment positions for estimation: (start_offset_secs, duration_secs).
 /// Uses begin/mid/end sampling; when video is shorter, returns a single segment.
-pub fn compute_preview_segments(
-    video_duration: f64,
-    preview_duration: f64,
-) -> Vec<(f64, f64)> {
+pub fn compute_preview_segments(video_duration: f64, preview_duration: f64) -> Vec<(f64, f64)> {
     if video_duration <= 0.0 || preview_duration <= 0.0 {
         return vec![(0.0, preview_duration.max(1.0))];
     }
@@ -646,12 +624,8 @@ pub(crate) async fn run_preview_with_estimate_core(
     let preview_duration_u32 = options.effective_preview_duration();
     let file_sig = file_signature(input_path);
 
-    let mut estimated_size = get_cached_estimate(
-        &input_str,
-        preview_duration_u32,
-        options,
-        file_sig.as_ref(),
-    );
+    let mut estimated_size =
+        get_cached_estimate(&input_str, preview_duration_u32, options, file_sig.as_ref());
     if estimated_size.is_none() {
         let fresh = compute_estimate_size(
             input_path,
@@ -675,7 +649,9 @@ pub(crate) async fn run_preview_with_estimate_core(
     }
 
     let mut total_estimate = estimated_size.unwrap_or(0);
-    if options.effective_preserve_additional_audio_streams() && options.effective_audio_stream_count() > 1 {
+    if options.effective_preserve_additional_audio_streams()
+        && options.effective_audio_stream_count() > 1
+    {
         let extra_tracks = options.effective_audio_stream_count() - 1;
         let audio_bitrate_bps: u64 = (options.effective_audio_bitrate() as u64) * 1000;
         let extras = (extra_tracks as u64)
@@ -767,8 +743,7 @@ pub(crate) async fn run_preview_core(
         preview_start_ms,
         options,
         file_sig.as_ref(),
-    )
-    {
+    ) {
         log::info!(
             target: "tiny_vid::preview",
             "run_preview_core: cache hit, reusing output"
@@ -789,9 +764,7 @@ pub(crate) async fn run_preview_core(
     let preview_suffix = "preview-output.mp4";
 
     let temp = TempFileManager;
-    let output_path = temp
-        .create(preview_suffix, None)
-        .map_err(AppError::from)?;
+    let output_path = temp.create(preview_suffix, None).map_err(AppError::from)?;
     let mut cleanup = TempCleanup::new();
     cleanup.add(output_path.clone());
 

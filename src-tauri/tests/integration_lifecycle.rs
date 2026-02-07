@@ -8,11 +8,11 @@ use std::time::Duration as StdDuration;
 
 use parking_lot::Mutex;
 use support::{
-    assert_codec_contract, default_codec, opts_with, CodecContract, IntegrationEnv, VideoKind,
+    CodecContract, IntegrationEnv, VideoKind, assert_codec_contract, default_codec, opts_with,
 };
 use tiny_vid_tauri_lib::ffmpeg::{
-    build_ffmpeg_command, cleanup_transcode_temp, run_ffmpeg_blocking, set_transcode_temp,
-    terminate_all_ffmpeg, TempFileManager,
+    TempFileManager, build_ffmpeg_command, cleanup_transcode_temp, run_ffmpeg_blocking,
+    set_transcode_temp, terminate_all_ffmpeg,
 };
 
 #[test]
@@ -49,17 +49,28 @@ fn transcode_reports_monotonic_progress() {
         Some(Arc::clone(&progress_values)),
     );
 
-    assert!(result.is_ok(), "run_ffmpeg_blocking failed: {:?}", result.err());
+    assert!(
+        result.is_ok(),
+        "run_ffmpeg_blocking failed: {:?}",
+        result.err()
+    );
 
     let progress_values = progress_values.lock().clone();
-    assert!(!progress_values.is_empty(), "expected at least one progress value");
+    assert!(
+        !progress_values.is_empty(),
+        "expected at least one progress value"
+    );
     assert!(
         progress_values.last().copied().unwrap_or(0.0) >= 0.98,
         "expected progress to reach ~1.0, got {:?}",
         progress_values.last()
     );
     for window in progress_values.windows(2) {
-        assert!(window[1] >= window[0], "progress should increase: {:?}", progress_values);
+        assert!(
+            window[1] >= window[0],
+            "progress should increase: {:?}",
+            progress_values
+        );
     }
 }
 
@@ -102,7 +113,11 @@ fn transcode_cancel_cleans_up_temp_output() {
     let transcode_result = run_ffmpeg_blocking(args, None, None, Some(duration_secs), None, None);
     terminate_handle.join().expect("join");
 
-    assert!(transcode_result.is_err(), "expected Aborted, got {:?}", transcode_result);
+    assert!(
+        transcode_result.is_err(),
+        "expected Aborted, got {:?}",
+        transcode_result
+    );
     assert!(
         format!("{:?}", transcode_result.expect_err("expected error")).contains("Aborted"),
         "expected Aborted error"

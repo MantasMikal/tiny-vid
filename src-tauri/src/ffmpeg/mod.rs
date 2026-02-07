@@ -12,7 +12,7 @@ pub use builder::{
     build_extract_args, build_ffmpeg_command, format_args_for_display_multiline,
     is_preview_stream_copy_safe_audio_codec, is_preview_stream_copy_safe_codec,
 };
-pub use error::{parse_ffmpeg_error, FfmpegErrorPayload};
+pub use error::{FfmpegErrorPayload, parse_ffmpeg_error};
 
 /// Progress payload for ffmpeg-progress events.
 #[derive(Debug, Clone, serde::Serialize)]
@@ -22,14 +22,15 @@ pub struct FfmpegProgressPayload {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub step: Option<String>,
 }
-pub use runner::{run_ffmpeg_blocking, terminate_all_ffmpeg};
 pub use cache::{
-    cleanup_preview_transcode_cache, file_signature, get_all_cached_paths, get_cached_estimate,
-    get_cached_preview, get_cached_segments, set_cached_estimate, set_cached_preview, FileSignature,
+    FileSignature, cleanup_preview_transcode_cache, file_signature, get_all_cached_paths,
+    get_cached_estimate, get_cached_preview, get_cached_segments, set_cached_estimate,
+    set_cached_preview,
 };
+pub use runner::{run_ffmpeg_blocking, terminate_all_ffmpeg};
 pub use temp::{
-    cleanup_old_temp_files, cleanup_previous_preview_paths, cleanup_transcode_temp,
-    set_transcode_temp, store_preview_paths_for_cleanup, TempFileManager,
+    TempFileManager, cleanup_old_temp_files, cleanup_previous_preview_paths,
+    cleanup_transcode_temp, set_transcode_temp, store_preview_paths_for_cleanup,
 };
 #[cfg(any(test, feature = "integration-test-api"))]
 pub use verify::verify_video;
@@ -124,7 +125,9 @@ impl TranscodeOptions {
     }
 
     pub fn effective_tune(&self) -> Option<&str> {
-        self.tune.as_deref().filter(|t| !t.is_empty() && *t != "none")
+        self.tune
+            .as_deref()
+            .filter(|t| !t.is_empty() && *t != "none")
     }
 
     pub fn effective_output_format(&self) -> String {
@@ -185,7 +188,10 @@ impl TranscodeOptions {
             "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.effective_codec(),
             self.effective_quality(),
-            self.max_bitrate.map(|b| b.to_string()).as_deref().unwrap_or(""),
+            self.max_bitrate
+                .map(|b| b.to_string())
+                .as_deref()
+                .unwrap_or(""),
             self.effective_scale(),
             self.effective_fps(),
             self.effective_remove_audio(),

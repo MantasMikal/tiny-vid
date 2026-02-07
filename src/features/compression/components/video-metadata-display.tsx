@@ -33,15 +33,21 @@ export function VideoMetadataDisplay({
       ? (((videoMetadata.sizeMB - estimatedSizeMB) / videoMetadata.sizeMB) * 100).toFixed(2)
       : null;
 
-  const hasExtendedDetails =
-    videoMetadata.fps > 0 ||
-    videoMetadata.codecName != null ||
-    videoMetadata.codecLongName != null ||
-    videoMetadata.videoBitRate != null ||
-    videoMetadata.formatBitRate != null ||
-    videoMetadata.formatName != null ||
-    videoMetadata.formatLongName != null ||
-    videoMetadata.nbStreams != null;
+  const hasExtendedDetails = [
+    videoMetadata.fps > 0,
+    videoMetadata.codecName != null,
+    videoMetadata.codecLongName != null,
+    videoMetadata.videoBitRate != null,
+    videoMetadata.formatBitRate != null,
+    videoMetadata.formatName != null,
+    videoMetadata.formatLongName != null,
+    videoMetadata.nbStreams != null,
+    videoMetadata.audioStreamCount > 0,
+    (videoMetadata.subtitleStreamCount ?? 0) > 0,
+    videoMetadata.audioCodecName != null,
+    videoMetadata.audioChannels != null,
+    videoMetadata.encoder != null,
+  ].some(Boolean);
 
   return (
     <div className={cn("flex flex-col gap-1")}>
@@ -104,6 +110,11 @@ export function VideoMetadataDisplay({
                       )}
                   </p>
                 )}
+                {videoMetadata.encoder != null && (
+                  <p>
+                    <b>Encoder:</b> {videoMetadata.encoder}
+                  </p>
+                )}
                 {videoMetadata.videoBitRate != null && (
                   <p>
                     <b>Video bitrate:</b> {formatBitrateMbps(videoMetadata.videoBitRate)}
@@ -122,6 +133,32 @@ export function VideoMetadataDisplay({
                 {videoMetadata.nbStreams != null && (
                   <p>
                     <b>Streams:</b> {videoMetadata.nbStreams}
+                  </p>
+                )}
+                {videoMetadata.audioStreamCount > 0 && (
+                  <p>
+                    <b>Audio streams:</b> {videoMetadata.audioStreamCount}
+                  </p>
+                )}
+                {(videoMetadata.subtitleStreamCount ?? 0) > 0 && (
+                  <p>
+                    <b>Subtitle streams:</b> {videoMetadata.subtitleStreamCount}
+                  </p>
+                )}
+                {videoMetadata.audioCodecName != null && (
+                  <p>
+                    <b>Audio codec:</b> {videoMetadata.audioCodecName}
+                    {videoMetadata.audioChannels != null && (
+                      <span className={cn("text-muted-foreground")}>
+                        {" "}
+                        ({videoMetadata.audioChannels} ch)
+                      </span>
+                    )}
+                  </p>
+                )}
+                {videoMetadata.audioCodecName == null && videoMetadata.audioChannels != null && (
+                  <p>
+                    <b>Audio channels:</b> {videoMetadata.audioChannels}
                   </p>
                 )}
               </div>

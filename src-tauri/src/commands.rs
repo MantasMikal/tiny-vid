@@ -4,17 +4,15 @@ use std::fs;
 use std::io;
 use std::path::PathBuf;
 
+use crate::AppState;
 use crate::codec::BuildVariantResult;
 use crate::error::AppError;
+use crate::ffmpeg::ffprobe::{VideoMetadata as FfprobeVideoMetadata, get_video_metadata_impl};
 use crate::ffmpeg::{
-    build_ffmpeg_command, cleanup_transcode_temp, format_args_for_display_multiline,
-    path_to_string, set_transcode_temp, terminate_all_ffmpeg, TempFileManager, TranscodeOptions,
+    TempFileManager, TranscodeOptions, build_ffmpeg_command, cleanup_transcode_temp,
+    format_args_for_display_multiline, path_to_string, set_transcode_temp, terminate_all_ffmpeg,
 };
-use crate::ffmpeg::ffprobe::{get_video_metadata_impl, VideoMetadata as FfprobeVideoMetadata};
-use crate::preview::{
-    run_preview_core, run_preview_with_estimate_core, PreviewWithEstimateResult,
-};
-use crate::AppState;
+use crate::preview::{PreviewWithEstimateResult, run_preview_core, run_preview_with_estimate_core};
 use tauri::{Emitter, Manager};
 
 fn is_cross_device_rename_error(e: &io::Error) -> bool {
@@ -75,6 +73,8 @@ pub(crate) struct VideoMetadataResult {
     audio_codec_name: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]
     audio_channels: Option<u32>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    encoder: Option<String>,
 }
 
 impl From<FfprobeVideoMetadata> for VideoMetadataResult {
@@ -97,6 +97,7 @@ impl From<FfprobeVideoMetadata> for VideoMetadataResult {
             audio_stream_count: meta.audio_stream_count,
             subtitle_stream_count: Some(meta.subtitle_stream_count),
             audio_codec_name: meta.audio_codec_name,
+            encoder: meta.encoder,
             audio_channels: meta.audio_channels,
         }
     }
@@ -173,13 +174,9 @@ pub async fn ffmpeg_preview(
 ) -> Result<PreviewWithEstimateResult, AppError> {
     let emit = Some((app, window.label().to_string()));
     if include_estimate {
-        let result = run_preview_with_estimate_core(
-            &input_path,
-            &options,
-            preview_start_seconds,
-            emit,
-        )
-        .await?;
+        let result =
+            run_preview_with_estimate_core(&input_path, &options, preview_start_seconds, emit)
+                .await?;
         Ok(result)
     } else {
         let result = run_preview_core(
