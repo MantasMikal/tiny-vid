@@ -144,7 +144,13 @@ function registerMediaProtocol() {
 }
 
 function createApplicationMenu() {
+  if (process.platform !== "darwin") {
+    Menu.setApplicationMenu(null);
+    return;
+  }
+
   const template = [
+    { role: "appMenu" },
     {
       label: "File",
       submenu: [
@@ -168,10 +174,6 @@ function createApplicationMenu() {
       submenu: [{ role: "minimize" }, { role: "close" }],
     },
   ];
-
-  if (process.platform === "darwin") {
-    template.unshift({ role: "appMenu" });
-  }
 
   const menu = Menu.buildFromTemplate(template);
   Menu.setApplicationMenu(menu);
