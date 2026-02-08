@@ -2,20 +2,8 @@ import { type DependencyList, type RefObject, useEffect } from "react";
 
 const DEBUG = import.meta.env.DEV && import.meta.env.VITE_VIDEO_SYNC_DEBUG === "1";
 
-const MIN_DRIFT_SECONDS = 0.1; // Minimum drift (seconds) before we consider videos out of sync
-const SYNC_INTERVAL_MS = 75; // Ms between sync checks; wall-clock based,
-const HOLD_THRESHOLD_MULTIPLIER = 1.2; // Secondary is paused when drift exceeds allowedDrift × this;
-const BEHIND_RESYNC_THRESHOLD_SECONDS = 0.03; // Seek to catch up when secondary is behind by more than this
-const PRIMING_THRESHOLD_SECONDS = 0.15; // Seconds to wait for primary to advance; only used after we've seen a hold (heavy decode).
-const PRIMING_MIN_STEP_SECONDS = 0.015; // Minimum per-tick primary progress to count as real advancement during priming.
-const PRIMING_REQUIRED_PROGRESS_TICKS = 2; // Consecutive advancing ticks required before releasing secondary after a hold.
-
-enum SyncState {
-  Waiting = "waiting",
-  Seeking = "seeking",
-  Holding = "holding",
-  Running = "running",
-}
+const SYNC_INTERVAL_MS = 100;
+const SEEK_THRESHOLD_SECONDS = 0.08;
 
 function clampTime(time: number, video: HTMLVideoElement) {
   const duration = video.duration;
@@ -48,6 +36,7 @@ export function useVideoSync(
 ) {
   useEffect(() => {
     if (!enabled) return;
+
     let retryRafId: number | null = null;
     let innerCleanup: (() => void) | undefined;
 
@@ -61,64 +50,30 @@ export function useVideoSync(
       }
 
       const initAt = performance.now();
+      let intervalId: ReturnType<typeof setInterval> | null = null;
+      let hasStarted = false;
+      let pendingSecondaryResume = false;
+      const offset = Number.isFinite(startOffsetSeconds) ? Math.max(0, startOffsetSeconds) : 0;
 
-      const writeLog = (level: "info" | "debug", event: string, data?: unknown) => {
+      const log = (event: string, data?: unknown) => {
         if (!DEBUG) return;
-        const now = performance.now();
-        const sinceInitMs = Math.round(now - initAt);
-        const prefix = `[video-sync] +${String(sinceInitMs)}ms ${event}`;
-        if (level === "info") {
-          console.info(prefix, data);
-        } else {
-          console.debug(prefix, data);
+        const sinceInitMs = Math.round(performance.now() - initAt);
+        console.debug(`[video-sync] +${String(sinceInitMs)}ms ${event}`, data);
+      };
+
+      const stopLoop = () => {
+        if (intervalId !== null) {
+          clearInterval(intervalId);
+          intervalId = null;
         }
       };
 
-      const logInfo = (event: string, data?: unknown) => {
-        writeLog("info", event, data);
+      const startLoop = () => {
+        if (intervalId !== null) return;
+        intervalId = setInterval(() => {
+          sync("interval");
+        }, SYNC_INTERVAL_MS);
       };
-
-      const logDebug = (event: string, data?: unknown) => {
-        writeLog("debug", event, data);
-      };
-
-      /** Snapshot for debugging: primary/secondary times, target, drift, state. */
-      const logStateSnapshot = (event: string, extra?: Record<string, unknown>) => {
-        if (!DEBUG) return;
-        const pt = primary.currentTime;
-        const st = secondary.currentTime;
-        const target = Math.max(0, pt - offset);
-        const drift = st - target;
-        writeLog("debug", `state@${event}`, {
-          primaryT: round3(pt),
-          secondaryT: round3(st),
-          targetT: round3(target),
-          drift: round3(drift),
-          syncState,
-          primaryPaused: primary.paused,
-          primarySeeking: primary.seeking,
-          secondarySeeking: secondary.seeking,
-          hasEverHeld,
-          ...extra,
-        });
-      };
-
-      let intervalId: ReturnType<typeof setInterval> | null = null;
-      let isLooping = false;
-      let syncState = SyncState.Waiting;
-      let hasStarted = false;
-      let lastResyncAt = 0;
-      /** When true, handleSecondarySeeked will not set lastResyncAt; used for priming align so we can correct immediately if behind. */
-      let skipNextResyncCooldown = false;
-      /** True after we've entered holding; enables priming on subsequent loops for heavy-decode videos. */
-      let hasEverHeld = false;
-      /** Primary time sampled during priming; NaN means priming sample not initialized for current wait cycle. */
-      let primingLastPrimaryTime = Number.NaN;
-      /** Consecutive sync ticks where primary advanced by at least PRIMING_MIN_STEP_SECONDS during priming. */
-      let primingProgressTicks = 0;
-      let lastDriftLogAt = 0;
-
-      const offset = Number.isFinite(startOffsetSeconds) ? Math.max(0, startOffsetSeconds) : 0;
 
       const getPrimaryLoopStart = () => {
         if (offset <= 0) return 0;
@@ -129,439 +84,149 @@ export function useVideoSync(
         return clampTime(offset, primary);
       };
 
-      const seekPrimaryToOffset = (reason: "start" | "loop") => {
-        const loopStart = getPrimaryLoopStart();
-        if (loopStart < 0) return false;
-        if (primary.readyState < HTMLMediaElement.HAVE_METADATA) return false;
-        const from = primary.currentTime;
-        if (Math.abs(from - loopStart) < 0.001) return false;
-        primary.currentTime = loopStart;
-        logDebug("primary-offset-seek", {
-          reason,
-          from: round3(from),
-          to: round3(loopStart),
-          secondaryTime: round3(secondary.currentTime),
-        });
-        return true;
-      };
-
-      // Keep secondary paused at normal rate to avoid rate drift.
-      const pauseSecondary = () => {
-        secondary.playbackRate = 1;
+      const resetForLoop = () => {
+        if (primary.readyState >= HTMLMediaElement.HAVE_METADATA) {
+          const loopStart = getPrimaryLoopStart();
+          if (Math.abs(primary.currentTime - loopStart) > 0.001) {
+            primary.currentTime = loopStart;
+          }
+        }
+        if (
+          secondary.readyState >= HTMLMediaElement.HAVE_METADATA &&
+          Math.abs(secondary.currentTime) > 0.001
+        ) {
+          secondary.currentTime = 0;
+        }
+        pendingSecondaryResume = false;
         safePause(secondary);
       };
 
-      // Waiting means secondary is paused and ready to align on next frame.
-      const setWaiting = (resetTime: boolean) => {
-        const wasWaiting = syncState === SyncState.Waiting;
-        syncState = SyncState.Waiting;
-        if (!wasWaiting) {
-          primingLastPrimaryTime = Number.NaN;
-          primingProgressTicks = 0;
+      const sync = (reason: string) => {
+        if (primary.readyState < HTMLMediaElement.HAVE_METADATA) return;
+        if (secondary.readyState < HTMLMediaElement.HAVE_METADATA) return;
+
+        if (primary.paused || primary.seeking || primary.ended) {
+          safePause(secondary);
+          return;
         }
+
+        const primaryTime = Math.max(0, primary.currentTime);
+        if (primaryTime < offset) {
+          if (Math.abs(secondary.currentTime) > 0.001) {
+            secondary.currentTime = 0;
+          }
+          pendingSecondaryResume = false;
+          safePause(secondary);
+          return;
+        }
+
+        const targetRaw = primaryTime - offset;
+        const secondaryDuration = secondary.duration;
         if (
-          resetTime &&
-          secondary.readyState >= HTMLMediaElement.HAVE_METADATA &&
-          secondary.currentTime !== 0
+          Number.isFinite(secondaryDuration) &&
+          secondaryDuration > 0 &&
+          targetRaw >= secondaryDuration - 0.001
         ) {
-          logDebug("setWaiting-reset-secondary", {
-            resetTime,
-            secondaryBefore: round3(secondary.currentTime),
-            secondaryAfter: 0,
-          });
-          secondary.currentTime = 0;
-        }
-        pauseSecondary();
-      };
-
-      // Hard seek to a target time and enter seeking state.
-      const seekSecondaryTo = (targetTime: number, now: number, skipCooldown = false) => {
-        const clamped = clampTime(targetTime, secondary);
-        const delta = Math.abs(secondary.currentTime - clamped);
-        if (delta < 0.001 && !secondary.seeking) {
-          syncState = SyncState.Running;
-          return false;
-        }
-        secondary.currentTime = clamped;
-        syncState = SyncState.Seeking;
-        if (!skipCooldown) lastResyncAt = now;
-        return true;
-      };
-
-      // Main sync loop: keeps secondary aligned to primary minus offset.
-      const sync = (primaryTime: number) => {
-        const now = performance.now();
-        const sanitizedPrimaryTime = Math.max(0, primaryTime);
-        const primaryDuration = primary.duration;
-        const hasPrimaryDuration = Number.isFinite(primaryDuration) && primaryDuration > 0;
-        const loopThreshold = SYNC_INTERVAL_MS / 1000;
-
-        if (hasPrimaryDuration && primaryDuration - sanitizedPrimaryTime <= loopThreshold) {
-          logInfo("primary-loop-detected", {
-            primaryTime: round3(sanitizedPrimaryTime),
-            primaryDuration: round3(primaryDuration),
-            loopThreshold: round3(loopThreshold),
-            distanceFromEnd: round3(primaryDuration - sanitizedPrimaryTime),
-            secondaryTimeBeforeReset: round3(secondary.currentTime),
-          });
-          setWaiting(true);
-          const didSeek = seekPrimaryToOffset("loop");
-          if (didSeek) {
-            safePlay(primary);
-          }
-          logStateSnapshot("after-loop-detect", { didSeek });
+          secondary.currentTime = Math.max(0, secondaryDuration - 0.001);
+          pendingSecondaryResume = false;
+          safePause(secondary);
           return;
         }
 
-        // If primary isn't advancing, keep secondary paused.
-        if (primary.paused || primary.seeking) {
-          pauseSecondary();
-          if (primary.paused) {
-            stopLoop();
-          }
-          logDebug("primary-not-running", {
-            paused: primary.paused,
-            seeking: primary.seeking,
-          });
-          return;
-        }
-
-        // Avoid fighting browser seeks.
-        if (secondary.seeking || syncState === SyncState.Seeking) {
-          logDebug("secondary-seeking-or-cooldown", {
-            seeking: secondary.seeking,
-            state: syncState,
-          });
-          return;
-        }
-
-        // Hold secondary at 0 until primary passes the offset.
-        if (sanitizedPrimaryTime < offset) {
-          setWaiting(true);
-          logDebug("secondary-hold-waiting-for-offset", {
-            primaryTime: round3(sanitizedPrimaryTime),
-            offset: round3(offset),
-          });
-          return;
-        }
-
-        const targetTime = sanitizedPrimaryTime - offset;
-        const duration = secondary.duration;
-
-        // If secondary would exceed its duration, hold at the last frame.
-        if (Number.isFinite(duration) && duration > 0 && targetTime >= duration) {
-          const holdAt = Math.max(0, duration - 0.001);
-          secondary.currentTime = holdAt;
-          syncState = SyncState.Holding;
-          pauseSecondary();
-          logInfo("secondary-ended-hold", {
-            targetTime: round3(targetTime),
-            secondaryDuration: round3(duration),
-            primaryTime: round3(sanitizedPrimaryTime),
-            holdingSecondaryAt: round3(holdAt),
-          });
-          logStateSnapshot("secondary-ended-hold");
-          return;
-        }
-
-        if (secondary.readyState < HTMLMediaElement.HAVE_CURRENT_DATA) {
-          logDebug("secondary-not-ready", {
-            readyState: secondary.readyState,
-          });
-          return;
-        }
-
-        // First alignment after start/loop. For heavy-decode videos, wait for primary to advance.
-        if (syncState === SyncState.Waiting) {
-          const loopStart = getPrimaryLoopStart();
-          const primaryAdvance = sanitizedPrimaryTime - loopStart;
-          const usePriming = hasEverHeld;
-          if (usePriming) {
-            const hasPrimingSample = Number.isFinite(primingLastPrimaryTime);
-            const primaryStep = hasPrimingSample ? sanitizedPrimaryTime - primingLastPrimaryTime : 0;
-            primingLastPrimaryTime = sanitizedPrimaryTime;
-            if (!hasPrimingSample) {
-              logDebug("priming-arm", {
-                primaryTime: round3(sanitizedPrimaryTime),
-                loopStart: round3(loopStart),
-                targetTimeWhenReady: round3(targetTime),
-              });
-              return;
-            }
-            if (primaryStep >= PRIMING_MIN_STEP_SECONDS) {
-              primingProgressTicks += 1;
-            } else {
-              primingProgressTicks = 0;
-            }
-            const hasEnoughAdvance = primaryAdvance >= PRIMING_THRESHOLD_SECONDS;
-            const hasStableAdvance = primingProgressTicks >= PRIMING_REQUIRED_PROGRESS_TICKS;
-            if (!hasEnoughAdvance || !hasStableAdvance) {
-              logDebug("priming-wait", {
-                primaryAdvance: round3(primaryAdvance),
-                threshold: PRIMING_THRESHOLD_SECONDS,
-                primaryStep: round3(primaryStep),
-                minStep: PRIMING_MIN_STEP_SECONDS,
-                progressTicks: primingProgressTicks,
-                requiredTicks: PRIMING_REQUIRED_PROGRESS_TICKS,
-                primaryTime: round3(sanitizedPrimaryTime),
-                targetTimeWhenReady: round3(targetTime),
-                secondaryTime: round3(secondary.currentTime),
-              });
-              return;
-            }
-            logDebug("priming-ready", {
-              primaryAdvance: round3(primaryAdvance),
-              threshold: PRIMING_THRESHOLD_SECONDS,
-              primaryStep: round3(primaryStep),
-              minStep: PRIMING_MIN_STEP_SECONDS,
-              progressTicks: primingProgressTicks,
-              requiredTicks: PRIMING_REQUIRED_PROGRESS_TICKS,
-              primaryTime: round3(sanitizedPrimaryTime),
-              targetTimeWhenReady: round3(targetTime),
-              secondaryTime: round3(secondary.currentTime),
-            });
-          }
-          const didSeek = seekSecondaryTo(targetTime, now, true);
-          if (didSeek) skipNextResyncCooldown = true;
-          logInfo("secondary-start-align", {
-            targetTime: round3(targetTime),
-            secondaryCurrentTime: round3(secondary.currentTime),
-            primaryTime: round3(sanitizedPrimaryTime),
-            primaryAdvance: round3(primaryAdvance),
-            didSeek,
-            skipNextResyncCooldown: didSeek,
-          });
-          logStateSnapshot("after-start-align");
-          if (didSeek) return;
-        }
-
-        // Positive drift means secondary is ahead of target.
+        const targetTime = clampTime(targetRaw, secondary);
         const drift = secondary.currentTime - targetTime;
-        const allowedDrift = MIN_DRIFT_SECONDS;
-        const holdThreshold = MIN_DRIFT_SECONDS * HOLD_THRESHOLD_MULTIPLIER;
-        const canHardResync = lastResyncAt === 0 || now - lastResyncAt >= SYNC_INTERVAL_MS;
 
-        if (now - lastDriftLogAt >= 200) {
-          lastDriftLogAt = now;
-          logDebug("drift", {
+        if (Math.abs(drift) > SEEK_THRESHOLD_SECONDS) {
+          secondary.currentTime = targetTime;
+          pendingSecondaryResume = true;
+          safePause(secondary);
+          log("secondary-resync", {
+            reason,
             drift: round3(drift),
-            targetTime: round3(targetTime),
+            primaryTime: round3(primaryTime),
             secondaryTime: round3(secondary.currentTime),
-            primaryTime: round3(sanitizedPrimaryTime),
-            syncState,
-          });
-        }
-
-        // If ahead too far, pause until primary catches up.
-        if (drift > holdThreshold) {
-          if (syncState !== SyncState.Holding) {
-            syncState = SyncState.Holding;
-            hasEverHeld = true;
-            pauseSecondary();
-            logDebug("secondary-hold-drift", {
-              drift: round3(drift),
-              allowedDrift: round3(allowedDrift),
-              holdThreshold: round3(holdThreshold),
-              primaryTime: round3(sanitizedPrimaryTime),
-              targetTime: round3(targetTime),
-              secondaryTime: round3(secondary.currentTime),
-            });
-            logStateSnapshot("after-hold-drift");
-          }
-          // Resume only when primary has caught up (drift <= 0) to avoid hold/resume thrashing.
-        } else if (drift <= 0 && syncState === SyncState.Holding) {
-          syncState = SyncState.Running;
-          logDebug("secondary-resume-drift", {
-            drift: round3(drift),
-            allowedDrift: round3(allowedDrift),
-            primaryTime: round3(sanitizedPrimaryTime),
             targetTime: round3(targetTime),
-            secondaryTime: round3(secondary.currentTime),
           });
-          logStateSnapshot("after-resume-drift");
+          return;
         }
 
-        // If behind too far, seek to catch up (rate correction would be jittery).
-        if (drift <= -BEHIND_RESYNC_THRESHOLD_SECONDS) {
-          const cooldownMs = lastResyncAt > 0 ? Math.round(now - lastResyncAt) : 0;
-          const cooldownRemainingMs = canHardResync
-            ? 0
-            : Math.max(0, SYNC_INTERVAL_MS - cooldownMs);
-          if (canHardResync) {
-            const didSeek = seekSecondaryTo(targetTime, now);
-            logDebug("hard-resync", {
-              drift: round3(drift),
-              behindThreshold: BEHIND_RESYNC_THRESHOLD_SECONDS,
-              targetTime: round3(targetTime),
-              secondaryCurrentTime: round3(secondary.currentTime),
-              primaryTime: round3(sanitizedPrimaryTime),
-              didSeek,
-            });
-            logStateSnapshot("after-hard-resync", { didSeek });
-            if (didSeek) return;
-          } else {
-            logDebug("hard-resync-suppressed", {
-              drift: round3(drift),
-              behindThreshold: BEHIND_RESYNC_THRESHOLD_SECONDS,
-              cooldownMs,
-              cooldownRemainingMs,
-              lastResyncAt: lastResyncAt > 0 ? "set" : "never",
-            });
-          }
-        }
-
-        if (secondary.paused && syncState === SyncState.Running) {
+        pendingSecondaryResume = false;
+        if (secondary.paused) {
           safePlay(secondary);
-          logDebug("secondary-play", {
-            secondaryCurrentTime: round3(secondary.currentTime),
-          });
         }
       };
 
-      // Time-based sync loop; independent of video FPS.
-      const startLoop = () => {
-        if (isLooping) return;
-        isLooping = true;
-        logInfo("sync-loop-start", { mode: "interval", intervalMs: SYNC_INTERVAL_MS });
-        intervalId = setInterval(() => {
-          sync(primary.currentTime);
-        }, SYNC_INTERVAL_MS);
-      };
+      const maybeStart = () => {
+        const primaryReady = primary.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA;
+        const secondaryReady = secondary.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+        if (!primaryReady || !secondaryReady) return;
 
-      const stopLoop = () => {
-        isLooping = false;
-        logInfo("sync-loop-stop");
-        if (intervalId !== null) {
-          clearInterval(intervalId);
-          intervalId = null;
+        if (!hasStarted) {
+          hasStarted = true;
+          primary.loop = false;
+          secondary.loop = false;
+          primary.playbackRate = 1;
+          secondary.playbackRate = 1;
+          resetForLoop();
+          safePlay(primary);
+          sync("start");
+          startLoop();
+          return;
         }
-      };
 
-      // One-time start: configure looping and kick off sync.
-      const startPlayback = () => {
-        hasStarted = true;
-        primary.loop = false;
-        primary.playbackRate = 1;
-        secondary.loop = false;
-        setWaiting(true);
-        logInfo("start", {
-          offset: round3(offset),
-          primaryCurrentSrc: primary.currentSrc || undefined,
-          secondaryCurrentSrc: secondary.currentSrc || undefined,
-          primaryPreload: primary.preload,
-          secondaryPreload: secondary.preload,
-        });
-        seekPrimaryToOffset("start");
-        safePlay(primary);
-        startLoop();
+        sync("ready");
+        if (!primary.paused) {
+          startLoop();
+        }
       };
 
       const handlePrimaryPlay = () => {
-        logInfo("primary-play", { t: round3(primary.currentTime) });
+        sync("primary-play");
         startLoop();
       };
 
       const handlePrimaryPause = () => {
-        logInfo("primary-pause", { t: round3(primary.currentTime) });
         stopLoop();
-        pauseSecondary();
+        safePause(secondary);
       };
 
       const handlePrimaryWaiting = () => {
-        logInfo("primary-waiting", { t: round3(primary.currentTime) });
-        pauseSecondary();
+        safePause(secondary);
       };
 
       const handlePrimarySeeking = () => {
-        logInfo("primary-seeking", {
-          from: round3(primary.currentTime),
-          secondaryTime: round3(secondary.currentTime),
-          syncState,
-        });
-        // Don't overwrite Waiting - the seek is from our seekPrimaryToOffset (loop); we need priming.
-        if (syncState === SyncState.Waiting) {
-          pauseSecondary();
-          return;
-        }
-        setWaiting(false);
+        safePause(secondary);
       };
 
       const handlePrimarySeeked = () => {
-        logInfo("primary-seeked", {
-          to: round3(primary.currentTime),
-          secondaryTime: round3(secondary.currentTime),
-          syncState,
-        });
-        logStateSnapshot("primary-seeked");
-        sync(primary.currentTime);
+        sync("primary-seeked");
         if (!primary.paused) {
           startLoop();
         }
       };
 
       const handlePrimaryEnded = () => {
-        logInfo("primary-ended");
-        setWaiting(true);
-        const didSeek = seekPrimaryToOffset("loop");
-        if (didSeek) {
-          safePlay(primary);
-        }
-      };
-
-      const maybeStart = () => {
-        if (
-          primary.readyState >= HTMLMediaElement.HAVE_FUTURE_DATA &&
-          secondary.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA
-        ) {
-          logInfo("canplay-both", {
-            primaryReadyState: primary.readyState,
-            secondaryReadyState: secondary.readyState,
-          });
-          if (!hasStarted) {
-            startPlayback();
-          } else if (!primary.paused) {
-            sync(primary.currentTime);
-            startLoop();
-          }
-        } else {
-          logDebug("canplay-insufficient-data", {
-            primaryReadyState: primary.readyState,
-            secondaryReadyState: secondary.readyState,
-          });
-        }
-      };
-
-      const handleSecondarySeeking = () => {
-        // Don't overwrite Waiting - the seek is from our reset; we need priming check in sync().
-        if (syncState !== SyncState.Waiting) syncState = SyncState.Seeking;
-        logDebug("secondary-seeking", {
-          t: round3(secondary.currentTime),
-          syncState,
-          primaryTime: round3(primary.currentTime),
-        });
+        stopLoop();
+        resetForLoop();
+        safePlay(primary);
+        sync("primary-ended");
+        startLoop();
       };
 
       const handleSecondarySeeked = () => {
-        // Don't overwrite Waiting - stay in waiting for priming check in sync().
-        if (syncState !== SyncState.Waiting) syncState = SyncState.Running;
-        const skippedCooldown = skipNextResyncCooldown;
-        if (!skipNextResyncCooldown) {
-          lastResyncAt = performance.now();
-        } else {
-          skipNextResyncCooldown = false;
+        if (pendingSecondaryResume && !primary.paused && !primary.seeking) {
+          pendingSecondaryResume = false;
+          safePlay(secondary);
         }
-        logDebug("secondary-seeked", {
-          t: round3(secondary.currentTime),
-          syncState,
-          primaryTime: round3(primary.currentTime),
-          skippedCooldown: skippedCooldown,
-        });
-        logStateSnapshot("secondary-seeked", { skippedCooldown: skippedCooldown });
+      };
+
+      const handleSecondaryWaiting = () => {
+        safePause(secondary);
       };
 
       const handleSecondaryError = () => {
         const err = secondary.error;
-        logInfo("secondary-error", {
+        log("secondary-error", {
           code: err?.code,
           message: err?.message,
         });
@@ -572,61 +237,17 @@ export function useVideoSync(
         event: keyof HTMLMediaElementEventMap;
         handler: EventListener;
       }[] = [
-        {
-          target: primary,
-          event: "play",
-          handler: handlePrimaryPlay as EventListener,
-        },
-        {
-          target: primary,
-          event: "pause",
-          handler: handlePrimaryPause as EventListener,
-        },
-        {
-          target: primary,
-          event: "waiting",
-          handler: handlePrimaryWaiting as EventListener,
-        },
-        {
-          target: primary,
-          event: "seeking",
-          handler: handlePrimarySeeking as EventListener,
-        },
-        {
-          target: primary,
-          event: "seeked",
-          handler: handlePrimarySeeked as EventListener,
-        },
-        {
-          target: primary,
-          event: "ended",
-          handler: handlePrimaryEnded as EventListener,
-        },
-        {
-          target: primary,
-          event: "canplay",
-          handler: maybeStart as EventListener,
-        },
-        {
-          target: secondary,
-          event: "canplay",
-          handler: maybeStart as EventListener,
-        },
-        {
-          target: secondary,
-          event: "seeking",
-          handler: handleSecondarySeeking as EventListener,
-        },
-        {
-          target: secondary,
-          event: "seeked",
-          handler: handleSecondarySeeked as EventListener,
-        },
-        {
-          target: secondary,
-          event: "error",
-          handler: handleSecondaryError as EventListener,
-        },
+        { target: primary, event: "play", handler: handlePrimaryPlay as EventListener },
+        { target: primary, event: "pause", handler: handlePrimaryPause as EventListener },
+        { target: primary, event: "waiting", handler: handlePrimaryWaiting as EventListener },
+        { target: primary, event: "seeking", handler: handlePrimarySeeking as EventListener },
+        { target: primary, event: "seeked", handler: handlePrimarySeeked as EventListener },
+        { target: primary, event: "ended", handler: handlePrimaryEnded as EventListener },
+        { target: primary, event: "canplay", handler: maybeStart as EventListener },
+        { target: secondary, event: "canplay", handler: maybeStart as EventListener },
+        { target: secondary, event: "seeked", handler: handleSecondarySeeked as EventListener },
+        { target: secondary, event: "waiting", handler: handleSecondaryWaiting as EventListener },
+        { target: secondary, event: "error", handler: handleSecondaryError as EventListener },
       ];
 
       for (const { target, event, handler } of listeners) {
@@ -638,7 +259,6 @@ export function useVideoSync(
       maybeStart();
 
       innerCleanup = () => {
-        logInfo("cleanup");
         stopLoop();
         for (const { target, event, handler } of listeners) {
           target.removeEventListener(event, handler);
