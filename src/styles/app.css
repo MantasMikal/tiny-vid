@@ -162,3 +162,11 @@ html::-webkit-scrollbar-thumb:hover {
 [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
   display: none !important;
 }
+
+.window-drag-region {
+  -webkit-app-region: drag;
+}
+
+.window-no-drag-region {
+  -webkit-app-region: no-drag;
+}

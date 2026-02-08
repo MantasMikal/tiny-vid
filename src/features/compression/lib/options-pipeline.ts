@@ -9,7 +9,7 @@ import {
   getFormatCapabilities,
   isFormat,
 } from "@/features/compression/lib/compression-options";
-import type { CodecInfo } from "@/types/tauri";
+import type { CodecInfo } from "@/types/native";
 
 /** Default FPS for compression. Source fps is used when it's less than this. */
 export const DEFAULT_FPS = 30;

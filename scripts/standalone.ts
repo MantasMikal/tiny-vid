@@ -6,7 +6,6 @@ import {
   getTargetTriple,
   profileFfmpegPath,
   profilePrereqCommand,
-  profileTauriConfig,
 } from "./ffmpeg-profile.ts";
 import { prepareFfmpeg } from "./prepare-ffmpeg.ts";
 import { type CommandContext, runCommand } from "./runtime.ts";
@@ -164,8 +163,8 @@ async function resolveStandaloneFfmpegPath(
     }
 
     if (!(await probeVideoToolbox(context, ffmpegPath))) {
-      throw new Error(
-        `VideoToolbox probe failed for ${ffmpegPath}. LGPL commands require usable hardware VideoToolbox runtime (no software fallback).`
+      console.warn(
+        `[warn] VideoToolbox probe failed for ${ffmpegPath}. Continuing with software-capable LGPL profile (VP9/AV1).`
       );
     }
   }
@@ -180,11 +179,4 @@ export async function setupStandaloneEnv(
   await runPrepare(profile, context);
   const ffmpegPath = await resolveStandaloneFfmpegPath(context, profile);
   return { ...process.env, FFMPEG_PATH: ffmpegPath };
-}
-
-export function buildTauriArgs(profile: FfmpegProfile, subcommand: "build" | "dev"): string[] {
-  const { config, features } = profileTauriConfig(profile);
-  const args = ["tauri", subcommand, "--config", config];
-  if (features?.length) args.push("--features", features.join(","));
-  return args;
 }

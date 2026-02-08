@@ -1,6 +1,3 @@
-import { convertFileSrc, invoke, isTauri } from "@tauri-apps/api/core";
-import { open, save } from "@tauri-apps/plugin-dialog";
-import { platform } from "@tauri-apps/plugin-os";
 import { create } from "zustand";
 
 import {
@@ -16,13 +13,15 @@ import {
   resolve,
 } from "@/features/compression/lib/options-pipeline";
 import { type ResultError, tryCatch } from "@/lib/try-catch";
+import { desktopClient } from "@/platform/desktop/client";
 import type {
-  BuildVariantResult,
   CodecInfo,
   FfmpegPreviewResult,
   FfmpegSizeEstimate,
+  MediaProcessResult,
+  MediaProcessTranscodeResult,
   TranscodeOptions,
-} from "@/types/tauri";
+} from "@/types/native";
 
 export enum WorkerState {
   Idle = "idle",
@@ -75,40 +74,13 @@ let previewRequestId = 0;
 let commandPreviewRequestId = 0;
 let debounceCommandPreviewTimer: ReturnType<typeof setTimeout> | null = null;
 let selectPathRequestId = 0;
-let activePreviewBlobUrls: string[] = [];
 
 const SCRUB_PREVIEW_DEBOUNCE_MS = 200;
 const OPTIONS_PREVIEW_DEBOUNCE_MS = 300;
-const runningInTauri = isTauri();
-const isLinuxWebview = runningInTauri && platform() === "linux";
 
-function revokeObjectUrls(urls: string[]) {
-  for (const url of urls) {
-    URL.revokeObjectURL(url);
-  }
-}
-
-function releaseActivePreviewBlobUrls() {
-  revokeObjectUrls(activePreviewBlobUrls);
-  activePreviewBlobUrls = [];
-}
-
-async function toPreviewMediaSrc(filePath: string, nextBlobUrls: string[]): Promise<string> {
-  if (!runningInTauri) {
-    return filePath;
-  }
-  const assetSrc = convertFileSrc(filePath);
-  if (!isLinuxWebview) {
-    return assetSrc;
-  }
-  try {
-    const bytes = await invoke<number[]>("preview_media_bytes", { path: filePath });
-    const blobUrl = URL.createObjectURL(new Blob([Uint8Array.from(bytes)], { type: "video/mp4" }));
-    nextBlobUrls.push(blobUrl);
-    return blobUrl;
-  } catch {
-    return assetSrc;
-  }
+async function toPreviewMediaSrc(filePath: string): Promise<string> {
+  const assetSrc = await desktopClient.toMediaSrc(filePath);
+  return assetSrc;
 }
 
 function clampPreviewStartSeconds(
@@ -122,6 +94,16 @@ function clampPreviewStartSeconds(
   const maxStart = Math.max(0, safeDuration - safePreviewDuration);
   const safeStart = Number.isFinite(startSeconds) ? startSeconds : 0;
   return Math.min(Math.max(0, safeStart), maxStart);
+}
+
+function isPreviewProcessResult(result: MediaProcessResult): result is FfmpegPreviewResult {
+  return typeof result === "object" && "originalPath" in result && "compressedPath" in result;
+}
+
+function isTranscodeProcessResult(
+  result: MediaProcessResult
+): result is MediaProcessTranscodeResult {
+  return typeof result === "object" && "jobId" in result && "commitToken" in result;
 }
 
 export interface CompressionState {
@@ -140,6 +122,8 @@ export interface CompressionState {
   progress: number;
   /** Step label during preview or transcoding (e.g. "transcode", "preview_extract"). */
   progressStep: string | null;
+  activePreviewJobId: number | null;
+  activeTranscodeJobId: number | null;
   listenersReady: boolean;
   ffmpegCommandPreview: string | null;
   ffmpegCommandPreviewLoading: boolean;
@@ -175,13 +159,15 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   workerState: WorkerState.Idle,
   progress: 0,
   progressStep: null,
+  activePreviewJobId: null,
+  activeTranscodeJobId: null,
   listenersReady: false,
   ffmpegCommandPreview: null,
   ffmpegCommandPreviewLoading: false,
 
   initBuildVariant: async () => {
     try {
-      const result = await invoke<BuildVariantResult>("get_build_variant");
+      const result = await desktopClient.invoke("app.capabilities");
       set({
         availableCodecs: result.codecs,
         initError: null,
@@ -206,12 +192,13 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       }
     }, 0);
     try {
-      const result = await invoke<string>("preview_ffmpeg_command", {
+      const result = await desktopClient.invoke("media.inspect", {
+        kind: "commandPreview",
         options: toRustOptions(compressionOptions, undefined, videoMetadata ?? undefined),
-        inputPath,
+        ...(inputPath ? { inputPath } : {}),
       });
       if (commandPreviewRequestId === requestId) {
-        set({ ffmpegCommandPreview: result });
+        set({ ffmpegCommandPreview: typeof result === "string" ? result : null });
       }
     } catch {
       if (commandPreviewRequestId === requestId) {
@@ -231,7 +218,6 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (workerState !== WorkerState.Idle) {
       await get().terminate();
     }
-    releaseActivePreviewBlobUrls();
 
     set({
       inputPath: path,
@@ -306,7 +292,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   },
 
   browseAndSelectFile: async () => {
-    const selected = await open({
+    const selected = await desktopClient.openDialog({
       multiple: false,
       directory: false,
       filters: [
@@ -325,10 +311,18 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     const { inputPath, compressionOptions, videoMetadata } = get();
     if (!inputPath || !compressionOptions) return;
 
-    set({ workerState: WorkerState.Transcoding, progress: 0, error: null });
+    set({
+      workerState: WorkerState.Transcoding,
+      progress: 0,
+      progressStep: null,
+      activeTranscodeJobId: null,
+      activePreviewJobId: null,
+      error: null,
+    });
     const transcodeResult = await tryCatch(
       () =>
-        invoke<string>("ffmpeg_transcode_to_temp", {
+        desktopClient.invoke("media.process", {
+          kind: "transcode",
           inputPath,
           options: toRustOptions(
             compressionOptions,
@@ -348,8 +342,21 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       await get().terminate();
       return;
     }
-    const tempPath = transcodeResult.value;
-    set({ workerState: WorkerState.Idle, progress: 1 });
+    if (!isTranscodeProcessResult(transcodeResult.value)) {
+      set({
+        workerState: WorkerState.Idle,
+        error: {
+          type: "Transcode Error",
+          message: "Invalid transcode response",
+          detail: "media.process(kind=transcode) returned an unexpected payload",
+        },
+      });
+      await get().terminate();
+      return;
+    }
+
+    const { commitToken, jobId } = transcodeResult.value;
+    set({ workerState: WorkerState.Idle, progress: 1, activeTranscodeJobId: jobId });
 
     set({ isSaving: true });
     await tryCatch(
@@ -357,7 +364,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         const inputFilename = inputPath.split(/[/\\]/).pop() ?? "output";
         const basename = inputFilename.replace(/\.[^.]+$/, "") || "output";
         const ext = getDefaultExtension(compressionOptions.outputFormat);
-        const outputPath = await save({
+        const outputPath = await desktopClient.saveDialog({
           defaultPath: `compressed-${basename}.${ext}`,
           filters: [
             {
@@ -368,36 +375,50 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         });
 
         if (!outputPath) {
-          await tryCatch(() => invoke("cleanup_temp_file", { path: tempPath }), "Cleanup Error");
+          await tryCatch(
+            () =>
+              desktopClient.invoke("media.process", {
+                kind: "discard",
+                commitToken,
+              }),
+            "Cleanup Error"
+          );
           return;
         }
 
-        const moveResult = await tryCatch(
+        const commitResult = await tryCatch(
           () =>
-            invoke("move_compressed_file", {
-              source: tempPath,
-              dest: outputPath,
+            desktopClient.invoke("media.process", {
+              kind: "commit",
+              commitToken,
+              outputPath,
             }),
           "Save Error"
         );
-        if (!moveResult.ok) {
-          if (!moveResult.aborted) {
-            set({ error: moveResult.error });
+        if (!commitResult.ok) {
+          if (!commitResult.aborted) {
+            set({ error: commitResult.error });
           }
-          await tryCatch(() => invoke("cleanup_temp_file", { path: tempPath }), "Cleanup Error");
+          await tryCatch(
+            () =>
+              desktopClient.invoke("media.process", {
+                kind: "discard",
+                commitToken,
+              }),
+            "Cleanup Error"
+          );
         }
       },
       "Save Error",
       {
         onFinally: () => {
-          set({ isSaving: false });
+          set({ isSaving: false, activeTranscodeJobId: null, progressStep: null });
         },
       }
     );
   },
 
   clear: () => {
-    releaseActivePreviewBlobUrls();
     set({
       inputPath: null,
       videoPreview: null,
@@ -405,6 +426,8 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       estimate: null,
       previewStartSeconds: 0,
       error: null,
+      activePreviewJobId: null,
+      activeTranscodeJobId: null,
     });
     void get().refreshFfmpegCommandPreview();
   },
@@ -429,6 +452,8 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       workerState: WorkerState.GeneratingPreview,
       progress: 0,
       progressStep: null,
+      activePreviewJobId: null,
+      activeTranscodeJobId: null,
       error: null,
     };
     set(basePreviewState);
@@ -441,7 +466,8 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
 
     const result = await tryCatch(
       () =>
-        invoke<FfmpegPreviewResult>("ffmpeg_preview", {
+        desktopClient.invoke("media.process", {
+          kind: "preview",
           inputPath,
           options: toRustOptions(compressionOptions, undefined, get().videoMetadata ?? undefined),
           previewStartSeconds,
@@ -453,17 +479,25 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     if (requestId !== undefined && requestId !== previewRequestId) return;
 
     if (result.ok) {
-      const nextBlobUrls: string[] = [];
-      const [originalSrc, compressedSrc] = await Promise.all([
-        toPreviewMediaSrc(result.value.originalPath, nextBlobUrls),
-        toPreviewMediaSrc(result.value.compressedPath, nextBlobUrls),
-      ]);
-      if (requestId !== undefined && requestId !== previewRequestId) {
-        revokeObjectUrls(nextBlobUrls);
+      if (!isPreviewProcessResult(result.value)) {
+        set({
+          workerState: WorkerState.Idle,
+          error: {
+            type: "Preview Error",
+            message: "Invalid preview response",
+            detail: "media.process(kind=preview) returned an unexpected payload",
+          },
+          activePreviewJobId: null,
+        });
         return;
       }
-      releaseActivePreviewBlobUrls();
-      activePreviewBlobUrls = nextBlobUrls;
+      const [originalSrc, compressedSrc] = await Promise.all([
+        toPreviewMediaSrc(result.value.originalPath),
+        toPreviewMediaSrc(result.value.compressedPath),
+      ]);
+      if (requestId !== undefined && requestId !== previewRequestId) {
+        return;
+      }
       set({
         previewStartSeconds,
         videoPreview: {
@@ -475,11 +509,13 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         workerState: WorkerState.Idle,
         progress: 1,
         progressStep: null,
+        activePreviewJobId: null,
       });
     } else if (!result.aborted) {
       set({
         workerState: WorkerState.Idle,
         error: result.error,
+        activePreviewJobId: null,
       });
       await get().terminate();
     } else {
@@ -487,6 +523,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         workerState: WorkerState.Idle,
         progress: 0,
         progressStep: null,
+        activePreviewJobId: null,
       });
     }
   },
@@ -557,11 +594,27 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   },
 
   terminate: async () => {
-    await tryCatch(() => invoke("ffmpeg_terminate"), "Terminate Error");
+    const { workerState, activePreviewJobId, activeTranscodeJobId } = get();
+    const activeJobId =
+      workerState === WorkerState.GeneratingPreview
+        ? activePreviewJobId
+        : workerState === WorkerState.Transcoding
+          ? activeTranscodeJobId
+          : null;
+
+    await tryCatch(
+      () =>
+        activeJobId == null
+          ? desktopClient.invoke("media.cancel")
+          : desktopClient.invoke("media.cancel", { jobId: activeJobId }),
+      "Terminate Error"
+    );
     set({
       workerState: WorkerState.Idle,
       progress: 0,
       progressStep: null,
+      activePreviewJobId: null,
+      activeTranscodeJobId: null,
     });
   },
 }));

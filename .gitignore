@@ -9,7 +9,7 @@ lerna-debug.log*
 
 node_modules
 dist
-src-tauri/binaries
+native/binaries
 .ffmpeg-lgpl-build
 dist-ssr
 *.local

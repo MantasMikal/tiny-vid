@@ -8,7 +8,7 @@ Supports H.264, H.265, VP9, and AV1. Web version: [handy.tools](https://handy.to
 
 ## Build
 
-Run from repo root. Installer artifacts go to `releases/<platform>/`.
+Run from repo root. Installer artifacts go to `releases/electron/`.
 
 ### Build targets
 
@@ -24,13 +24,13 @@ FFmpeg requirements:
 - `system` mode (`yarn build`, `yarn dev`) uses your local FFmpeg from `PATH`.
 - `standalone` mode bundles FFmpeg for the selected profile.
 
-Before first build, install the Tauri prerequisites for your platform: [Tauri v2 prerequisites](https://v2.tauri.app/start/prerequisites/).
+Prerequisites: Node.js 24+, Rust (for the native sidecar), and system FFmpeg on `PATH` for dev/build in system mode.
 
 ## Run in dev mode
 
 - `yarn dev` (`system`)
-- `yarn dev:standalone` (`standalone` + `gpl`)
-- `yarn dev:standalone:lgpl` (`standalone` + `lgpl-vt`, requires VideoToolbox)
+- `yarn tv dev --mode standalone --profile gpl` (`standalone` + `gpl`)
+- `yarn tv dev --mode standalone --profile lgpl-vt` (`standalone` + `lgpl-vt`, requires VideoToolbox)
 
 ## `tv` CLI
 

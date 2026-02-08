@@ -22,7 +22,7 @@ export interface TestCommandOptions {
 const DISCOVERY_TEST_ARGS = [
   "test",
   "--manifest-path",
-  "src-tauri/Cargo.toml",
+  "native/Cargo.toml",
   "--test",
   "discovery_bundled",
   "--features",
@@ -62,7 +62,7 @@ async function runUnitSuite(
   await runCommand(
     context,
     "cargo",
-    ["test", "--manifest-path", "src-tauri/Cargo.toml", "--lib", ...cargoFeatureArgs(profile)],
+    ["test", "--manifest-path", "native/Cargo.toml", "--lib", ...cargoFeatureArgs(profile)],
     { env }
   );
 }
@@ -84,7 +84,7 @@ async function runIntegrationTargets(
       [
         "test",
         "--manifest-path",
-        "src-tauri/Cargo.toml",
+        "native/Cargo.toml",
         "--test",
         target,
         ...cargoFeatureArgs(profile, ["integration-test-api"]),

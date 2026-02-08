@@ -21,14 +21,13 @@ export interface RunOptions {
 
 export interface CommandContext extends GlobalOptions {
   rootDir: string;
-  srcTauriDir: string;
 }
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 export const ROOT_DIR = join(__dirname, "..");
-export const SRC_TAURI_DIR = join(ROOT_DIR, "src-tauri");
-const BUNDLE_DIR = "target/release/bundle";
+const ELECTRON_RELEASE_DIR = join(ROOT_DIR, "releases", "electron");
+const ELECTRON_RESOURCE_BIN_DIR = join(ROOT_DIR, "electron", "resources", "bin");
 
 let shellConfigured = false;
 
@@ -50,7 +49,6 @@ export function createContext(options: GlobalOptions): CommandContext {
   return {
     ...options,
     rootDir: ROOT_DIR,
-    srcTauriDir: SRC_TAURI_DIR,
   };
 }
 
@@ -88,34 +86,6 @@ export async function runCommand(
   return output.exitCode ?? 1;
 }
 
-export function readVersion(context: CommandContext): string {
-  const configPath = join(context.srcTauriDir, "tauri.conf.json");
-  const parsed = fs.readJsonSync(configPath) as { version?: unknown };
-
-  if (typeof parsed.version !== "string" || parsed.version.length === 0) {
-    throw new Error(`Could not read version from ${configPath}`);
-  }
-
-  return parsed.version;
-}
-
-export function firstFileWithExtension(dir: string, ext: string): string | null {
-  if (!fs.existsSync(dir)) return null;
-
-  for (const entry of fs.readdirSync(dir, { withFileTypes: true })) {
-    if (entry.isFile() && entry.name.endsWith(ext)) {
-      return join(dir, entry.name);
-    }
-  }
-
-  return null;
-}
-
-export function bundlePath(context: CommandContext, subdir?: string): string {
-  const base = join(context.srcTauriDir, BUNDLE_DIR);
-  return subdir ? join(base, subdir) : base;
-}
-
 export function withDryRun(context: CommandContext, message: string, fn: () => void): void {
   if (context.dryRun) {
     console.log(`[dry-run] ${message}`);
@@ -125,27 +95,8 @@ export function withDryRun(context: CommandContext, message: string, fn: () => v
 }
 
 export function cleanBundle(context: CommandContext): void {
-  const path = bundlePath(context);
-  withDryRun(context, `rm -rf ${path}`, () => fs.removeSync(path));
-}
-
-export function ensureDir(context: CommandContext, dir: string): void {
-  withDryRun(context, `mkdir -p ${dir}`, () => fs.ensureDirSync(dir));
-}
-
-export function copyFileToOutput(
-  context: CommandContext,
-  inputPath: string,
-  outputPath: string
-): void {
-  withDryRun(context, `cp ${inputPath} ${outputPath}`, () => {
-    fs.ensureDirSync(dirname(outputPath));
-    fs.copySync(inputPath, outputPath);
-  });
-}
-
-export function envWithoutCi(baseEnv: NodeJS.ProcessEnv): NodeJS.ProcessEnv {
-  const env = { ...baseEnv };
-  delete env.CI;
-  return env;
+  withDryRun(context, `rm -rf ${ELECTRON_RELEASE_DIR}`, () => fs.removeSync(ELECTRON_RELEASE_DIR));
+  withDryRun(context, `rm -rf ${ELECTRON_RESOURCE_BIN_DIR}`, () =>
+    fs.removeSync(ELECTRON_RESOURCE_BIN_DIR)
+  );
 }

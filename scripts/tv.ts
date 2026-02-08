@@ -4,9 +4,9 @@ import { runBuildCommand } from "./commands/build.ts";
 import { runCleanBundleCommand } from "./commands/clean.ts";
 import { runDevCommand } from "./commands/dev.ts";
 import { runFfmpegBuildCommand, runFfmpegPrepareCommand } from "./commands/ffmpeg.ts";
-import { runIconCompileCommand } from "./commands/icon.ts";
+import { runIconGenerateCommand } from "./commands/icon.ts";
 import { runTestMatrixCommand, runTestSuiteCommand } from "./commands/test.ts";
-import { type FfmpegProfile } from "./ffmpeg-profile.ts";
+import { type FfmpegProfileInput, normalizeFfmpegProfile } from "./ffmpeg-profile.ts";
 import {
   dryRunOption,
   modeOption,
@@ -26,33 +26,59 @@ interface CommonCliOptions {
 interface BuildCliOptions extends CommonCliOptions {
   mode: BuildMode;
   platform: BuildPlatform;
-  profile?: FfmpegProfile;
+  profile?: FfmpegProfileInput;
 }
 
 interface DevCliOptions extends CommonCliOptions {
   mode: BuildMode;
-  profile?: FfmpegProfile;
+  profile?: FfmpegProfileInput;
 }
 
 interface TestCliOptions extends CommonCliOptions {
   mode: BuildMode;
-  profile?: FfmpegProfile;
+  profile?: FfmpegProfileInput;
   suite: TestSuite;
 }
 
 interface FfmpegCliOptions extends CommonCliOptions {
-  profile: FfmpegProfile;
+  profile: FfmpegProfileInput;
 }
 
 type CommandActionResult = Promise<number>;
+
+type CliOptions = Record<string, unknown>;
+
+function normalizeCommandOptions(rawArgs: unknown[]): CliOptions {
+  const merged: Record<string, unknown> = {};
+
+  for (const raw of rawArgs) {
+    if (!raw || typeof raw !== "object") {
+      continue;
+    }
+
+    const maybeWithOpts = raw as { opts?: () => unknown };
+    if (typeof maybeWithOpts.opts === "function") {
+      const parsed = maybeWithOpts.opts();
+      if (parsed && typeof parsed === "object") {
+        Object.assign(merged, parsed as Record<string, unknown>);
+      }
+    }
+
+    Object.assign(merged, raw as Record<string, unknown>);
+  }
+
+  return merged;
+}
 
 async function runWithContext(
   options: CommonCliOptions,
   action: (context: CommandContext) => CommandActionResult
 ): Promise<void> {
+  const argvDryRun = process.argv.includes("--dry-run");
+  const argvVerbose = process.argv.includes("--verbose");
   const globalOptions = {
-    dryRun: options.dryRun ?? false,
-    verbose: options.verbose ?? false,
+    dryRun: options.dryRun ?? argvDryRun,
+    verbose: options.verbose ?? argvVerbose,
   };
 
   configureShell(globalOptions.verbose);
@@ -63,52 +89,57 @@ async function runWithContext(
   }
 }
 
-function withContextAction<T extends CommonCliOptions>(
-  action: (context: CommandContext, options: T) => CommandActionResult
-): (options: T) => Promise<void> {
-  return async (options: T) => {
-    await runWithContext(options, (context) => action(context, options));
+function withContextAction(
+  action: (context: CommandContext, options: CliOptions) => CommandActionResult
+): (...rawArgs: unknown[]) => Promise<void> {
+  return async (...rawArgs: unknown[]) => {
+    const options = normalizeCommandOptions(rawArgs);
+    await runWithContext(options as CommonCliOptions, (context) => action(context, options));
   };
 }
 
 function createProgram(): Command {
   const program = new Command();
 
-  program
-    .name("tv")
-    .description("tiny-vid script runner")
-    .showHelpAfterError()
-    .showSuggestionAfterError(true);
+  program.name("tv");
+  program.description("Tiny Vid script runner");
+  program.showHelpAfterError();
+  program.showSuggestionAfterError(true);
 
   program
     .command("build")
-    .description("Build app bundles")
+    .description("Build Electron app bundles")
     .addOption(dryRunOption())
     .addOption(verboseOption())
     .addOption(modeOption())
     .addOption(profileOption())
     .addOption(platformOption())
     .action(
-      withContextAction<BuildCliOptions>((ctx, opts) =>
-        runBuildCommand(ctx, {
+      withContextAction((ctx, rawOptions) => {
+        const opts = rawOptions as BuildCliOptions;
+        return runBuildCommand(ctx, {
           mode: opts.mode,
-          profile: opts.profile,
+          profile: normalizeFfmpegProfile(opts.profile),
           platform: opts.platform,
-        })
-      )
+        });
+      })
     );
 
   program
     .command("dev")
-    .description("Run tauri dev")
+    .description("Run Electron dev")
     .addOption(dryRunOption())
     .addOption(verboseOption())
     .addOption(modeOption())
     .addOption(profileOption())
     .action(
-      withContextAction<DevCliOptions>((ctx, opts) =>
-        runDevCommand(ctx, { mode: opts.mode, profile: opts.profile })
-      )
+      withContextAction((ctx, rawOptions) => {
+        const opts = rawOptions as DevCliOptions;
+        return runDevCommand(ctx, {
+          mode: opts.mode,
+          profile: normalizeFfmpegProfile(opts.profile),
+        });
+      })
     );
 
   const testCmd = program
@@ -120,21 +151,22 @@ function createProgram(): Command {
     .addOption(profileOption())
     .addOption(suiteOption())
     .action(
-      withContextAction<TestCliOptions>((ctx, opts) =>
-        runTestSuiteCommand(ctx, {
+      withContextAction((ctx, rawOptions) => {
+        const opts = rawOptions as TestCliOptions;
+        return runTestSuiteCommand(ctx, {
           mode: opts.mode,
-          profile: opts.profile,
+          profile: normalizeFfmpegProfile(opts.profile),
           suite: opts.suite,
-        })
-      )
+        });
+      })
     );
 
   testCmd
     .command("matrix")
-    .description("Run every possible test combination (system + discovery, system + all, standalone + profile + all for each supported profile)")
+    .description("Run every supported test combination")
     .addOption(dryRunOption())
     .addOption(verboseOption())
-    .action(withContextAction<CommonCliOptions>((ctx) => runTestMatrixCommand(ctx)));
+    .action(withContextAction((ctx) => runTestMatrixCommand(ctx)));
 
   program
     .command("ffmpeg")
@@ -146,9 +178,14 @@ function createProgram(): Command {
         .addOption(verboseOption())
         .addOption(profileOption(true))
         .action(
-          withContextAction<FfmpegCliOptions>((ctx, opts) =>
-            runFfmpegPrepareCommand(ctx, { profile: opts.profile })
-          )
+          withContextAction((ctx, rawOptions) => {
+            const opts = rawOptions as FfmpegCliOptions;
+            const profile = normalizeFfmpegProfile(opts.profile);
+            if (!profile) {
+              throw new Error("Missing --profile");
+            }
+            return runFfmpegPrepareCommand(ctx, { profile });
+          })
         )
     )
     .addCommand(
@@ -158,9 +195,14 @@ function createProgram(): Command {
         .addOption(verboseOption())
         .addOption(profileOption(true))
         .action(
-          withContextAction<FfmpegCliOptions>((ctx, opts) =>
-            runFfmpegBuildCommand(ctx, { profile: opts.profile })
-          )
+          withContextAction((ctx, rawOptions) => {
+            const opts = rawOptions as FfmpegCliOptions;
+            const profile = normalizeFfmpegProfile(opts.profile);
+            if (!profile) {
+              throw new Error("Missing --profile");
+            }
+            return runFfmpegBuildCommand(ctx, { profile });
+          })
         )
     );
 
@@ -168,19 +210,17 @@ function createProgram(): Command {
     .command("clean")
     .description("Cleanup commands")
     .command("bundle")
-    .description("Remove src-tauri bundle output")
+    .description("Remove Electron package output and bundled sidecar resources")
     .addOption(dryRunOption())
     .addOption(verboseOption())
-    .action(withContextAction<CommonCliOptions>((ctx) => runCleanBundleCommand(ctx)));
+    .action(withContextAction((ctx) => runCleanBundleCommand(ctx)));
 
   program
     .command("icon")
-    .description("Icon commands")
-    .command("compile")
-    .description("Compile macOS Assets.car from AppIcon.icon")
+    .description("Generate Electron app icons from app-icon.png")
     .addOption(dryRunOption())
     .addOption(verboseOption())
-    .action(withContextAction<CommonCliOptions>((ctx) => runIconCompileCommand(ctx)));
+    .action(withContextAction((ctx) => runIconGenerateCommand(ctx)));
 
   return program;
 }

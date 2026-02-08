@@ -1,6 +1,5 @@
-import { invoke } from "@tauri-apps/api/core";
-
-import type { GetVideoMetadataResult } from "@/types/tauri";
+import { desktopClient } from "@/platform/desktop/client";
+import type { GetVideoMetadataResult } from "@/types/native";
 
 export interface VideoMetadata {
   duration: number;
@@ -24,9 +23,16 @@ export interface VideoMetadata {
 }
 
 export async function getVideoMetadataFromPath(filePath: string): Promise<VideoMetadata> {
-  const meta = await invoke<GetVideoMetadataResult>("get_video_metadata", {
-    path: filePath,
+  const inspectResult = await desktopClient.invoke("media.inspect", {
+    kind: "metadata",
+    inputPath: filePath,
   });
+
+  if (typeof inspectResult === "string") {
+    throw new Error("Invalid metadata response from sidecar");
+  }
+
+  const meta: GetVideoMetadataResult = inspectResult;
   return {
     duration: meta.duration,
     width: meta.width,

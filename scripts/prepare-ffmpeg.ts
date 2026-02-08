@@ -10,7 +10,7 @@
  *   - macOS only: builds via scripts/build-ffmpeg-lgpl.sh if missing
  *
  * Canonical entry: yarn tv ffmpeg prepare --profile gpl|lgpl-vt
- * Direct invocation: node scripts/prepare-ffmpeg.ts --ffmpeg-profile gpl
+ * Direct invocation (internal): node scripts/prepare-ffmpeg.ts --ffmpeg-profile gpl
  */
 
 import { spawnSync } from "node:child_process";
@@ -68,6 +68,15 @@ interface BtbNAsset {
   url: string;
   filename: string;
 }
+
+const LGPL_REQUIRED_VIDEO_ENCODERS = [
+  "h264_videotoolbox",
+  "hevc_videotoolbox",
+  "libsvtav1",
+  "libvpx-vp9",
+] as const;
+
+const LGPL_REQUIRED_MUXERS = ["mp4", "matroska", "webm"] as const;
 
 function getCacheDir(): string {
   if (process.env.TINY_VID_FFMPEG_CACHE) {
@@ -205,6 +214,57 @@ function findBinaryInExtracted(extractDir: string, baseName: string): string | n
   return find(extractDir);
 }
 
+function parseEnabledVideoEncoders(stdout: string): Set<string> {
+  const encoders = new Set<string>();
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith("V")) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length >= 2 && parts[1]) {
+      encoders.add(parts[1]);
+    }
+  }
+  return encoders;
+}
+
+function parseEnabledMuxers(stdout: string): Set<string> {
+  const muxers = new Set<string>();
+  for (const line of stdout.split(/\r?\n/)) {
+    const trimmed = line.trim();
+    if (!/^[D.]*E/.test(trimmed)) continue;
+    const parts = trimmed.split(/\s+/);
+    if (parts.length >= 2 && parts[1]) {
+      muxers.add(parts[1]);
+    }
+  }
+  return muxers;
+}
+
+function hasExpectedLgplCapabilities(ffmpegPath: string): boolean {
+  const encodersResult = spawnSync(ffmpegPath, ["-hide_banner", "-encoders"], {
+    encoding: "utf8",
+  });
+  if (encodersResult.status !== 0) {
+    return false;
+  }
+  const muxersResult = spawnSync(ffmpegPath, ["-hide_banner", "-muxers"], {
+    encoding: "utf8",
+  });
+  if (muxersResult.status !== 0) {
+    return false;
+  }
+
+  const encoderStdout = encodersResult.stdout;
+  const muxerStdout = muxersResult.stdout;
+  const availableEncoders = parseEnabledVideoEncoders(encoderStdout);
+  const availableMuxers = parseEnabledMuxers(muxerStdout);
+
+  return (
+    LGPL_REQUIRED_VIDEO_ENCODERS.every((codec) => availableEncoders.has(codec)) &&
+    LGPL_REQUIRED_MUXERS.every((muxer) => availableMuxers.has(muxer))
+  );
+}
+
 async function prepareBtbN(target: string, profile: FfmpegProfile): Promise<void> {
   const asset = getBtbNAsset(target, profile);
   if (!asset) throw new Error(`No BtbN asset for target/profile: ${target}/${profile}`);
@@ -276,11 +336,14 @@ function prepareMacOsBinaries(target: string, profile: FfmpegProfile): void {
       : [ffmpeg, ffprobe];
 
   if (required.every((path) => existsSync(path))) {
-    console.log(`FFmpeg binaries already exist for ${profile} (${target}), skipping`);
-    return;
+    if (profile !== "lgpl-vt" || hasExpectedLgplCapabilities(ffmpeg)) {
+      console.log(`FFmpeg binaries already exist for ${profile} (${target}), skipping`);
+      return;
+    }
+    console.log(`Existing ${profile} binaries are missing VP9/AV1/WebM capabilities; rebuilding...`);
   }
 
-  console.log(`Standalone ${profile} binaries not found; building from source...`);
+  console.log(`Preparing standalone ${profile} binaries from source...`);
   const script = join(ROOT, profileBuildScript(profile));
   const r = spawnSync("bash", [script], { stdio: "inherit", cwd: ROOT });
   if (r.status !== 0) {

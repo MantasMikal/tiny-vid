@@ -1,5 +1,5 @@
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
-import type { FfmpegSizeEstimate } from "@/types/tauri";
+import type { FfmpegSizeEstimate } from "@/types/native";
 
 const BYTES_PER_MB = 1024 * 1024;
 const SIZE_UNCHANGED_THRESHOLD = 0.05;

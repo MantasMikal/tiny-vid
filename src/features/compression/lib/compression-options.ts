@@ -1,9 +1,9 @@
-import type { CodecInfo } from "@/types/tauri";
+import type { CodecInfo } from "@/types/native";
 
 export type LicenseProfile = "standalone" | "lgpl";
 
 /**
- * Codec metadata. Must stay in sync with backend src-tauri/src/codec.rs CODEC_TABLE.
+ * Codec metadata. Must stay in sync with backend native codec table (native/src/codec.rs).
  * presetType "vt" = VideoToolbox (hardware); others = software encoders.
  */
 const CODEC_REGISTRY = {

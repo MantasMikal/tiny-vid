@@ -4,7 +4,7 @@ import tailwindcss from "@tailwindcss/vite";
 import react from "@vitejs/plugin-react";
 import { defineConfig } from "vite";
 
-const host = process.env.TAURI_DEV_HOST;
+const host = process.env.TINY_VID_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
@@ -22,11 +22,11 @@ export default defineConfig(() => ({
     },
   },
 
-  // Vite options tailored for Tauri development and only applied in `tauri dev` or `tauri build`
+  // Vite options tailored for desktop development.
   //
-  // 1. prevent vite from obscuring rust errors
+  // 1. prevent vite from obscuring native-sidecar errors
   clearScreen: false,
-  // 2. tauri expects a fixed port, fail if that port is not available
+  // 2. keep a fixed port, fail if that port is not available
   server: {
     port: 1420,
     strictPort: true,
@@ -39,8 +39,8 @@ export default defineConfig(() => ({
         }
       : undefined,
     watch: {
-      // 3. tell vite to ignore watching `src-tauri`
-      ignored: ["**/src-tauri/**"],
+      // 3. tell vite to ignore watching `native`
+      ignored: ["**/native/**"],
     },
   },
 }));

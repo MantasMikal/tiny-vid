@@ -1,0 +1,65 @@
+name: Electron CI
+
+on:
+  pull_request:
+  push:
+    branches:
+      - main
+
+jobs:
+  package-matrix:
+    name: ${{ matrix.os }}
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest, windows-latest]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: "yarn"
+
+      - name: Setup Rust
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Enable Corepack
+        run: corepack enable
+
+      - name: Install dependencies
+        run: yarn install --immutable
+
+      - name: Lint
+        run: yarn lint
+
+      - name: Check sidecar target
+        run: cargo check --manifest-path native/Cargo.toml --bin tiny-vid-sidecar
+
+      - name: Build unpacked Electron app
+        run: node scripts/electron/build.ts --mode system -- --dir
+
+      - name: Verify sidecar bundled
+        run: node scripts/electron/verify-package.ts
+
+      - name: Policy guard (Linux blocks standalone)
+        if: matrix.os == 'ubuntu-latest'
+        shell: bash
+        run: |
+          if node scripts/electron/build.ts --mode standalone --profile gpl -- --dir; then
+            echo "Expected standalone gpl to be rejected on Linux"
+            exit 1
+          fi
+
+      - name: Policy guard (Windows blocks lgpl-vt)
+        if: matrix.os == 'windows-latest'
+        shell: bash
+        run: |
+          if node scripts/electron/build.ts --mode standalone --profile lgpl-vt -- --dir; then
+            echo "Expected standalone lgpl-vt to be rejected on Windows"
+            exit 1
+          fi

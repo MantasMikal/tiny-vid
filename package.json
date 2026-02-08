@@ -3,6 +3,7 @@
   "private": true,
   "version": "1.1.0",
   "type": "module",
+  "main": "electron/main.mjs",
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -17,20 +18,27 @@
   },
   "scripts": {
     "dev": "yarn tv dev --mode system",
+    "dev:electron": "node scripts/electron/dev.ts",
     "dev:web": "vite",
     "tv": "node scripts/tv.ts",
+    "electron:shell": "electron electron/main.mjs",
     "build": "yarn tv build --mode system",
+    "build:electron": "node scripts/electron/build.ts --mode system",
+    "build:electron:standalone": "yarn tv build --mode standalone --profile gpl",
+    "build:electron:standalone:lgpl": "yarn tv build --mode standalone --profile lgpl-vt",
+    "build:standalone": "yarn build:electron:standalone",
+    "build:standalone:lgpl": "yarn build:electron:standalone:lgpl",
+    "pack:electron": "electron-builder --publish never",
     "build:vite": "tsc && vite build",
     "preview": "vite preview",
-    "icon": "tauri icon app-icon.png && yarn tv icon compile",
-    "tauri": "tauri",
-    "dev:standalone": "yarn tv dev --mode standalone --profile gpl",
-    "dev:standalone:lgpl": "yarn tv dev --mode standalone --profile lgpl-vt",
-    "build:standalone": "yarn tv build --mode standalone --profile gpl",
-    "build:standalone:lgpl": "yarn tv build --mode standalone --profile lgpl-vt",
+    "icon": "yarn tv icon",
+    "ffmpeg:prepare:gpl": "yarn tv ffmpeg prepare --profile gpl",
+    "ffmpeg:prepare:lgpl": "yarn tv ffmpeg prepare --profile lgpl-vt",
+    "ffmpeg:build:gpl": "yarn tv ffmpeg build --profile gpl",
+    "ffmpeg:build:lgpl": "yarn tv ffmpeg build --profile lgpl-vt",
     "check": "yarn test:all && yarn lint && yarn lint:rust && yarn format:check && tsc --noEmit",
-    "lint:rust": "cd src-tauri && cargo clippy",
-    "lint:rust:fix": "cd src-tauri && cargo clippy --fix --allow-dirty --allow-staged",
+    "lint:rust": "cd native && cargo clippy",
+    "lint:rust:fix": "cd native && cargo clippy --fix --allow-dirty --allow-staged",
     "test": "yarn test:unit",
     "test:unit": "yarn tv test --mode system --suite unit",
     "test:all": "yarn tv test --mode system --suite all",
@@ -63,12 +71,6 @@
     "@radix-ui/react-toggle-group": "^1.1.11",
     "@radix-ui/react-tooltip": "^1.2.8",
     "@tailwindcss/vite": "^4.1.18",
-    "@tauri-apps/api": "^2.10.1",
-    "@tauri-apps/plugin-dialog": "^2.6.0",
-    "@tauri-apps/plugin-fs": "^2.4.5",
-    "@tauri-apps/plugin-opener": "^2.5.3",
-    "@tauri-apps/plugin-os": "^2.3.2",
-    "@tauri-apps/plugin-shell": "^2.3.5",
     "class-variance-authority": "^0.7.1",
     "clsx": "^2.1.1",
     "lucide-react": "^0.563.0",
@@ -84,8 +86,8 @@
   },
   "devDependencies": {
     "@eslint/js": "^10.0.1",
+    "@fiahfy/icns": "^0.0.7",
     "@release-it/bumper": "^7.0.5",
-    "@tauri-apps/cli": "^2.10.0",
     "@types/fs-extra": "^11.0.4",
     "@types/json-merge-patch": "^1",
     "@types/node": "^24.10.11",
@@ -94,6 +96,8 @@
     "@vitejs/plugin-react": "^5.1.3",
     "babel-plugin-react-compiler": "19.1.0-rc.3",
     "commander": "^14.0.3",
+    "electron": "^40.2.1",
+    "electron-builder": "^26.7.0",
     "eslint": "^9.39.2",
     "eslint-config-prettier": "^10.1.8",
     "eslint-plugin-better-tailwindcss": "^4.1.1",
@@ -105,12 +109,74 @@
     "eslint-plugin-unused-imports": "^4.3.0",
     "globals": "^17.3.0",
     "json-merge-patch": "^1.0.2",
+    "png-to-ico": "^3.0.1",
     "prettier": "^3.8.1",
     "release-it": "^19.2.4",
+    "sharp": "^0.34.5",
     "typescript": "~5.9.3",
     "typescript-eslint": "^8.54.0",
     "vite": "^7.3.1",
     "zx": "^8.8.5"
+  },
+  "build": {
+    "appId": "tinyvid",
+    "productName": "Tiny Vid",
+    "compression": "maximum",
+    "asar": true,
+    "electronLanguages": [
+      "en"
+    ],
+    "directories": {
+      "output": "releases/electron"
+    },
+    "files": [
+      "dist/**/*",
+      "electron/main.mjs",
+      "electron/preload.cjs",
+      "package.json",
+      "!**/node_modules/**"
+    ],
+    "extraResources": [
+      {
+        "from": "electron/resources/bin",
+        "to": "bin",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ],
+    "mac": {
+      "icon": "electron/icons/icon.icns",
+      "extraResources": [
+        {
+          "from": "electron/resources/macos",
+          "to": ".",
+          "filter": [
+            "Assets.car"
+          ]
+        }
+      ],
+      "category": "public.app-category.video",
+      "target": [
+        "dmg",
+        "zip"
+      ]
+    },
+    "win": {
+      "icon": "electron/icons/icon.ico",
+      "target": [
+        "nsis",
+        "portable"
+      ]
+    },
+    "linux": {
+      "icon": "electron/icons/icon.png",
+      "category": "AudioVideo",
+      "target": [
+        "AppImage",
+        "deb"
+      ]
+    }
   },
   "packageManager": "yarn@4.12.0"
 }

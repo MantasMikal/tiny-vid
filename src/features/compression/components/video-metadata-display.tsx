@@ -14,7 +14,7 @@ import {
 } from "@/features/compression/components/estimate-display-state";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
 import { cn } from "@/lib/utils";
-import type { FfmpegSizeEstimate } from "@/types/tauri";
+import type { FfmpegSizeEstimate } from "@/types/native";
 
 interface COptions {
   scale?: number;

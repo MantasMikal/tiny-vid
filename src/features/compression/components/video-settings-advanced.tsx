@@ -36,7 +36,7 @@ import {
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
 import { resolve } from "@/features/compression/lib/options-pipeline";
 import { cn } from "@/lib/utils";
-import type { CodecInfo } from "@/types/tauri";
+import type { CodecInfo } from "@/types/native";
 
 type SetOptionsFn = (options: CompressionOptions, opts?: { triggerPreview?: boolean }) => void;
 

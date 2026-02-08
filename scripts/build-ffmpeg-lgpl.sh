@@ -1,20 +1,25 @@
 #!/usr/bin/env bash
-# Build FFmpeg from source with LGPL + VideoToolbox only for macOS.
-# Run on macOS. Output: src-tauri/binaries/standalone-lgpl-vt/ffmpeg-<target>, ffprobe-<target>
+# Build FFmpeg from source with macOS LGPL profile:
+# - VideoToolbox H.264/H.265
+# - software VP9 (libvpx) and AV1 (libsvtav1)
+# - WebM/Matroska/MP4 muxing
+# Output: native/binaries/standalone-lgpl-vt/ffmpeg-<target>, ffprobe-<target>, required dylibs
 #
-# Requires: xz, tar, make, nasm (for x86), or use --enable-lto and appropriate deps.
-# For minimal deps, clone FFmpeg and run configure + make.
+# Dependencies (Homebrew):
+#   brew install libvpx opus svt-av1 pkg-config
+# Optional for x86_64-native builds:
+#   brew install nasm
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARIES_DIR="$ROOT/src-tauri/binaries/standalone-lgpl-vt"
+BINARIES_DIR="$ROOT/native/binaries/standalone-lgpl-vt"
 BUILD_DIR="${FFMPEG_BUILD_DIR:-/tmp/ffmpeg-lgpl-build}"
-# FFmpeg release branch (e.g. 8.0 → release/8.0). See https://git.ffmpeg.org/ffmpeg.git
+# FFmpeg release branch (e.g. 8.0 -> release/8.0). See https://git.ffmpeg.org/ffmpeg.git
 FFMPEG_VERSION="${FFMPEG_VERSION:-8.0}"
 TARGET_TRIPLE="${TARGET_TRIPLE:-$(rustc --print host-tuple 2>/dev/null || echo "aarch64-apple-darwin")}"
-LGPL_DYLIBS=(
+CORE_LGPL_DYLIBS=(
   "libavcodec"
   "libavdevice"
   "libavfilter"
@@ -24,7 +29,7 @@ LGPL_DYLIBS=(
   "libswscale"
 )
 
-echo "Building FFmpeg LGPL + VideoToolbox for $TARGET_TRIPLE (release/$FFMPEG_VERSION)"
+echo "Building FFmpeg LGPL (VT + VP9 + AV1 + WebM) for $TARGET_TRIPLE (release/$FFMPEG_VERSION)"
 
 mkdir -p "$BUILD_DIR"
 cd "$BUILD_DIR"
@@ -52,13 +57,20 @@ cd ffmpeg
   \
   --enable-videotoolbox \
   --enable-audiotoolbox \
+  --enable-libvpx \
+  --enable-libsvtav1 \
+  --enable-libopus \
   \
   --enable-encoder=h264_videotoolbox \
   --enable-encoder=hevc_videotoolbox \
   --enable-encoder=aac_at \
+  --enable-encoder=libvpx-vp9 \
+  --enable-encoder=libsvtav1 \
+  --enable-encoder=libopus \
   \
   --enable-muxer=mp4 \
   --enable-muxer=matroska \
+  --enable-muxer=webm \
   --enable-demuxer=mov \
   --enable-demuxer=matroska \
   --enable-demuxer=srt \
@@ -67,7 +79,6 @@ cd ffmpeg
   \
   --disable-libx264 \
   --disable-libx265 \
-  --disable-libsvtav1 \
   \
   --disable-doc \
   --disable-debug \
@@ -89,24 +100,135 @@ fi
 cp "$BUILD_DIR/install/bin/ffmpeg" "$BINARIES_DIR/ffmpeg-$SUFFIX"
 cp "$BUILD_DIR/install/bin/ffprobe" "$BINARIES_DIR/ffprobe-$SUFFIX"
 
-# Copy required shared libs and normalize install names for sidecar runtime.
-for lib in "${LGPL_DYLIBS[@]}"; do
-  SRC="$BUILD_DIR/install/lib/${lib}.dylib"
-  if [[ ! -f "$SRC" ]]; then
-    echo "error: missing required dylib: $SRC" >&2
+CORE_DYLIB_PATHS=()
+for lib in "${CORE_LGPL_DYLIBS[@]}"; do
+  src="$BUILD_DIR/install/lib/${lib}.dylib"
+  if [[ ! -f "$src" ]]; then
+    echo "error: missing required dylib: $src" >&2
     exit 1
   fi
-  cp -L "$SRC" "$BINARIES_DIR/${lib}.dylib"
+  out="$BINARIES_DIR/${lib}.dylib"
+  cp -L "$src" "$out"
+  CORE_DYLIB_PATHS+=("$out")
 done
+
+is_system_dependency() {
+  local dep="$1"
+  [[ "$dep" == /System/* || "$dep" == /usr/lib/* ]]
+}
+
+resolve_dependency_source() {
+  local dep="$1"
+  local owner_file="$2"
+  local dep_name
+  dep_name="$(basename "$dep")"
+
+  if [[ "$dep" == @loader_path/* ]]; then
+    local bundled="$BINARIES_DIR/$dep_name"
+    if [[ -f "$bundled" ]]; then
+      echo "$bundled"
+      return 0
+    fi
+  fi
+
+  if [[ "$dep" == @rpath/* ]]; then
+    local owner_dir exe_dir
+    owner_dir="$(dirname "$owner_file")"
+    exe_dir="$BINARIES_DIR"
+
+    while IFS= read -r rpath; do
+      [[ -z "$rpath" ]] && continue
+      local resolved_rpath candidate
+      resolved_rpath="$rpath"
+      resolved_rpath="${resolved_rpath//@loader_path/$owner_dir}"
+      resolved_rpath="${resolved_rpath//@executable_path/$exe_dir}"
+      candidate="$resolved_rpath/$dep_name"
+      if [[ -f "$candidate" ]]; then
+        echo "$candidate"
+        return 0
+      fi
+    done < <(
+      otool -l "$owner_file" \
+        | awk '
+            $1=="cmd" && $2=="LC_RPATH" { in_rpath=1; next }
+            in_rpath && $1=="path" { print $2; in_rpath=0 }
+          '
+    )
+
+    local install_candidate="$BUILD_DIR/install/lib/$dep_name"
+    if [[ -f "$install_candidate" ]]; then
+      echo "$install_candidate"
+      return 0
+    fi
+  fi
+
+  if [[ -f "$dep" ]]; then
+    echo "$dep"
+    return 0
+  fi
+
+  return 1
+}
+
+collect_runtime_dependencies() {
+  local queue=("$@")
+  local processed_file
+  processed_file="$(mktemp)"
+  local index=0
+
+  while [[ $index -lt ${#queue[@]} ]]; do
+    local file="${queue[$index]}"
+    index=$((index + 1))
+
+    if grep -Fxq "$file" "$processed_file"; then
+      continue
+    fi
+    echo "$file" >> "$processed_file"
+
+    while IFS= read -r dep; do
+      [[ -z "$dep" ]] && continue
+      if is_system_dependency "$dep"; then
+        continue
+      fi
+
+      local dep_name dep_target dep_source
+      dep_name="$(basename "$dep")"
+      dep_target="$BINARIES_DIR/$dep_name"
+
+      if [[ ! -f "$dep_target" ]]; then
+        dep_source="$(resolve_dependency_source "$dep" "$file")" || {
+          echo "error: unable to resolve dependency '$dep' referenced by '$file'" >&2
+          rm -f "$processed_file"
+          exit 1
+        }
+        cp -L "$dep_source" "$dep_target"
+      fi
+
+      if [[ "$dep_target" == *.dylib ]]; then
+        queue+=("$dep_target")
+      fi
+    done < <(otool -L "$file" | awk 'NR>1 { print $1 }')
+  done
+
+  rm -f "$processed_file"
+}
 
 rewrite_install_names() {
   local file="$1"
   while IFS= read -r dep; do
-    for lib in "${LGPL_DYLIBS[@]}"; do
-      if [[ "$dep" == "$BUILD_DIR/install/lib/${lib}"*.dylib || "$dep" == "@rpath/${lib}"*.dylib ]]; then
-        install_name_tool -change "$dep" "@loader_path/${lib}.dylib" "$file"
-      fi
-    done
+    [[ -z "$dep" ]] && continue
+    if is_system_dependency "$dep"; then
+      continue
+    fi
+
+    local dep_name bundled desired
+    dep_name="$(basename "$dep")"
+    bundled="$BINARIES_DIR/$dep_name"
+    desired="@loader_path/$dep_name"
+
+    if [[ -f "$bundled" && "$dep" != "$desired" ]]; then
+      install_name_tool -change "$dep" "$desired" "$file"
+    fi
   done < <(otool -L "$file" | awk 'NR>1 { print $1 }')
 }
 
@@ -116,7 +238,7 @@ verify_install_names() {
   unresolved="$(
     otool -L "$file" \
       | awk 'NR>1 { print $1 }' \
-      | grep -E "^${BUILD_DIR}/install/lib/|^@rpath/(libav|libsw)" \
+      | grep -E "^${BUILD_DIR}/install/lib/|^@rpath/|^/opt/homebrew/|^/usr/local/|^/opt/local/" \
       || true
   )"
   if [[ -n "$unresolved" ]]; then
@@ -126,25 +248,39 @@ verify_install_names() {
   fi
 }
 
-for lib in "${LGPL_DYLIBS[@]}"; do
-  install_name_tool -id "@loader_path/${lib}.dylib" "$BINARIES_DIR/${lib}.dylib"
+collect_runtime_dependencies \
+  "$BINARIES_DIR/ffmpeg-$SUFFIX" \
+  "$BINARIES_DIR/ffprobe-$SUFFIX" \
+  "${CORE_DYLIB_PATHS[@]}"
+
+shopt -s nullglob
+for dylib in "$BINARIES_DIR"/*.dylib; do
+  install_name_tool -id "@loader_path/$(basename "$dylib")" "$dylib"
 done
 
-for file in "$BINARIES_DIR/ffmpeg-$SUFFIX" "$BINARIES_DIR/ffprobe-$SUFFIX"; do
+for file in "$BINARIES_DIR/ffmpeg-$SUFFIX" "$BINARIES_DIR/ffprobe-$SUFFIX" "$BINARIES_DIR"/*.dylib; do
   rewrite_install_names "$file"
   verify_install_names "$file"
 done
-for lib in "${LGPL_DYLIBS[@]}"; do
-  file="$BINARIES_DIR/${lib}.dylib"
-  rewrite_install_names "$file"
-  verify_install_names "$file"
+shopt -u nullglob
+
+# install_name_tool mutates Mach-O load commands. Re-sign all bundled artifacts afterwards,
+# otherwise macOS may kill ffmpeg/ffprobe at launch with SIGKILL and no stderr.
+shopt -s nullglob
+for dylib in "$BINARIES_DIR"/*.dylib; do
+  codesign --force --sign - "$dylib"
 done
+shopt -u nullglob
+codesign --force --sign - "$BINARIES_DIR/ffprobe-$SUFFIX"
+codesign --force --sign - "$BINARIES_DIR/ffmpeg-$SUFFIX"
 
 chmod +x "$BINARIES_DIR/ffmpeg-$SUFFIX" "$BINARIES_DIR/ffprobe-$SUFFIX"
 
 echo "Done. Binaries at:"
 echo "  $BINARIES_DIR/ffmpeg-$SUFFIX"
 echo "  $BINARIES_DIR/ffprobe-$SUFFIX"
-for lib in "${LGPL_DYLIBS[@]}"; do
-  echo "  $BINARIES_DIR/${lib}.dylib"
+shopt -s nullglob
+for dylib in "$BINARIES_DIR"/*.dylib; do
+  echo "  $dylib"
 done
+shopt -u nullglob

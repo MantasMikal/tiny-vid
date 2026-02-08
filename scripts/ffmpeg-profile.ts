@@ -3,6 +3,20 @@ import { join } from "node:path";
 
 export const FFMPEG_PROFILES = ["gpl", "lgpl-vt"] as const;
 export type FfmpegProfile = (typeof FFMPEG_PROFILES)[number];
+export const FFMPEG_PROFILE_INPUTS = ["gpl", "lgpl-vt", "lgpl"] as const;
+export type FfmpegProfileInput = (typeof FFMPEG_PROFILE_INPUTS)[number];
+
+export function normalizeFfmpegProfile(
+  profile: FfmpegProfileInput | FfmpegProfile | undefined
+): FfmpegProfile | undefined {
+  if (!profile) {
+    return undefined;
+  }
+  if (profile === "lgpl") {
+    return "lgpl-vt";
+  }
+  return profile;
+}
 
 const LGPL_DYLIBS = [
   "libavcodec.dylib",
@@ -34,23 +48,13 @@ export function profileDirName(profile: FfmpegProfile): string {
   return profile === "lgpl-vt" ? "standalone-lgpl-vt" : "standalone-gpl";
 }
 
-export function profileTauriConfig(profile: FfmpegProfile): {
-  config: string;
-  features?: string[];
-} {
-  if (profile === "lgpl-vt") {
-    return { config: "src-tauri/overrides/standalone-lgpl-vt.json", features: ["lgpl"] };
-  }
-  return { config: "src-tauri/overrides/standalone-gpl.json" };
-}
-
 export function sidecarSuffix(target: string): string {
   const exe = isWindowsTarget(target) ? ".exe" : "";
   return `${target}${exe}`;
 }
 
 export function profileBinariesDir(rootDir: string, profile: FfmpegProfile): string {
-  return join(rootDir, "src-tauri", "binaries", profileDirName(profile));
+  return join(rootDir, "native", "binaries", profileDirName(profile));
 }
 
 export function profileFfmpegPath(
@@ -100,9 +104,9 @@ export function profilePrereqCommand(
   target: string,
 ): string {
   if (profile === "lgpl-vt") {
-    return "yarn tv ffmpeg build --profile lgpl-vt";
+    return "yarn ffmpeg:build:lgpl";
   }
   return isWindowsTarget(target)
-    ? "yarn tv ffmpeg prepare --profile gpl"
-    : "yarn tv ffmpeg build --profile gpl";
+    ? "yarn ffmpeg:prepare:gpl"
+    : "yarn ffmpeg:build:gpl";
 }

@@ -78,15 +78,9 @@ function AnimatedTabPanel({
     <MotionTabsContent
       value={value}
       className={className}
-      initial={{
-        opacity: 0,
-        transform: dir > 0 ? "translateX(100px)" : "translateX(-100px)",
-      }}
-      animate={{ opacity: 1, transform: "translateX(0)" }}
-      exit={{
-        opacity: 0,
-        transform: dir > 0 ? "translateX(-100px)" : "translateX(100px)",
-      }}
+      initial={{ opacity: 0, x: dir > 0 ? 100 : -100 }}
+      animate={{ opacity: 1, x: 0 }}
+      exit={{ opacity: 0, x: dir > 0 ? -100 : 100 }}
     >
       {children}
     </MotionTabsContent>
@@ -133,7 +127,6 @@ export function VideoSettings() {
   };
 
   if (!cOptions) return null;
-  console.log("SETTINGS RENDERED");
 
   return (
     <TooltipProvider>

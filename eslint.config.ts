@@ -16,7 +16,7 @@ const srcOnly = ["src/**/*.ts", "src/**/*.tsx"];
 export default defineConfig([
   // 1. Global ignores (Rust, build outputs, deps)
   globalIgnores([
-    "src-tauri/**",
+    "native/**",
     "dist/**",
     "**/node_modules/**",
     "build/**",
@@ -73,7 +73,6 @@ export default defineConfig([
         Blob: "readonly",
         FormData: "readonly",
         AbortController: "readonly",
-        __TAURI__: "readonly",
       },
     },
   },

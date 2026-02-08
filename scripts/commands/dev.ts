@@ -1,9 +1,7 @@
 import { type FfmpegProfile } from "../ffmpeg-profile.ts";
-import { type CommandContext,runCommand } from "../runtime.ts";
+import { type CommandContext, runCommand } from "../runtime.ts";
 import {
-  assertStandaloneProfile,
   type BuildMode,
-  buildTauriArgs,
   setupStandaloneEnv,
   validateStandaloneOptions,
 } from "../standalone.ts";
@@ -22,14 +20,10 @@ export async function runDevCommand(
     profile: options.profile,
   });
 
-  if (options.mode === "system") {
-    const env = { ...process.env, TINY_VID_USE_SYSTEM_FFMPEG: "1" };
-    await runCommand(context, "yarn", ["tauri", "dev"], { env });
-    return 0;
+  if (!profile) {
+    return runCommand(context, "node", ["scripts/electron/dev.ts"]);
   }
 
-  assertStandaloneProfile(profile);
   const env = await setupStandaloneEnv(context, profile);
-  await runCommand(context, "yarn", buildTauriArgs(profile, "dev"), { env });
-  return 0;
+  return runCommand(context, "node", ["scripts/electron/dev.ts"], { env });
 }

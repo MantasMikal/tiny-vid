@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Build FFmpeg from source with GPL and common codecs (x264, x265, etc.) for macOS.
-# Run on macOS. Output: src-tauri/binaries/standalone-gpl/ffmpeg-<target>, ffprobe-<target>
+# Run on macOS. Output: native/binaries/standalone-gpl/ffmpeg-<target>, ffprobe-<target>
 #
 # Dependencies (Homebrew): x264, x265, libvpx, opus, svt-av1, dav1d, pkg-config
 #   brew install x264 x265 libvpx opus svt-av1 dav1d pkg-config
@@ -13,7 +13,7 @@ set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-BINARIES_DIR="$ROOT/src-tauri/binaries/standalone-gpl"
+BINARIES_DIR="$ROOT/native/binaries/standalone-gpl"
 BUILD_DIR="${FFMPEG_BUILD_DIR:-/tmp/ffmpeg-standalone-macos-build}"
 # FFmpeg release branch (e.g. 8.0 → release/8.0). See https://git.ffmpeg.org/ffmpeg.git
 FFMPEG_VERSION="${FFMPEG_VERSION:-8.0}"
