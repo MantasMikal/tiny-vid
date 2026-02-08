@@ -5,8 +5,13 @@ export function spawnInherited(
   args: readonly string[],
   options: SpawnOptions = {},
 ): ChildProcess {
+  const isWindows = process.platform === "win32";
+  const needsShell =
+    isWindows &&
+    (command.endsWith(".cmd") || command.endsWith(".bat"));
   return spawn(command, args, {
     stdio: "inherit",
+    ...(needsShell && { shell: true }),
     ...options,
   });
 }
