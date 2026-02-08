@@ -12,8 +12,8 @@ use crate::ffmpeg::{
     EstimateConfidence, FfmpegProgressPayload, FileSignature, SizeEstimate, TempFileManager,
     TranscodeOptions, build_extract_args, build_ffmpeg_command, cleanup_previous_preview_paths,
     file_signature, get_cached_estimate, get_cached_preview, get_cached_segments,
-    is_preview_stream_copy_safe_audio_codec, is_preview_stream_copy_safe_codec, path_to_string,
-    run_ffmpeg_blocking, set_cached_estimate, set_cached_preview, store_preview_paths_for_cleanup,
+    is_preview_stream_copy_safe_codec, path_to_string, run_ffmpeg_blocking, set_cached_estimate,
+    set_cached_preview, store_preview_paths_for_cleanup,
 };
 use tauri::Emitter;
 
@@ -277,6 +277,7 @@ async fn get_video_metadata_async(path: &Path) -> Result<VideoMetadata, AppError
 }
 
 /// Extracts preview segments from input, or returns cached segment paths if available.
+/// strip_audio: when true, copy only video (-map 0:v -c:v copy -an).
 /// step_label: when progress_ctx is Some, label for progress ("extract" or "estimate").
 async fn extract_segments_or_use_cache(
     input_str: &str,
@@ -288,6 +289,7 @@ async fn extract_segments_or_use_cache(
     emit: Option<(&tauri::AppHandle, &str)>,
     progress_ctx: Option<&PreviewProgressCtx>,
     step_label: &'static str,
+    strip_audio: bool,
 ) -> Result<SegmentSet, AppError> {
     match get_cached_segments(
         input_str,
@@ -324,7 +326,13 @@ async fn extract_segments_or_use_cache(
                 .collect::<Result<Vec<_>, _>>()?;
 
             for ((start, dur), path) in segments.iter().zip(paths.iter()) {
-                let args = build_extract_args(input_str, *start, *dur, &path_to_string(path));
+                let args = build_extract_args(
+                    input_str,
+                    *start,
+                    *dur,
+                    &path_to_string(path),
+                    strip_audio,
+                );
                 if let Err(err) =
                     run_ffmpeg_with_progress(args, Some(*dur), emit, progress_ctx, step_label).await
                 {
@@ -372,20 +380,8 @@ async fn transcode_preview_segment(
 }
 
 fn preview_transcode_options(options: &TranscodeOptions) -> TranscodeOptions {
-    #[cfg(target_os = "linux")]
     let mut preview_opts = options.clone();
-    #[cfg(not(target_os = "linux"))]
-    let preview_opts = options.clone();
-    #[cfg(target_os = "linux")]
-    {
-        if !preview_opts.effective_remove_audio() && !preview_opts.effective_downmix_to_stereo() {
-            log::info!(
-                target: "tiny_vid::preview",
-                "preview transcode audio compatibility: forcing stereo downmix on linux"
-            );
-            preview_opts.downmix_to_stereo = Some(true);
-        }
-    }
+    preview_opts.remove_audio = Some(true);
     preview_opts
 }
 
@@ -844,23 +840,16 @@ pub(crate) async fn run_preview_core(
     } else {
         get_video_metadata_async(input_path).await?
     };
+    let preview_opts = preview_transcode_options(options);
     let video_duration = video_duration_override.unwrap_or(meta.duration);
     let source_codec = meta.codec_name.as_deref().unwrap_or("unknown");
-    let source_audio_codec = meta.audio_codec_name.as_deref().unwrap_or("none");
     let can_stream_copy_video = is_preview_stream_copy_safe_codec(source_codec);
-    let can_stream_copy_audio = is_preview_stream_copy_safe_audio_codec(
-        meta.audio_codec_name.as_deref(),
-        meta.audio_stream_count,
-    );
-    let can_stream_copy_original_preview = can_stream_copy_video && can_stream_copy_audio;
+    let can_stream_copy_original_preview = can_stream_copy_video;
     log::info!(
         target: "tiny_vid::preview",
-        "run_preview_core: stream-copy policy (video_codec={}, audio_codec={}, audio_streams={}, video_safe={}, audio_safe={}, can_stream_copy={})",
+        "run_preview_core: stream-copy policy (video_codec={}, video_safe={}, can_stream_copy={})",
         source_codec,
-        source_audio_codec,
-        meta.audio_stream_count,
         can_stream_copy_video,
-        can_stream_copy_audio,
         can_stream_copy_original_preview
     );
     let preview_start_seconds = clamp_preview_start_seconds(
@@ -874,7 +863,7 @@ pub(crate) async fn run_preview_core(
         &input_str,
         preview_duration_u32,
         preview_start_ms,
-        options,
+        &preview_opts,
         file_sig.as_ref(),
     ) {
         log::info!(
@@ -913,6 +902,7 @@ pub(crate) async fn run_preview_core(
             None,
             progress_ctx.as_ref(),
             "preview_extract",
+            true,
         )
         .await
         {
@@ -925,9 +915,8 @@ pub(crate) async fn run_preview_core(
                 );
                 log::info!(
                     target: "tiny_vid::preview",
-                    "run_preview_core: stream-copy unavailable, using transcode fallback (video_codec={}, audio_codec={}, reason=extract_failed)",
-                    source_codec,
-                    source_audio_codec
+                    "run_preview_core: stream-copy unavailable, using transcode fallback (video_codec={}, reason=extract_failed)",
+                    source_codec
                 );
                 transcode_original_preview_segment_or_use_cache(OriginalPreviewTranscodeCtx {
                     input_str: &input_str,
@@ -936,7 +925,7 @@ pub(crate) async fn run_preview_core(
                     preview_start_seconds,
                     preview_duration,
                     source_fps: meta.fps,
-                    remove_audio: options.effective_remove_audio(),
+                    remove_audio: true,
                     temp: &temp,
                     file_signature: file_sig.as_ref(),
                     emit: emit_ref,
@@ -948,9 +937,8 @@ pub(crate) async fn run_preview_core(
     } else {
         log::info!(
             target: "tiny_vid::preview",
-            "run_preview_core: stream-copy unavailable, using transcode fallback (video_codec={}, audio_codec={}, reason=unsupported_stream_policy)",
-            source_codec,
-            source_audio_codec
+            "run_preview_core: stream-copy unavailable, using transcode fallback (video_codec={}, reason=unsupported_stream_policy)",
+            source_codec
         );
         transcode_original_preview_segment_or_use_cache(OriginalPreviewTranscodeCtx {
             input_str: &input_str,
@@ -959,7 +947,7 @@ pub(crate) async fn run_preview_core(
             preview_start_seconds,
             preview_duration,
             source_fps: meta.fps,
-            remove_audio: options.effective_remove_audio(),
+            remove_audio: true,
             temp: &temp,
             file_signature: file_sig.as_ref(),
             emit: emit_ref,
@@ -976,7 +964,7 @@ pub(crate) async fn run_preview_core(
     transcode_preview_segment(
         &segment_set.paths[0],
         &output_path,
-        options,
+        &preview_opts,
         None,
         emit_ref,
         progress_ctx.as_ref(),
@@ -988,7 +976,7 @@ pub(crate) async fn run_preview_core(
         &input_str,
         preview_duration_u32,
         preview_start_ms,
-        options,
+        &preview_opts,
         segment_set.paths.clone(),
         output_path.clone(),
         file_sig.as_ref(),

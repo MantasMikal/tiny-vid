@@ -8,7 +8,6 @@ use std::path::Path;
 use support::{
     CodecContract, IntegrationEnv, VideoKind, assert_codec_contract, default_codec, opts_with,
     preview_options, run_preview_and_assert_exists, run_preview_with_estimate_and_assert,
-    run_preview_with_meta_codec_and_audio_override_and_assert_exists,
     run_preview_with_meta_codec_override_and_assert_exists, run_transcode_and_verify,
 };
 use tiny_vid_tauri_lib::ffmpeg::ffprobe::get_video_metadata_impl;
@@ -236,46 +235,6 @@ fn preview_original_codec_policy_is_platform_scoped() {
         assert!(
             original_file_name.ends_with("preview-original-0.mp4"),
             "macOS/windows should keep stream-copy path for vp9 metadata override"
-        );
-    }
-}
-
-#[test]
-fn preview_original_audio_codec_policy_is_platform_scoped() {
-    assert_codec_contract(CodecContract::IntegrationSmoke);
-    let env = IntegrationEnv::new();
-    let input_path = env.with_test_video("input_multi_audio.mp4", 5.0, VideoKind::MultiAudio(2));
-    cleanup_preview_transcode_cache();
-
-    let result = run_preview_with_meta_codec_and_audio_override_and_assert_exists(
-        &input_path,
-        &preview_options(3),
-        None,
-        "h264",
-        "pcm_s16le",
-        1,
-    );
-    let original_file_name = Path::new(&result.original_path)
-        .file_name()
-        .and_then(|name| name.to_str())
-        .expect("original preview file name");
-
-    if cfg!(target_os = "linux") {
-        assert!(
-            original_file_name.ends_with("preview-original-transcoded.mp4"),
-            "linux should force unsupported audio metadata down the transcode path"
-        );
-        let original_meta = get_video_metadata_impl(Path::new(&result.original_path))
-            .expect("ffprobe original preview");
-        assert_eq!(
-            original_meta.codec_name.as_deref(),
-            Some("h264"),
-            "linux transcode path should produce H.264 original preview"
-        );
-    } else {
-        assert!(
-            original_file_name.ends_with("preview-original-0.mp4"),
-            "macOS/windows should keep stream-copy path for audio codec override"
         );
     }
 }
