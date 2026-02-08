@@ -41,7 +41,7 @@ export function PreviewRegionTimeline({
   return (
     <div
       className={cn(
-        `pointer-events-auto rounded-md border bg-background/65 p-2 pb-3 shadow-lg backdrop-blur-sm`,
+        "pointer-events-auto rounded-md border bg-background/65 p-2 pb-3 shadow-lg backdrop-blur-sm",
         isDisabled && "opacity-70"
       )}
     >
@@ -70,7 +70,7 @@ export function PreviewRegionTimeline({
         aria-label="Preview region start"
       >
         <SliderPrimitive.Track
-          className={cn("relative h-2 w-full overflow-hidden rounded-full bg-foreground/15")}
+          className={cn("relative h-2 w-full overflow-hidden rounded-full bg-foreground/12")}
         >
           <div
             className={cn(`absolute inset-y-0 rounded-full bg-primary/50`)}
@@ -83,10 +83,14 @@ export function PreviewRegionTimeline({
         </SliderPrimitive.Track>
         <SliderPrimitive.Thumb
           className={cn(
-            `flex size-5 cursor-pointer items-center justify-center rounded-full bg-primary hover:bg-primary/80`
+            `
+              flex size-5 cursor-pointer items-center justify-center rounded-full bg-primary shadow-sm ring-1
+              ring-primary/20
+              hover:bg-primary/90
+            `
           )}
         >
-          <GripVertical className={cn("size-3 text-foreground")} />
+          <GripVertical className={cn("size-3 text-primary-foreground")} />
         </SliderPrimitive.Thumb>
       </SliderPrimitive.Root>
     </div>

@@ -1,4 +1,4 @@
-import { type DependencyList, type RefObject, useEffect } from "react";
+import { type DependencyList, type RefObject, useCallback, useEffect, useState } from "react";
 
 const DEBUG = import.meta.env.DEV && import.meta.env.VITE_VIDEO_SYNC_DEBUG === "1";
 
@@ -33,7 +33,19 @@ export function useVideoSync(
   startOffsetSeconds = 0,
   deps: DependencyList = [],
   enabled = true
-) {
+): { togglePlayPause: () => void; isPaused: boolean } {
+  const [isPaused, setIsPaused] = useState(true);
+
+  const togglePlayPause = useCallback(() => {
+    const primary = primaryRef.current;
+    if (!primary) return;
+    if (primary.paused) {
+      void primary.play().catch(() => undefined);
+    } else {
+      primary.pause();
+    }
+  }, [primaryRef]);
+
   useEffect(() => {
     if (!enabled) return;
 
@@ -181,11 +193,13 @@ export function useVideoSync(
       };
 
       const handlePrimaryPlay = () => {
+        setIsPaused(false);
         sync("primary-play");
         startLoop();
       };
 
       const handlePrimaryPause = () => {
+        setIsPaused(true);
         stopLoop();
         safePause(secondary);
       };
@@ -256,6 +270,7 @@ export function useVideoSync(
 
       primary.load();
       secondary.load();
+      setIsPaused(primary.paused);
       maybeStart();
 
       innerCleanup = () => {
@@ -275,4 +290,6 @@ export function useVideoSync(
       innerCleanup?.();
     };
   }, [enabled, primaryRef, secondaryRef, startOffsetSeconds, ...deps]);
+
+  return { togglePlayPause, isPaused };
 }

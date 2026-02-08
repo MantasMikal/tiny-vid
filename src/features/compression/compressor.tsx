@@ -9,13 +9,10 @@ import { CompressionDetailsCard } from "@/features/compression/components/compre
 import { CompressionErrorAlert } from "@/features/compression/components/compression-error-alert";
 import { CompressionProgress } from "@/features/compression/components/compression-progress";
 import { InitErrorDisplay } from "@/features/compression/components/init-error-display";
-import { PreviewRegionTimeline } from "@/features/compression/components/preview-region-timeline";
 import { VideoDropZone } from "@/features/compression/components/video-drop-zone";
 import { VideoPreview } from "@/features/compression/components/video-preview";
 import { VideoSettings } from "@/features/compression/components/video-settings";
-import { selectIsInitialized } from "@/features/compression/store/compression-selectors";
 import {
-  getCompressionState,
   useCompressionStore,
   WorkerState,
 } from "@/features/compression/store/compression-store";
@@ -29,10 +26,6 @@ export default function Compressor() {
     videoUploading,
     error,
     workerState,
-    videoDuration,
-    previewDuration,
-    previewStartSeconds,
-    isDisabled,
     sourceFps,
     previewFps,
   } = useCompressionStore(
@@ -43,18 +36,12 @@ export default function Compressor() {
       videoUploading: s.videoUploading,
       error: s.error,
       workerState: s.workerState,
-      videoDuration: s.videoMetadata?.duration,
-      previewDuration: s.compressionOptions?.previewDuration,
-      previewStartSeconds: s.previewStartSeconds,
-      isDisabled: !selectIsInitialized(s),
       sourceFps: s.videoMetadata?.fps,
       previewFps: s.compressionOptions?.fps,
     }))
   );
 
   const showProgressOverlay = WorkerState.Idle !== workerState;
-  const showPreviewTimeline =
-    videoPreview && !videoUploading && previewDuration != null && videoDuration != null;
   const showFpsBadges =
     videoPreview && (sourceFps ?? 0) > 0 && (previewFps ?? 0) > 0 && sourceFps !== previewFps;
 
@@ -75,19 +62,6 @@ export default function Compressor() {
         {!initError && inputPath && (
           <div className={cn("relative flex size-full rounded-md bg-background")}>
             {videoPreview && !videoUploading && <VideoPreview />}
-            {showPreviewTimeline && (
-              <div className={cn("absolute bottom-0 z-20 w-full p-2")}>
-                <PreviewRegionTimeline
-                  duration={videoDuration}
-                  previewDuration={previewDuration}
-                  startSeconds={previewStartSeconds}
-                  disabled={isDisabled}
-                  onStartChange={(startSeconds) => {
-                    getCompressionState().setPreviewRegionStart(startSeconds);
-                  }}
-                />
-              </div>
-            )}
             <AnimatePresence>
               {videoUploading && (
                 <FadeIn key="uploading-spinner">
