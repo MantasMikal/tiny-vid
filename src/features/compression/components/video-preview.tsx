@@ -1,5 +1,5 @@
 import { Minus, Pause, Play, Plus } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { useEffect, useLayoutEffect, useRef } from "react";
 import { ReactCompareSlider } from "react-compare-slider";
 import { useShallow } from "zustand/react/shallow";
 
@@ -7,7 +7,7 @@ import { Button } from "@/components/ui/button";
 import { PreviewRegionTimeline } from "@/features/compression/components/preview-region-timeline";
 import { selectIsInitialized } from "@/features/compression/store/compression-selectors";
 import { useCompressionStore } from "@/features/compression/store/compression-store";
-import { useVideoSync } from "@/hooks/useVideoSync";
+import { type VideoSyncRestoreState, useVideoSync } from "@/hooks/useVideoSync";
 import { useZoomPan } from "@/hooks/useZoomPan";
 import { cn } from "@/lib/utils";
 
@@ -39,13 +39,22 @@ export function VideoPreview() {
     }))
   );
 
+  const playbackSnapshotRef = useRef<VideoSyncRestoreState | null>({
+    time: 0,
+    paused: true,
+  });
+  const restoreStateRef = useRef<VideoSyncRestoreState | null>(null);
+  const lastPreviewStartRef = useRef<number | null>(null);
+  const lastPreviewKeyRef = useRef<string | null>(null);
+
   const isPreviewActive = Boolean(videoPreview);
   const { togglePlayPause, isPaused } = useVideoSync(
     originalVideoRef,
     compressedVideoRef,
     startOffsetSeconds ?? 0,
     [originalSrc, compressedSrc, startOffsetSeconds],
-    isPreviewActive
+    isPreviewActive,
+    restoreStateRef
   );
 
   const {
@@ -62,9 +71,61 @@ export function VideoPreview() {
     endPan,
     zoomAtCenter,
   } = useZoomPan({
-    resetDeps: [originalSrc, compressedSrc],
     panExcludeSelector: '[data-rcs="handle-container"]',
   });
+
+  useEffect(() => {
+    const video = originalVideoRef.current;
+    if (!video) return;
+    const updateSnapshot = () => {
+      playbackSnapshotRef.current = {
+        time: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+        paused: video.paused,
+      };
+    };
+    updateSnapshot();
+    video.addEventListener("timeupdate", updateSnapshot);
+    video.addEventListener("play", updateSnapshot);
+    video.addEventListener("pause", updateSnapshot);
+    video.addEventListener("seeked", updateSnapshot);
+    return () => {
+      video.removeEventListener("timeupdate", updateSnapshot);
+      video.removeEventListener("play", updateSnapshot);
+      video.removeEventListener("pause", updateSnapshot);
+      video.removeEventListener("seeked", updateSnapshot);
+    };
+  }, [originalSrc]);
+
+  useLayoutEffect(() => {
+    if (!videoPreview) return;
+    const previewKey = `${originalSrc}|${compressedSrc}|${String(startOffsetSeconds ?? 0)}`;
+    const lastKey = lastPreviewKeyRef.current;
+    if (!lastKey) {
+      lastPreviewKeyRef.current = previewKey;
+      lastPreviewStartRef.current = previewStartSeconds;
+      return;
+    }
+    if (lastKey === previewKey) return;
+
+    const lastStart = lastPreviewStartRef.current;
+    const paused = playbackSnapshotRef.current?.paused ?? true;
+    const startTime =
+      lastStart !== null && lastStart !== previewStartSeconds
+        ? 0
+        : playbackSnapshotRef.current?.time ?? 0;
+    restoreStateRef.current = {
+      time: startTime,
+      paused,
+    };
+    lastPreviewKeyRef.current = previewKey;
+    lastPreviewStartRef.current = previewStartSeconds;
+  }, [
+    videoPreview,
+    originalSrc,
+    compressedSrc,
+    startOffsetSeconds,
+    previewStartSeconds,
+  ]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
