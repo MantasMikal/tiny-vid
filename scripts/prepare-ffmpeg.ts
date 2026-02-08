@@ -161,7 +161,7 @@ async function download(url: string, dest: string): Promise<void> {
   try {
     // eslint-disable-next-line @typescript-eslint/no-unnecessary-condition -- intentional loop with break
     while (true) {
-      const { done, value } = await reader.read();
+      const { done, value } = await reader.read() as { done: boolean, value: Uint8Array };
       if (done) break;
       ws.write(Buffer.from(value));
     }

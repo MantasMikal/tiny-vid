@@ -421,6 +421,7 @@ pub fn cleanup_startup_temp(max_age: std::time::Duration) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use serial_test::serial;
 
     fn clear_pending_for_test() {
         let mut guard = PENDING_TRANSCODES.lock();
@@ -430,6 +431,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn commit_token_commit_moves_file() {
         clear_pending_for_test();
         let dir = tempfile::tempdir().expect("tempdir");
@@ -447,6 +449,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn commit_token_discard_removes_file() {
         clear_pending_for_test();
         let dir = tempfile::tempdir().expect("tempdir");
@@ -461,6 +464,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn commit_token_unknown_returns_error() {
         clear_pending_for_test();
         let dir = tempfile::tempdir().expect("tempdir");
@@ -476,6 +480,7 @@ mod tests {
     }
 
     #[test]
+    #[serial]
     fn cleanup_pending_transcodes_removes_expired_entries() {
         clear_pending_for_test();
         let dir = tempfile::tempdir().expect("tempdir");
