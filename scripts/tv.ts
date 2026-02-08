@@ -89,12 +89,14 @@ async function runWithContext(
   }
 }
 
-function withContextAction(
-  action: (context: CommandContext, options: CliOptions) => CommandActionResult
+
+// eslint-disable-next-line @typescript-eslint/no-unnecessary-type-parameters
+function withContextAction<T extends CommonCliOptions>(
+  action: (context: CommandContext, options: T) => CommandActionResult
 ): (...rawArgs: unknown[]) => Promise<void> {
   return async (...rawArgs: unknown[]) => {
     const options = normalizeCommandOptions(rawArgs);
-    await runWithContext(options as CommonCliOptions, (context) => action(context, options));
+    await runWithContext(options as CommonCliOptions, (context) => action(context, options as T));
   };
 }
 
@@ -115,8 +117,7 @@ function createProgram(): Command {
     .addOption(profileOption())
     .addOption(platformOption())
     .action(
-      withContextAction((ctx, rawOptions) => {
-        const opts = rawOptions as BuildCliOptions;
+      withContextAction((ctx, opts: BuildCliOptions) => {
         return runBuildCommand(ctx, {
           mode: opts.mode,
           profile: normalizeFfmpegProfile(opts.profile),
@@ -133,8 +134,7 @@ function createProgram(): Command {
     .addOption(modeOption())
     .addOption(profileOption())
     .action(
-      withContextAction((ctx, rawOptions) => {
-        const opts = rawOptions as DevCliOptions;
+      withContextAction((ctx, opts: DevCliOptions) => {
         return runDevCommand(ctx, {
           mode: opts.mode,
           profile: normalizeFfmpegProfile(opts.profile),
@@ -151,8 +151,7 @@ function createProgram(): Command {
     .addOption(profileOption())
     .addOption(suiteOption())
     .action(
-      withContextAction((ctx, rawOptions) => {
-        const opts = rawOptions as TestCliOptions;
+      withContextAction((ctx, opts: TestCliOptions) => {
         return runTestSuiteCommand(ctx, {
           mode: opts.mode,
           profile: normalizeFfmpegProfile(opts.profile),
@@ -166,7 +165,7 @@ function createProgram(): Command {
     .description("Run every supported test combination")
     .addOption(dryRunOption())
     .addOption(verboseOption())
-    .action(withContextAction((ctx) => runTestMatrixCommand(ctx)));
+    .action(withContextAction((ctx, _opts: CommonCliOptions) => runTestMatrixCommand(ctx)));
 
   program
     .command("ffmpeg")
@@ -178,8 +177,7 @@ function createProgram(): Command {
         .addOption(verboseOption())
         .addOption(profileOption(true))
         .action(
-          withContextAction((ctx, rawOptions) => {
-            const opts = rawOptions as FfmpegCliOptions;
+          withContextAction((ctx, opts: FfmpegCliOptions) => {
             const profile = normalizeFfmpegProfile(opts.profile);
             if (!profile) {
               throw new Error("Missing --profile");
@@ -195,8 +193,7 @@ function createProgram(): Command {
         .addOption(verboseOption())
         .addOption(profileOption(true))
         .action(
-          withContextAction((ctx, rawOptions) => {
-            const opts = rawOptions as FfmpegCliOptions;
+          withContextAction((ctx, opts: FfmpegCliOptions) => {
             const profile = normalizeFfmpegProfile(opts.profile);
             if (!profile) {
               throw new Error("Missing --profile");
@@ -213,14 +210,14 @@ function createProgram(): Command {
     .description("Remove Electron package output and bundled sidecar resources")
     .addOption(dryRunOption())
     .addOption(verboseOption())
-    .action(withContextAction((ctx) => runCleanBundleCommand(ctx)));
+    .action(withContextAction((ctx, _opts: CommonCliOptions) => runCleanBundleCommand(ctx)));
 
   program
     .command("icon")
     .description("Generate Electron app icons from app-icon.png")
     .addOption(dryRunOption())
     .addOption(verboseOption())
-    .action(withContextAction((ctx) => runIconGenerateCommand(ctx)));
+    .action(withContextAction((ctx, _opts: CommonCliOptions) => runIconGenerateCommand(ctx)));
 
   return program;
 }
@@ -234,6 +231,6 @@ async function main(): Promise<void> {
 }
 
 void main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error);
   process.exit(1);
 });

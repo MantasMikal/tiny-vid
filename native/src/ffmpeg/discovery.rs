@@ -155,8 +155,8 @@ fn resolve_bundled_ffmpeg_path() -> Option<PathBuf> {
 
 /// Resolve FFmpeg path. Order:
 /// - bundled sidecar first (macOS/Windows), unless TINY_VID_USE_SYSTEM_FFMPEG is set
-/// - then system paths
-/// - then PATH
+/// - on Linux: PATH first (respects user's ~/.local/bin, etc.), then common paths
+/// - on macOS/Windows: common paths, then PATH
 fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
@@ -164,6 +164,33 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
             std::env::var("TINY_VID_USE_SYSTEM_FFMPEG").is_ok_and(|v| !v.is_empty() && v != "0");
         if !prefer_system && let Some(path) = resolve_bundled_ffmpeg_path() {
             return Ok(path);
+        }
+    }
+
+    #[cfg(all(unix, not(target_os = "macos")))]
+    {
+        // Linux: prefer user's ~/.local/bin (often not in app PATH when launched from desktop)
+        if let Some(home) = std::env::var_os("HOME") {
+            let local = PathBuf::from(home).join(".local/bin/ffmpeg");
+            if local.exists() {
+                log::debug!(
+                    target: "tiny_vid::ffmpeg::discovery",
+                    "FFmpeg found in ~/.local/bin: {}",
+                    local.display()
+                );
+                return Ok(local);
+            }
+        }
+        // Then PATH (user's shell has it first when launched from terminal)
+        if let Some(p) = find_in_path()
+            && p.exists()
+        {
+            log::debug!(
+                target: "tiny_vid::ffmpeg::discovery",
+                "FFmpeg found in PATH: {}",
+                p.display()
+            );
+            return Ok(p);
         }
     }
 
@@ -177,6 +204,7 @@ fn resolve_ffmpeg_path() -> Result<PathBuf, AppError> {
             return Ok(path);
         }
     }
+    #[cfg(not(all(unix, not(target_os = "macos"))))]
     if let Some(p) = find_in_path()
         && p.exists()
     {

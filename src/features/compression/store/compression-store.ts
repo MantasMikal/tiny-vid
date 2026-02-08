@@ -13,6 +13,7 @@ import {
   resolve,
 } from "@/features/compression/lib/options-pipeline";
 import { type ResultError, tryCatch } from "@/lib/try-catch";
+import { formatError } from "@/lib/utils";
 import { desktopClient } from "@/platform/desktop/client";
 import type {
   CodecInfo,
@@ -174,10 +175,9 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         compressionOptions: createInitialOptions(result.codecs, DEFAULT_PRESET_ID),
       });
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
       set({
         availableCodecs: [],
-        initError: message,
+        initError: formatError(error),
       });
     }
   },

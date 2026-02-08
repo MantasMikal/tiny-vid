@@ -278,22 +278,6 @@ pub fn is_preview_stream_copy_safe_codec(codec_name: &str) -> bool {
     }
 }
 
-/// Returns true when preview original segment extraction can stream-copy audio to MP4 and still
-/// decode in Electron's Chromium renderer.
-pub fn is_preview_stream_copy_safe_audio_codec(
-    audio_codec_name: Option<&str>,
-    audio_stream_count: u32,
-) -> bool {
-    if audio_stream_count == 0 {
-        return true;
-    }
-
-    audio_codec_name
-        .map(|codec| codec.to_lowercase())
-        .map(|codec| matches!(codec.as_str(), "aac" | "aac_latm" | "mp3"))
-        .unwrap_or(false)
-}
-
 /// Base args shared by FFmpeg invocations: nostdin, threads, thread_queue_size.
 fn ffmpeg_base_args() -> Vec<String> {
     vec![
@@ -305,12 +289,13 @@ fn ffmpeg_base_args() -> Vec<String> {
     ]
 }
 
-/// Build args for segment extraction (-ss -t -i -c copy).
+/// Build args for segment extraction (-ss -t -i -c copy or -map 0:v -c:v copy -an).
 pub fn build_extract_args(
     input_path: &str,
     start_secs: f64,
     duration_secs: f64,
     output_path: &str,
+    strip_audio: bool,
 ) -> Vec<String> {
     let mut args = ffmpeg_base_args();
     args.extend([
@@ -322,8 +307,22 @@ pub fn build_extract_args(
         "pipe:1".to_string(),
         "-i".to_string(),
         input_path.to_string(),
-        "-c".to_string(),
-        "copy".to_string(),
+    ]);
+    if strip_audio {
+        args.extend([
+            "-map".to_string(),
+            "0:v".to_string(),
+            "-c:v".to_string(),
+            "copy".to_string(),
+            "-an".to_string(),
+        ]);
+    } else {
+        args.extend([
+            "-c".to_string(),
+            "copy".to_string(),
+        ]);
+    }
+    args.extend([
         "-avoid_negative_ts".to_string(),
         "make_zero".to_string(),
         "-movflags".to_string(),
@@ -526,13 +525,22 @@ mod tests {
 
     #[test]
     fn build_extract_args_includes_faststart_and_avoid_negative_ts() {
-        let args = build_extract_args("/in.mkv", 0.0, 3.0, "/out.mp4");
+        let args = build_extract_args("/in.mkv", 0.0, 3.0, "/out.mp4", false);
         assert!(args.contains(&"-movflags".to_string()));
         assert!(args.contains(&"+faststart".to_string()));
         assert!(args.contains(&"-avoid_negative_ts".to_string()));
         assert!(args.contains(&"make_zero".to_string()));
         assert!(args.contains(&"-c".to_string()));
         assert!(args.contains(&"copy".to_string()));
+    }
+
+    #[test]
+    fn build_extract_args_strip_audio_uses_map_v_and_an() {
+        let args = build_extract_args("/in.mkv", 0.0, 3.0, "/out.mp4", true);
+        assert!(args.contains(&"-map".to_string()));
+        assert!(args.contains(&"0:v".to_string()));
+        assert!(args.contains(&"-c:v".to_string()));
+        assert!(args.contains(&"-an".to_string()));
     }
 
     #[test]
@@ -1096,19 +1104,6 @@ mod tests {
     fn preview_stream_copy_rejects_unknown_codecs() {
         assert!(!is_preview_stream_copy_safe_codec("prores"));
         assert!(!is_preview_stream_copy_safe_codec("unknown"));
-    }
-
-    #[test]
-    fn preview_stream_copy_safe_audio_codecs_match_chromium_allow_list() {
-        assert!(is_preview_stream_copy_safe_audio_codec(None, 0));
-        assert!(is_preview_stream_copy_safe_audio_codec(Some("aac"), 1));
-        assert!(is_preview_stream_copy_safe_audio_codec(Some("AAC"), 2));
-        assert!(is_preview_stream_copy_safe_audio_codec(Some("mp3"), 1));
-        assert!(!is_preview_stream_copy_safe_audio_codec(
-            Some("pcm_s16le"),
-            1
-        ));
-        assert!(!is_preview_stream_copy_safe_audio_codec(None, 1));
     }
 
     #[test]

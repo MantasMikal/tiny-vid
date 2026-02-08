@@ -52,6 +52,6 @@ function main(): void {
 try {
   main();
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error);
   process.exit(1);
 }

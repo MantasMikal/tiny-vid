@@ -1,6 +1,7 @@
 import { useEffect, useRef } from "react";
 
 import { useCompressionStore, WorkerState } from "@/features/compression/store/compression-store";
+import { formatError } from "@/lib/utils";
 import { desktopClient } from "@/platform/desktop/client";
 import type {
   MediaJobCompletePayload,
@@ -157,9 +158,8 @@ export function useCompressionStoreInit() {
         if (cancelled || effectId !== effectIdRef.current) {
           return;
         }
-        const message = error instanceof Error ? error.message : String(error);
         useCompressionStore.setState({
-          initError: message,
+          initError: formatError(error),
           listenersReady: false,
         });
       }

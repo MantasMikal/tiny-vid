@@ -196,7 +196,7 @@ export async function runTestMatrixCommand(context: CommandContext): Promise<num
     } catch (err) {
       failed += 1;
       console.error(`[matrix] ${label}: FAILED`);
-      console.error(err instanceof Error ? err.message : String(err));
+      console.error(err);
     }
   }
 

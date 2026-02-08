@@ -1,5 +1,9 @@
 import { quote } from "zx";
 
+export function formatError(error: unknown): string {
+  return error instanceof Error ? error.message : String(error);
+}
+
 export function formatCommand(command: string, args: string[]): string {
   return [command, ...args].map((value) => quote(value)).join(" ");
 }

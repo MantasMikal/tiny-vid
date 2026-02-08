@@ -533,6 +533,12 @@ fn handle_async_media_process(request: RpcRequest, writer: &SharedWriter, jobs: 
 }
 
 fn main() -> io::Result<()> {
+    #[cfg(debug_assertions)]
+    env_logger::Builder::from_env(env_logger::Env::default().filter_or("RUST_LOG", "tiny_vid=debug"))
+        .init();
+    #[cfg(not(debug_assertions))]
+    let _ = env_logger::try_init();
+
     sidecar_api::cleanup_startup_temp(Duration::from_secs(STARTUP_CLEANUP_MAX_AGE_HOURS * 3600));
 
     let stdin = io::stdin();

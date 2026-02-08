@@ -91,7 +91,10 @@ export function useVideoSync(
             primary.currentTime = loopStart;
           }
         }
-        if (secondary.readyState >= HTMLMediaElement.HAVE_METADATA && Math.abs(secondary.currentTime) > 0.001) {
+        if (
+          secondary.readyState >= HTMLMediaElement.HAVE_METADATA &&
+          Math.abs(secondary.currentTime) > 0.001
+        ) {
           secondary.currentTime = 0;
         }
         pendingSecondaryResume = false;

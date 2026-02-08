@@ -4,6 +4,10 @@
   "version": "1.1.0",
   "type": "module",
   "main": "electron/main.mjs",
+  "author": {
+    "name": "Mantas Mikalauskas",
+    "email": "mantas.codes@gmail.com"
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
@@ -36,7 +40,7 @@
     "ffmpeg:prepare:lgpl": "yarn tv ffmpeg prepare --profile lgpl-vt",
     "ffmpeg:build:gpl": "yarn tv ffmpeg build --profile gpl",
     "ffmpeg:build:lgpl": "yarn tv ffmpeg build --profile lgpl-vt",
-    "check": "yarn test:all && yarn lint && yarn lint:rust && yarn format:check && tsc --noEmit",
+    "check": "yarn test:all && yarn lint && yarn lint:rust && yarn format:check && tsc --noEmit && tsc --noEmit -p tsconfig.node.json",
     "lint:rust": "cd native && cargo clippy",
     "lint:rust:fix": "cd native && cargo clippy --fix --allow-dirty --allow-staged",
     "test": "yarn test:unit",

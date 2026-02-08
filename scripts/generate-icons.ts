@@ -9,6 +9,8 @@ import { Icns, IcnsImage } from "@fiahfy/icns";
 import pngToIco from "png-to-ico";
 import sharp from "sharp";
 
+import { formatError } from "./utils.ts";
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = dirname(__filename);
 const ROOT_DIR = join(__dirname, "..");
@@ -189,8 +191,7 @@ async function generateMacOsTahoeArtifacts(
         process.stderr.write(stderr);
       }
     } catch (error) {
-      const message = error instanceof Error ? error.message : String(error);
-      throw new Error(`actool failed while compiling ${normalize(appIconBundlePath)}: ${message}`, {
+      throw new Error(`actool failed while compiling ${normalize(appIconBundlePath)}: ${formatError(error)}`, {
         cause: error,
       });
     }
@@ -261,6 +262,6 @@ async function main(): Promise<void> {
 }
 
 main().catch((error: unknown) => {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error);
   process.exit(1);
 });

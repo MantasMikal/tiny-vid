@@ -1,4 +1,5 @@
 import type { ChildProcess } from "node:child_process";
+import { createRequire } from "node:module";
 import path from "node:path";
 import { setTimeout as delay } from "node:timers/promises";
 import { fileURLToPath } from "node:url";
@@ -10,10 +11,28 @@ const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..", "..");
 
 const VITE_PORT = Number(process.env.TINY_VID_DEV_PORT ?? 1420);
-const DEV_SERVER_URL = process.env.TINY_VID_DEV_SERVER_URL ?? `http://127.0.0.1:${String(VITE_PORT)}`;
+const DEV_SERVER_URL =
+  process.env.TINY_VID_DEV_SERVER_URL ?? `http://127.0.0.1:${String(VITE_PORT)}`;
 const SIDECAR_BINARY = process.platform === "win32" ? "tiny-vid-sidecar.exe" : "tiny-vid-sidecar";
 const SIDECAR_PATH = path.join(ROOT_DIR, "native", "target", "debug", SIDECAR_BINARY);
 const YARN_CMD = process.platform === "win32" ? "yarn.cmd" : "yarn";
+
+const IS_VM = !!(process.env.IS_VM ?? process.env.TINY_VID_IS_VM);
+
+function getElectronLaunchArgs(): string[] {
+  const mainPath = path.join(ROOT_DIR, "electron", "main.mjs");
+  if (process.platform === "linux" && IS_VM) {
+    return [
+      "--no-sandbox",
+      "--disable-dev-shm-usage",
+      "--disable-seccomp-filter-sandbox",
+      "--disable-gpu",
+      "--disable-gpu-compositing",
+      mainPath,
+    ];
+  }
+  return [mainPath];
+}
 
 async function waitForServer(url: string, timeoutMs = 60_000): Promise<void> {
   const start = Date.now();
@@ -70,7 +89,7 @@ async function main(): Promise<void> {
     {
       cwd: ROOT_DIR,
       env: process.env,
-    },
+    }
   );
   viteProcess = launchedVite;
 
@@ -84,14 +103,24 @@ async function main(): Promise<void> {
 
   await runInheritedCommand(
     "cargo",
-    ["build", "--manifest-path", path.join(ROOT_DIR, "native", "Cargo.toml"), "--bin", "tiny-vid-sidecar"],
+    [
+      "build",
+      "--manifest-path",
+      path.join(ROOT_DIR, "native", "Cargo.toml"),
+      "--bin",
+      "tiny-vid-sidecar",
+    ],
     {
       cwd: ROOT_DIR,
       env: process.env,
-    },
+    }
   );
 
-  const launchedElectron = spawnInherited(YARN_CMD, ["electron:shell"], {
+  const require = createRequire(import.meta.url);
+  const electronPath = require("electron") as string;
+  const electronArgs = getElectronLaunchArgs();
+
+  const launchedElectron = spawnInherited(electronPath, electronArgs, {
     cwd: ROOT_DIR,
     env: {
       ...process.env,
@@ -115,6 +144,6 @@ async function main(): Promise<void> {
 try {
   await main();
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error);
   shutdown(1);
 }

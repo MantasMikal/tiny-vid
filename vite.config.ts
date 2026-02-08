@@ -8,6 +8,8 @@ const host = process.env.TINY_VID_DEV_HOST;
 
 // https://vitejs.dev/config/
 export default defineConfig(() => ({
+  // Use relative base so built assets resolve when loaded via file:// (Electron)
+  base: "./",
   plugins: [
     react({
       babel: {

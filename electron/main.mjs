@@ -6,6 +6,18 @@ import { fileURLToPath, pathToFileURL } from "node:url";
 
 import { app, BrowserWindow, Menu, dialog, ipcMain, net, protocol } from "electron";
 
+const IS_VM = !!(
+  process.env.IS_VM ||
+  process.env.TINY_VID_IS_VM
+);
+
+// Targeted fix for Linux VMs (Parallels, etc.): sandbox, /dev/shm, GPU issues (Electron #26061)
+if (process.platform === "linux" && IS_VM) {
+  app.commandLine.appendSwitch("no-sandbox");
+  app.commandLine.appendSwitch("disable-dev-shm-usage");
+  app.commandLine.appendSwitch("disable-seccomp-filter-sandbox");
+}
+
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 const ROOT_DIR = path.resolve(__dirname, "..");
@@ -62,6 +74,7 @@ function bufferOpenedFiles(paths) {
 function parseLaunchPaths(argv) {
   const startIndex = app.isPackaged ? 1 : 2;
   const paths = [];
+  const mainScriptPath = path.resolve(__dirname, "main.mjs");
 
   for (const rawArg of argv.slice(startIndex)) {
     if (!rawArg || rawArg.startsWith("-")) {
@@ -70,13 +83,15 @@ function parseLaunchPaths(argv) {
     try {
       const parsed = new URL(rawArg);
       if (parsed.protocol === "file:") {
-        paths.push(fileURLToPath(parsed));
+        const resolved = fileURLToPath(parsed);
+        if (resolved !== mainScriptPath) paths.push(resolved);
         continue;
       }
     } catch {
       // Not a URL, continue with raw path.
     }
-    paths.push(rawArg);
+    const resolved = path.resolve(rawArg);
+    if (resolved !== mainScriptPath) paths.push(resolved);
   }
 
   return [...new Set(paths)];
@@ -184,6 +199,15 @@ function createMainWindow() {
   window.once("ready-to-show", () => {
     window.show();
   });
+
+  // On Linux VMs, ready-to-show may never fire if GPU rendering fails. Fallback: show after 3s.
+  if (process.platform === "linux" && IS_VM) {
+    setTimeout(() => {
+      if (!window.isDestroyed() && !window.isVisible()) {
+        window.show();
+      }
+    }, 3000);
+  }
 
   if (DEV_SERVER_URL) {
     void window.loadURL(DEV_SERVER_URL);

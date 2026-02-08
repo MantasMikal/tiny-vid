@@ -85,35 +85,6 @@ pub async fn run_preview_for_test_with_meta_codec_override(
     })
 }
 
-/// Runs preview generation with source codec + first audio codec overrides for integration tests.
-pub async fn run_preview_for_test_with_meta_codec_and_audio_override(
-    input_path: &Path,
-    options: &TranscodeOptions,
-    preview_start_seconds: Option<f64>,
-    source_codec_override: &str,
-    source_audio_codec_override: &str,
-    source_audio_stream_count_override: u32,
-) -> Result<PreviewResultForTest, AppError> {
-    let mut meta = get_video_metadata_impl(input_path)?;
-    meta.codec_name = Some(source_codec_override.to_string());
-    meta.audio_codec_name = Some(source_audio_codec_override.to_string());
-    meta.audio_stream_count = source_audio_stream_count_override;
-    let result = run_preview_core(
-        input_path,
-        options,
-        preview_start_seconds,
-        None,
-        Some(meta.duration),
-        Some(meta),
-    )
-    .await?;
-    Ok(PreviewResultForTest {
-        original_path: result.original_path,
-        compressed_path: result.compressed_path,
-        start_offset_seconds: result.start_offset_seconds,
-    })
-}
-
 /// Runs preview generation with estimate and returns paths + estimate for integration tests.
 pub async fn run_preview_with_estimate_for_test(
     input_path: &Path,

@@ -177,7 +177,7 @@ export interface NativeInvokeContract {
     args: MediaCancelParams | undefined;
     result: MediaCancelResult;
   };
-  "get_pending_opened_files": {
+  get_pending_opened_files: {
     args: undefined;
     result: string[];
   };

@@ -267,6 +267,6 @@ async function main(): Promise<void> {
 try {
   await main();
 } catch (error) {
-  console.error(error instanceof Error ? error.message : String(error));
+  console.error(error);
   process.exit(1);
 }

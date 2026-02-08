@@ -24,7 +24,7 @@ function getElectronBridge(command?: string): TinyVidElectronBridge {
 
   if (command) {
     throw new Error(
-      `Desktop command "${command}" is unavailable because Electron preload bridge did not initialize`,
+      `Desktop command "${command}" is unavailable because Electron preload bridge did not initialize`
     );
   }
 
@@ -38,7 +38,10 @@ export const desktopClient = {
   ): Promise<NativeInvokeResult<C>> {
     const bridge = getElectronBridge(command);
     const args = argsTuple[0];
-    return (await bridge.invoke({ command, ...(args === undefined ? {} : { args }) })) as NativeInvokeResult<C>;
+    return (await bridge.invoke({
+      command,
+      ...(args === undefined ? {} : { args }),
+    })) as NativeInvokeResult<C>;
   },
 
   listen<T>(event: string, handler: Listener<T>): Promise<Unlisten> {
@@ -46,7 +49,7 @@ export const desktopClient = {
     return Promise.resolve(
       bridge.on(event, (payload) => {
         handler(payload as T);
-      }),
+      })
     );
   },
 
