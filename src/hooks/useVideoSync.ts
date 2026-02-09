@@ -2,8 +2,9 @@ import { type DependencyList, type RefObject, useCallback, useEffect, useState }
 
 const DEBUG = import.meta.env.DEV && import.meta.env.VITE_VIDEO_SYNC_DEBUG === "1";
 
-const SYNC_INTERVAL_MS = 100;
-const SEEK_THRESHOLD_SECONDS = 0.08;
+const SYNC_INTERVAL_MS = 200;
+const SEEK_THRESHOLD_SECONDS = 0.1;
+const SYNC_COOLDOWN_MS = 150;
 
 function clampTime(time: number, video: HTMLVideoElement) {
   const duration = video.duration;
@@ -76,6 +77,7 @@ export function useVideoSync(
       let intervalId: ReturnType<typeof setInterval> | null = null;
       let hasStarted = false;
       let pendingSecondaryResume = false;
+      let lastResyncAt = 0;
       const offset = Number.isFinite(startOffsetSeconds) ? Math.max(0, startOffsetSeconds) : 0;
 
       const log = (event: string, data?: unknown) => {
@@ -160,6 +162,11 @@ export function useVideoSync(
         const drift = secondary.currentTime - targetTime;
 
         if (Math.abs(drift) > SEEK_THRESHOLD_SECONDS) {
+          const now = performance.now();
+          if (now - lastResyncAt < SYNC_COOLDOWN_MS) {
+            return;
+          }
+          lastResyncAt = now;
           secondary.currentTime = targetTime;
           pendingSecondaryResume = true;
           safePause(secondary);
