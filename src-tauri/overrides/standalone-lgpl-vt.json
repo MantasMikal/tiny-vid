@@ -22,7 +22,8 @@
         "MacOS/libavutil.dylib": "binaries/standalone-lgpl-vt/libavutil.dylib",
         "MacOS/libswresample.dylib": "binaries/standalone-lgpl-vt/libswresample.dylib",
         "MacOS/libswscale.dylib": "binaries/standalone-lgpl-vt/libswscale.dylib"
-      }
+      },
+      "signingIdentity": "-"
     }
   }
 }

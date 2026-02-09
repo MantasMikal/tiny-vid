@@ -81,7 +81,8 @@
       "files": {
         "Resources/Assets.car": "icons/Assets.car"
       },
-      "infoPlist": "./Info.plist"
+      "infoPlist": "./Info.plist",
+      "signingIdentity": "-"
     },
     "linux": {
       "appimage": {
