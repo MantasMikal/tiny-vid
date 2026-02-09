@@ -189,6 +189,19 @@ function copyMacOsLgplDylibs(binariesDir: string): void {
   }
 }
 
+/** Copy GPL codec dylibs (libx264, libvpx, etc.) when present. Required when ffmpeg was built from source on macOS. */
+function copyMacOsGplDylibsIfPresent(binariesDir: string): void {
+  if (!fs.existsSync(binariesDir)) return;
+  const dylibs = fs
+    .readdirSync(binariesDir)
+    .filter((entry) => entry.toLowerCase().endsWith(".dylib"))
+    .sort();
+  for (const dylib of dylibs) {
+    const source = path.join(binariesDir, dylib);
+    fs.copyFileSync(source, path.join(ELECTRON_RESOURCE_BIN_DIR, dylib));
+  }
+}
+
 function copyStandaloneFfmpeg(profile: StandaloneProfile, target: string): void {
   const binariesDir = path.join(NATIVE_DIR, "binaries", profileDirName(profile));
   const suffix = standaloneSuffixForTarget(target);
@@ -214,6 +227,9 @@ function copyStandaloneFfmpeg(profile: StandaloneProfile, target: string): void 
 
   if (profile === "lgpl-vt" && target.includes("darwin")) {
     copyMacOsLgplDylibs(binariesDir);
+  }
+  if (profile === "gpl" && target.includes("darwin")) {
+    copyMacOsGplDylibsIfPresent(binariesDir);
   }
 }
 
