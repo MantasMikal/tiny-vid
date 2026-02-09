@@ -130,7 +130,6 @@ async function runTestSuite(
   await runUnitSuite(context, profile, env);
   await runIntegrationTargets(context, profile, env, INTEGRATION_SMOKE_TARGETS);
   await runIntegrationTargets(context, profile, env, INTEGRATION_CONTRACT_TARGETS);
-  await runDiscoverySuite(context, env);
 }
 
 export async function runTestSuiteCommand(

@@ -1,15 +1,3 @@
-//! FFmpeg path resolution for bundled and system binaries.
-//!
-//! On macOS/Windows, bundled sidecar binaries (ffmpeg, ffprobe) are looked for next to the
-//! executable. We use `tauri::utils::platform::current_exe()` first, with a fallback to
-//! `std::env::current_exe()` when it fails. This is required because Tauri's implementation
-//! returns an error on macOS when any ancestor of the executable path is a symlink (a security
-//! measure). DMG mounts and some install paths can involve symlinks; the fallback ensures
-//! standalone builds detect their bundled FFmpeg even in those cases.
-//!
-//! Discovery tests run in both system and standalone modes (`yarn test:discovery`,
-//! `yarn tv test --mode standalone --profile gpl --suite discovery`).
-
 use crate::codec::SUPPORTED_CODEC_NAMES;
 use crate::error::AppError;
 use std::path::{Path, PathBuf};
@@ -84,14 +72,7 @@ pub fn resolve_sidecar_path(base_name: &str) -> Option<PathBuf> {
 
     #[cfg(any(target_os = "macos", target_os = "windows"))]
     {
-        // Fallback to std::env::current_exe() when platform::current_exe() fails (e.g. on macOS
-        // when the app path contains symlinks, which Tauri rejects for security). Bundled sidecar
-        // detection must work even in those cases.
-        let exe_dir = platform::current_exe()
-            .or_else(|_| std::env::current_exe())
-            .ok()?
-            .parent()?
-            .to_path_buf();
+        let exe_dir = platform::current_exe().ok()?.parent()?.to_path_buf();
         #[cfg(windows)]
         let path = {
             let base = base_name.trim_end_matches(".exe");

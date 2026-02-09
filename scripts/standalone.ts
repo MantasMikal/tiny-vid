@@ -62,6 +62,9 @@ function resolveProfileForMode(
 }
 
 function validateSuiteForMode(mode: BuildMode, suite: TestSuite): void {
+  if (mode === "standalone" && suite === "discovery") {
+    throw new Error("discovery suite is only available for --mode system");
+  }
   if (mode === "system" && suite === "integration-contract") {
     throw new Error("integration-contract suite is only available for --mode standalone");
   }
