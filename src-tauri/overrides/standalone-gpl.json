@@ -3,6 +3,17 @@
     "externalBin": [
       "binaries/standalone-gpl/ffmpeg",
       "binaries/standalone-gpl/ffprobe"
-    ]
+    ],
+    "macOS": {
+      "hardenedRuntime": false,
+      "files": {
+        "MacOS/libdav1d.7.dylib": "binaries/standalone-gpl/libdav1d.7.dylib",
+        "MacOS/libopus.0.dylib": "binaries/standalone-gpl/libopus.0.dylib",
+        "MacOS/libSvtAv1Enc.4.dylib": "binaries/standalone-gpl/libSvtAv1Enc.4.dylib",
+        "MacOS/libvpx.11.dylib": "binaries/standalone-gpl/libvpx.11.dylib",
+        "MacOS/libx264.165.dylib": "binaries/standalone-gpl/libx264.165.dylib",
+        "MacOS/libx265.215.dylib": "binaries/standalone-gpl/libx265.215.dylib"
+      }
+    }
   }
 }
