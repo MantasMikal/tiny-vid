@@ -27,12 +27,18 @@ function round3(n: number) {
   return Math.round(n * 1000) / 1000;
 }
 
+export interface VideoSyncRestoreState {
+  time: number;
+  paused: boolean;
+}
+
 export function useVideoSync(
   primaryRef: RefObject<HTMLVideoElement | null>,
   secondaryRef: RefObject<HTMLVideoElement | null>,
   startOffsetSeconds = 0,
   deps: DependencyList = [],
-  enabled = true
+  enabled = true,
+  restoreStateRef?: RefObject<VideoSyncRestoreState | null>
 ): { togglePlayPause: () => void; isPaused: boolean } {
   const [isPaused, setIsPaused] = useState(true);
 
@@ -48,6 +54,11 @@ export function useVideoSync(
 
   useEffect(() => {
     if (!enabled) return;
+
+    const restoreState = restoreStateRef?.current ?? null;
+    if (restoreStateRef) {
+      restoreStateRef.current = null;
+    }
 
     let retryRafId: number | null = null;
     let innerCleanup: (() => void) | undefined;
@@ -179,6 +190,26 @@ export function useVideoSync(
           secondary.loop = false;
           primary.playbackRate = 1;
           secondary.playbackRate = 1;
+          if (restoreState) {
+            const primaryTime = clampTime(restoreState.time, primary);
+            const secondaryTimeRaw = primaryTime - offset;
+            const secondaryTime =
+              secondaryTimeRaw <= 0 ? 0 : clampTime(secondaryTimeRaw, secondary);
+            primary.currentTime = primaryTime;
+            secondary.currentTime = secondaryTime;
+            pendingSecondaryResume = false;
+            if (restoreState.paused) {
+              safePause(primary);
+              safePause(secondary);
+              setIsPaused(true);
+              return;
+            }
+            safePlay(primary);
+            sync("start");
+            startLoop();
+            return;
+          }
+
           resetForLoop();
           safePlay(primary);
           sync("start");
@@ -289,7 +320,7 @@ export function useVideoSync(
       }
       innerCleanup?.();
     };
-  }, [enabled, primaryRef, secondaryRef, startOffsetSeconds, ...deps]);
+  }, [enabled, primaryRef, secondaryRef, startOffsetSeconds, restoreStateRef, ...deps]);
 
   return { togglePlayPause, isPaused };
 }

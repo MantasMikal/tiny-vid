@@ -3,7 +3,7 @@
 use std::collections::HashMap;
 use std::sync::LazyLock;
 
-use super::TranscodeOptions;
+use super::{RateControlMode, TranscodeOptions, compute_target_video_bitrate_kbps};
 use crate::error::AppError;
 
 /// Codec variant for FFmpeg argument construction. Each variant handles its own quality, preset, and tags.
@@ -55,10 +55,12 @@ impl CodecKind {
     /// Build codec-specific args: preset/speed, quality/crf, tags, etc.
     fn build_codec_args(
         &self,
+        rate_control_mode: RateControlMode,
         quality: u32,
         preset: &str,
         tune: Option<&str>,
         max_bitrate: Option<u32>,
+        target_bitrate_kbps: Option<u32>,
     ) -> Vec<String> {
         let mut args = Vec::new();
 
@@ -71,7 +73,9 @@ impl CodecKind {
                 args.extend(["-deadline".to_string(), deadline.to_string()]);
                 args.extend(["-cpu-used".to_string(), cpu_used.to_string()]);
                 args.extend(["-row-mt".to_string(), "1".to_string()]);
-                args.extend(["-b:v".to_string(), "0".to_string()]);
+                if matches!(rate_control_mode, RateControlMode::Quality) {
+                    args.extend(["-b:v".to_string(), "0".to_string()]);
+                }
             }
             CodecKind::SvtAv1 => {
                 let preset_val = SVTAV1_PRESET_MAP.get(preset).unwrap_or(&"8");
@@ -111,23 +115,29 @@ impl CodecKind {
 
         match self {
             CodecKind::X264 | CodecKind::X265 | CodecKind::VP9 | CodecKind::SvtAv1 => {
-                let crf = match self {
-                    CodecKind::X265 => map_linear_crf(quality, 28, 51),
-                    CodecKind::SvtAv1 => map_linear_crf(quality, 24, 63),
-                    CodecKind::VP9 => map_linear_crf(quality, 20, 63),
-                    _ => map_linear_crf(quality, 23, 51),
-                };
-                if let Some(max_br) = max_bitrate {
-                    args.extend([
-                        "-crf".to_string(),
-                        crf.to_string(),
-                        "-maxrate".to_string(),
-                        format!("{}k", max_br),
-                        "-bufsize".to_string(),
-                        format!("{}k", max_br * 2),
-                    ]);
+                if matches!(rate_control_mode, RateControlMode::TargetSize) {
+                    if let Some(bitrate) = target_bitrate_kbps {
+                        args.extend(["-b:v".to_string(), format!("{}k", bitrate)]);
+                    }
                 } else {
-                    args.extend(["-crf".to_string(), crf.to_string()]);
+                    let crf = match self {
+                        CodecKind::X265 => map_linear_crf(quality, 28, 51),
+                        CodecKind::SvtAv1 => map_linear_crf(quality, 24, 63),
+                        CodecKind::VP9 => map_linear_crf(quality, 20, 63),
+                        _ => map_linear_crf(quality, 23, 51),
+                    };
+                    if let Some(max_br) = max_bitrate {
+                        args.extend([
+                            "-crf".to_string(),
+                            crf.to_string(),
+                            "-maxrate".to_string(),
+                            format!("{}k", max_br),
+                            "-bufsize".to_string(),
+                            format!("{}k", max_br * 2),
+                        ]);
+                    } else {
+                        args.extend(["-crf".to_string(), crf.to_string()]);
+                    }
                 }
             }
             _ => {}
@@ -135,6 +145,13 @@ impl CodecKind {
 
         args
     }
+}
+
+pub fn supports_two_pass_codec(codec: &str) -> bool {
+    matches!(
+        codec.to_lowercase().as_str(),
+        "libx264" | "libx265" | "libvpx-vp9"
+    )
 }
 
 /// libsvtav1 preset: 0-13 (higher = faster). Maps x264-style preset names.
@@ -333,13 +350,49 @@ pub fn build_extract_args(
 }
 
 /// Build FFmpeg transcode command.
-pub fn build_ffmpeg_command(
+struct BuildOverrides<'a> {
+    force_remove_audio: Option<bool>,
+    rate_control_mode: Option<RateControlMode>,
+    target_bitrate_kbps: Option<u32>,
+    pass: Option<u8>,
+    passlogfile: Option<&'a str>,
+    force_null_output: bool,
+}
+
+fn build_ffmpeg_command_internal(
     input_path: &str,
     output_path: &str,
     options: &TranscodeOptions,
     output_duration_secs: Option<f64>,
     format_override: Option<&str>,
     start_offset_secs: Option<f64>,
+) -> Result<Vec<String>, AppError> {
+    build_ffmpeg_command_with_overrides(
+        input_path,
+        output_path,
+        options,
+        output_duration_secs,
+        format_override,
+        start_offset_secs,
+        BuildOverrides {
+            force_remove_audio: None,
+            rate_control_mode: None,
+            target_bitrate_kbps: None,
+            pass: None,
+            passlogfile: None,
+            force_null_output: false,
+        },
+    )
+}
+
+fn build_ffmpeg_command_with_overrides(
+    input_path: &str,
+    output_path: &str,
+    options: &TranscodeOptions,
+    output_duration_secs: Option<f64>,
+    format_override: Option<&str>,
+    start_offset_secs: Option<f64>,
+    overrides: BuildOverrides<'_>,
 ) -> Result<Vec<String>, AppError> {
     let output_format = format_override
         .map(str::to_lowercase)
@@ -348,10 +401,28 @@ pub fn build_ffmpeg_command(
     let codec_str = options.effective_codec().to_string();
     let codec_kind = CodecKind::from_codec_str(&codec_str);
     let quality = options.effective_quality();
-    let max_bitrate = options.max_bitrate;
+    let rate_control_mode = overrides
+        .rate_control_mode
+        .unwrap_or_else(|| options.effective_rate_control_mode());
+    let target_bitrate_kbps = if matches!(rate_control_mode, RateControlMode::TargetSize) {
+        if let Some(override_value) = overrides.target_bitrate_kbps {
+            Some(override_value)
+        } else {
+            Some(compute_target_video_bitrate_kbps(options)?)
+        }
+    } else {
+        None
+    };
+    let max_bitrate = if matches!(rate_control_mode, RateControlMode::TargetSize) {
+        None
+    } else {
+        options.max_bitrate
+    };
     let scale = options.effective_scale();
     let fps = options.effective_fps();
-    let remove_audio = options.effective_remove_audio();
+    let remove_audio = overrides
+        .force_remove_audio
+        .unwrap_or_else(|| options.effective_remove_audio());
     let preset = options.effective_preset();
     let tune = options.effective_tune();
 
@@ -476,7 +547,14 @@ pub fn build_ffmpeg_command(
         args.extend(["-vf".to_string(), scale_filter]);
     }
 
-    args.extend(codec_kind.build_codec_args(quality, preset, tune, max_bitrate));
+    args.extend(codec_kind.build_codec_args(
+        rate_control_mode,
+        quality,
+        preset,
+        tune,
+        max_bitrate,
+        target_bitrate_kbps,
+    ));
 
     args.extend(["-r".to_string(), fps.to_string()]);
     if config.use_movflags_faststart {
@@ -489,8 +567,115 @@ pub fn build_ffmpeg_command(
     if options.effective_preserve_metadata() {
         args.extend(["-map_metadata".to_string(), "0".to_string()]);
     }
+    if let Some(pass) = overrides.pass {
+        args.extend(["-pass".to_string(), pass.to_string()]);
+        if let Some(passlogfile) = overrides.passlogfile {
+            args.extend(["-passlogfile".to_string(), passlogfile.to_string()]);
+        } else {
+            return Err(AppError::from("Passlog path is required for two-pass encoding"));
+        }
+    }
+    if overrides.force_null_output {
+        args.extend(["-f".to_string(), "null".to_string()]);
+    }
     args.push(output_path.to_string());
     Ok(args)
+}
+
+pub fn build_ffmpeg_command(
+    input_path: &str,
+    output_path: &str,
+    options: &TranscodeOptions,
+    output_duration_secs: Option<f64>,
+    format_override: Option<&str>,
+    start_offset_secs: Option<f64>,
+) -> Result<Vec<String>, AppError> {
+    build_ffmpeg_command_internal(
+        input_path,
+        output_path,
+        options,
+        output_duration_secs,
+        format_override,
+        start_offset_secs,
+    )
+}
+
+pub struct TwoPassCommands {
+    pub pass1: Vec<String>,
+    pub pass2: Vec<String>,
+}
+
+pub(crate) struct TwoPassBuildParams<'a> {
+    pub input_path: &'a str,
+    pub output_path: &'a str,
+    pub options: &'a TranscodeOptions,
+    pub output_duration_secs: Option<f64>,
+    pub format_override: Option<&'a str>,
+    pub start_offset_secs: Option<f64>,
+}
+
+pub(crate) fn build_two_pass_ffmpeg_commands_with_bitrate(
+    params: TwoPassBuildParams<'_>,
+    passlogfile: &str,
+    target_bitrate_kbps: u32,
+) -> Result<TwoPassCommands, AppError> {
+    let pass1 = build_ffmpeg_command_with_overrides(
+        params.input_path,
+        "-",
+        params.options,
+        params.output_duration_secs,
+        params.format_override,
+        params.start_offset_secs,
+        BuildOverrides {
+            force_remove_audio: Some(true),
+            rate_control_mode: Some(RateControlMode::TargetSize),
+            target_bitrate_kbps: Some(target_bitrate_kbps),
+            pass: Some(1),
+            passlogfile: Some(passlogfile),
+            force_null_output: true,
+        },
+    )?;
+    let pass2 = build_ffmpeg_command_with_overrides(
+        params.input_path,
+        params.output_path,
+        params.options,
+        params.output_duration_secs,
+        params.format_override,
+        params.start_offset_secs,
+        BuildOverrides {
+            force_remove_audio: None,
+            rate_control_mode: Some(RateControlMode::TargetSize),
+            target_bitrate_kbps: Some(target_bitrate_kbps),
+            pass: Some(2),
+            passlogfile: Some(passlogfile),
+            force_null_output: false,
+        },
+    )?;
+    Ok(TwoPassCommands { pass1, pass2 })
+}
+
+pub fn build_two_pass_ffmpeg_commands(
+    input_path: &str,
+    output_path: &str,
+    options: &TranscodeOptions,
+    output_duration_secs: Option<f64>,
+    format_override: Option<&str>,
+    start_offset_secs: Option<f64>,
+    passlogfile: &str,
+) -> Result<TwoPassCommands, AppError> {
+    let target_bitrate_kbps = compute_target_video_bitrate_kbps(options)?;
+    build_two_pass_ffmpeg_commands_with_bitrate(
+        TwoPassBuildParams {
+            input_path,
+            output_path,
+            options,
+            output_duration_secs,
+            format_override,
+            start_offset_secs,
+        },
+        passlogfile,
+        target_bitrate_kbps,
+    )
 }
 
 /// Formats args for readable display: option and value on the same line when the next arg is a value.
@@ -1114,5 +1299,43 @@ mod tests {
         assert!(args.contains(&"-map_metadata".to_string()));
         let mm_idx = args.iter().position(|a| a == "-map_metadata").unwrap();
         assert_eq!(args.get(mm_idx + 1).unwrap(), "0");
+    }
+
+    #[test]
+    fn target_size_uses_bitrate_not_crf() {
+        let mut o = opts();
+        o.rate_control_mode = Some(RateControlMode::TargetSize);
+        o.target_size_mb = Some(50.0);
+        o.duration_secs = Some(60.0);
+        let args = build_ffmpeg_command("/in.mp4", "/out.mp4", &o, None, None, None).unwrap();
+        assert!(args.contains(&"-b:v".to_string()));
+        assert!(!args.iter().any(|a| a == "-crf"));
+    }
+
+    #[test]
+    fn two_pass_builds_pass_flags() {
+        let mut o = opts();
+        o.rate_control_mode = Some(RateControlMode::TargetSize);
+        o.target_size_mb = Some(50.0);
+        o.duration_secs = Some(60.0);
+        let commands = build_two_pass_ffmpeg_commands(
+            "/in.mp4",
+            "/out.mp4",
+            &o,
+            None,
+            None,
+            None,
+            "/tmp/passlog",
+        )
+        .unwrap();
+        assert!(commands.pass1.contains(&"-pass".to_string()));
+        assert!(commands.pass1.contains(&"1".to_string()));
+        assert!(commands.pass1.contains(&"-passlogfile".to_string()));
+        assert!(commands.pass1.contains(&"/tmp/passlog".to_string()));
+        assert!(commands.pass1.contains(&"-f".to_string()));
+        assert!(commands.pass1.contains(&"null".to_string()));
+        assert!(commands.pass1.contains(&"-an".to_string()));
+        assert!(commands.pass2.contains(&"-pass".to_string()));
+        assert!(commands.pass2.contains(&"2".to_string()));
     }
 }

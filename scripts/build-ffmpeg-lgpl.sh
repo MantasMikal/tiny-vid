@@ -28,6 +28,7 @@ CORE_LGPL_DYLIBS=(
   "libswresample"
   "libswscale"
 )
+CODESIGN_IDENTITY="${TINY_VID_CODESIGN_IDENTITY:-${CODESIGN_IDENTITY:-}}"
 
 echo "Building FFmpeg LGPL (VT + VP9 + AV1 + WebM) for $TARGET_TRIPLE (release/$FFMPEG_VERSION)"
 
@@ -109,6 +110,7 @@ for lib in "${CORE_LGPL_DYLIBS[@]}"; do
   fi
   out="$BINARIES_DIR/${lib}.dylib"
   cp -L "$src" "$out"
+  chmod u+w "$out"
   CORE_DYLIB_PATHS+=("$out")
 done
 
@@ -273,6 +275,28 @@ done
 shopt -u nullglob
 codesign --force --sign - "$BINARIES_DIR/ffprobe-$SUFFIX"
 codesign --force --sign - "$BINARIES_DIR/ffmpeg-$SUFFIX"
+
+if command -v codesign >/dev/null 2>&1; then
+  if [[ -n "$CODESIGN_IDENTITY" ]]; then
+    echo "Signing LGPL binaries with identity: $CODESIGN_IDENTITY"
+    shopt -s nullglob
+    for dylib in "$BINARIES_DIR"/*.dylib; do
+      codesign --force --sign "$CODESIGN_IDENTITY" "$dylib"
+    done
+    shopt -u nullglob
+    codesign --force --sign "$CODESIGN_IDENTITY" "$BINARIES_DIR/ffmpeg-$SUFFIX"
+    codesign --force --sign "$CODESIGN_IDENTITY" "$BINARIES_DIR/ffprobe-$SUFFIX"
+  else
+    echo "Ad-hoc signing LGPL binaries (set TINY_VID_CODESIGN_IDENTITY for release signing)"
+    shopt -s nullglob
+    for dylib in "$BINARIES_DIR"/*.dylib; do
+      codesign --force --sign - "$dylib"
+    done
+    shopt -u nullglob
+    codesign --force --sign - "$BINARIES_DIR/ffmpeg-$SUFFIX"
+    codesign --force --sign - "$BINARIES_DIR/ffprobe-$SUFFIX"
+  fi
+fi
 
 chmod +x "$BINARIES_DIR/ffmpeg-$SUFFIX" "$BINARIES_DIR/ffprobe-$SUFFIX"
 

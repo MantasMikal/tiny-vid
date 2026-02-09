@@ -63,6 +63,10 @@ fn preview_estimate_tracks_full_transcode_size_within_reasonable_error() {
         o.preset = Some("fast".into());
         o.preview_duration = Some(3);
         o.output_format = Some("mp4".into());
+        #[cfg(feature = "lgpl")]
+        {
+            o.quality = Some(25);
+        }
     });
     let output_path = env.path("full-transcode-output.mp4");
 
@@ -103,6 +107,10 @@ fn preview_estimate_without_audio_is_smaller_than_input_size() {
         o.preset = Some("ultrafast".into());
         o.preview_duration = Some(3);
         o.codec = Some(default_codec());
+        #[cfg(feature = "lgpl")]
+        {
+            o.quality = Some(25);
+        }
     });
     let options_with_preserve = opts_with(|o| {
         o.remove_audio = Some(true);
@@ -111,6 +119,10 @@ fn preview_estimate_without_audio_is_smaller_than_input_size() {
         o.preserve_additional_audio_streams = Some(true);
         o.audio_stream_count = Some(2);
         o.codec = Some(default_codec());
+        #[cfg(feature = "lgpl")]
+        {
+            o.quality = Some(25);
+        }
     });
 
     let input_size = fs::metadata(&input_path).expect("input metadata").len();
@@ -212,7 +224,7 @@ fn preview_original_codec_policy_is_platform_scoped() {
         &input_path,
         &preview_options(3),
         None,
-        "hevc",
+        "vp9",
     );
     let original_file_name = Path::new(&result.original_path)
         .file_name()
@@ -222,7 +234,7 @@ fn preview_original_codec_policy_is_platform_scoped() {
     if cfg!(target_os = "linux") {
         assert!(
             original_file_name.ends_with("preview-original-transcoded.mp4"),
-            "linux should force HEVC source metadata down the transcode path"
+            "linux should force non-AVC source metadata down the transcode path"
         );
         let original_meta = get_video_metadata_impl(Path::new(&result.original_path))
             .expect("ffprobe original preview");
@@ -234,7 +246,7 @@ fn preview_original_codec_policy_is_platform_scoped() {
     } else {
         assert!(
             original_file_name.ends_with("preview-original-0.mp4"),
-            "macOS/windows should keep stream-copy path for HEVC metadata override"
+            "macOS/windows should keep stream-copy path for vp9 metadata override"
         );
     }
 }

@@ -12,6 +12,7 @@ import {
   DEFAULT_PRESET_ID,
   resolve,
 } from "@/features/compression/lib/options-pipeline";
+import { getTargetSizeStatus } from "@/features/compression/lib/target-size";
 import { type ResultError, tryCatch } from "@/lib/try-catch";
 import { formatError } from "@/lib/utils";
 import { desktopClient } from "@/platform/desktop/client";
@@ -55,6 +56,8 @@ function toRustOptions(
     preset: opts.preset,
     tune: opts.tune,
     outputFormat: opts.outputFormat,
+    rateControlMode: opts.rateControlMode,
+    targetSizeMb: opts.targetSizeMb,
     previewDuration: opts.previewDuration ?? 3,
     durationSecs,
     preserveAdditionalAudioStreams: opts.preserveAdditionalAudioStreams ?? false,
@@ -107,6 +110,23 @@ function isTranscodeProcessResult(
   return typeof result === "object" && "jobId" in result && "commitToken" in result;
 }
 
+function getTargetSizeError(
+  options: CompressionOptions | null,
+  metadata: VideoMetadata | null
+): string | null {
+  if (options?.rateControlMode !== "targetSize") return null;
+  const status = getTargetSizeStatus({
+    rateControlMode: options.rateControlMode,
+    targetSizeMb: options.targetSizeMb,
+    durationSecs: metadata?.duration,
+    removeAudio: options.removeAudio,
+    audioBitrateKbps: options.audioBitrate,
+    audioStreamCount: metadata?.audioStreamCount,
+    preserveAdditionalAudioStreams: options.preserveAdditionalAudioStreams,
+    requireDuration: true,
+  });
+  return status.error;
+}
 export interface CompressionState {
   inputPath: string | null;
   videoPreview: VideoPreview | null;
@@ -194,7 +214,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     try {
       const result = await desktopClient.invoke("media.inspect", {
         kind: "commandPreview",
-        options: toRustOptions(compressionOptions, undefined, videoMetadata ?? undefined),
+        options: toRustOptions(
+          compressionOptions,
+          videoMetadata?.duration,
+          videoMetadata ?? undefined
+        ),
         ...(inputPath ? { inputPath } : {}),
       });
       if (commandPreviewRequestId === requestId) {
@@ -255,7 +279,10 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         { triggerPreview: false }
       );
     }
-    if (!compressionOptions?.generatePreview) {
+    if (
+      !compressionOptions?.generatePreview ||
+      compressionOptions.rateControlMode === "targetSize"
+    ) {
       set({ estimate: null });
     }
 
@@ -273,7 +300,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
           );
           previewRequestId++;
           await get().generatePreview(previewRequestId, {
-            includeEstimate: true,
+            includeEstimate: compressionOptions.rateControlMode !== "targetSize",
             previewStartSeconds,
           });
         } else {
@@ -310,6 +337,17 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
   transcodeAndSave: async () => {
     const { inputPath, compressionOptions, videoMetadata } = get();
     if (!inputPath || !compressionOptions) return;
+    const targetSizeError = getTargetSizeError(compressionOptions, videoMetadata);
+    if (targetSizeError) {
+      set({
+        error: {
+          type: "Target Size Error",
+          message: targetSizeError,
+          detail: targetSizeError,
+        },
+      });
+      return;
+    }
 
     set({
       workerState: WorkerState.Transcoding,
@@ -447,7 +485,8 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       await get().terminate();
     }
 
-    const includeEstimate = opts?.includeEstimate ?? true;
+    const includeEstimate =
+      (opts?.includeEstimate ?? true) && compressionOptions.rateControlMode !== "targetSize";
     const basePreviewState = {
       workerState: WorkerState.GeneratingPreview,
       progress: 0,
@@ -469,7 +508,11 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
         desktopClient.invoke("media.process", {
           kind: "preview",
           inputPath,
-          options: toRustOptions(compressionOptions, undefined, get().videoMetadata ?? undefined),
+          options: toRustOptions(
+            compressionOptions,
+            get().videoMetadata?.duration,
+            get().videoMetadata ?? undefined
+          ),
           previewStartSeconds,
           includeEstimate,
         }),
@@ -532,7 +575,8 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
     const { availableCodecs } = get();
     if (availableCodecs.length === 0) return;
     const resolved = resolve(options, availableCodecs);
-    set({ compressionOptions: resolved });
+    const shouldClearEstimate = resolved.rateControlMode === "targetSize";
+    set({ compressionOptions: resolved, ...(shouldClearEstimate && { estimate: null }) });
     const clampedPreviewStart = clampPreviewStartSeconds(
       get().previewStartSeconds,
       get().videoMetadata?.duration,
@@ -562,7 +606,7 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
       debouncePreviewTimer = null;
       previewRequestId++;
       void get().generatePreview(previewRequestId, {
-        includeEstimate: true,
+        includeEstimate: resolved.rateControlMode !== "targetSize",
         previewStartSeconds: clampedPreviewStart,
       });
     }, OPTIONS_PREVIEW_DEBOUNCE_MS);

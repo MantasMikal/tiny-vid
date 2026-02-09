@@ -4,7 +4,7 @@ Tiny Vid is a desktop app for compressing video with real time preview on macOS,
 
 Supports H.264, H.265, VP9, and AV1. Web version: [handy.tools](https://handy.tools)
 
-![image](https://github.com/user-attachments/assets/7faa0c2b-320e-45ef-b556-fa35b87142a7)
+<img width="1520" height="960" alt="Screenshot 2026-02-07 at 20 50 17" src="https://github.com/user-attachments/assets/1006af7d-c5a3-4f10-9fc3-ed7b2fa0529c" />
 
 ## Build
 

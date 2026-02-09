@@ -1,5 +1,5 @@
-import { Minus, Pause, Play, Plus } from "lucide-react";
-import { useEffect, useRef } from "react";
+import { Minus, Pause, Play, Plus, UnfoldHorizontalIcon } from "lucide-react";
+import { type CSSProperties, useEffect, useLayoutEffect, useRef } from "react";
 import { ReactCompareSlider } from "react-compare-slider";
 import { useShallow } from "zustand/react/shallow";
 
@@ -7,9 +7,47 @@ import { Button } from "@/components/ui/button";
 import { PreviewRegionTimeline } from "@/features/compression/components/preview-region-timeline";
 import { selectIsInitialized } from "@/features/compression/store/compression-selectors";
 import { useCompressionStore } from "@/features/compression/store/compression-store";
-import { useVideoSync } from "@/hooks/useVideoSync";
+import { useVideoSync, type VideoSyncRestoreState } from "@/hooks/useVideoSync";
 import { useZoomPan } from "@/hooks/useZoomPan";
 import { cn } from "@/lib/utils";
+
+interface CompareHandleProps {
+  scale: number;
+}
+
+const COMPARE_HANDLE_SIZE_PX = 38;
+const COMPARE_HANDLE_LINE_WIDTH_PX = 2;
+
+function CompareHandle({ scale }: CompareHandleProps) {
+  const handleScale = 1 / scale;
+  const handleGap = (COMPARE_HANDLE_SIZE_PX / 2) * handleScale;
+  const handleStyles = {
+    "--compare-handle-gap": `${String(handleGap)}px`,
+    "--compare-handle-line-width": `${String(COMPARE_HANDLE_LINE_WIDTH_PX * handleScale)}px`,
+    "--compare-handle-scale": String(handleScale),
+    "--compare-handle-size": `${String(COMPARE_HANDLE_SIZE_PX)}px`,
+  } as CSSProperties;
+
+  return (
+    <div data-compare-handle-root="true" style={handleStyles}>
+      <div
+        className={cn(
+          "absolute top-1/2 left-1/2 flex -translate-1/2 -translate-y-1/2",
+          "items-center justify-center rounded-full border border-foreground/25",
+          "bg-background/70 shadow-[0_8px_30px_hsl(var(--foreground)/0.18)]",
+          "pointer-events-auto ring-1 ring-foreground/10 backdrop-blur-md",
+          "group transition-colors duration-150 ease-out",
+          "hover:border-foreground/40 hover:bg-background/85 hover:shadow-[0_10px_34px_hsl(var(--foreground)/0.24)]",
+          "hover:ring-foreground/20",
+          "size-(--compare-handle-size) scale-(--compare-handle-scale)"
+        )}
+        data-compare-handle-button="true"
+      >
+        <UnfoldHorizontalIcon className={cn("size-4")} />
+      </div>
+    </div>
+  );
+}
 
 export function VideoPreview() {
   const originalVideoRef = useRef<HTMLVideoElement>(null);
@@ -39,13 +77,22 @@ export function VideoPreview() {
     }))
   );
 
+  const playbackSnapshotRef = useRef<VideoSyncRestoreState | null>({
+    time: 0,
+    paused: true,
+  });
+  const restoreStateRef = useRef<VideoSyncRestoreState | null>(null);
+  const lastPreviewStartRef = useRef<number | null>(null);
+  const lastPreviewKeyRef = useRef<string | null>(null);
+
   const isPreviewActive = Boolean(videoPreview);
   const { togglePlayPause, isPaused } = useVideoSync(
     originalVideoRef,
     compressedVideoRef,
     startOffsetSeconds ?? 0,
     [originalSrc, compressedSrc, startOffsetSeconds],
-    isPreviewActive
+    isPreviewActive,
+    restoreStateRef
   );
 
   const {
@@ -53,6 +100,7 @@ export function VideoPreview() {
     transformStyle,
     cursorClassName,
     isPanning,
+    scale,
     zoomPercent,
     canZoomIn,
     canZoomOut,
@@ -62,9 +110,55 @@ export function VideoPreview() {
     endPan,
     zoomAtCenter,
   } = useZoomPan({
-    resetDeps: [originalSrc, compressedSrc],
     panExcludeSelector: '[data-rcs="handle-container"]',
   });
+
+  useEffect(() => {
+    const video = originalVideoRef.current;
+    if (!video) return;
+    const updateSnapshot = () => {
+      playbackSnapshotRef.current = {
+        time: Number.isFinite(video.currentTime) ? video.currentTime : 0,
+        paused: video.paused,
+      };
+    };
+    updateSnapshot();
+    video.addEventListener("timeupdate", updateSnapshot);
+    video.addEventListener("play", updateSnapshot);
+    video.addEventListener("pause", updateSnapshot);
+    video.addEventListener("seeked", updateSnapshot);
+    return () => {
+      video.removeEventListener("timeupdate", updateSnapshot);
+      video.removeEventListener("play", updateSnapshot);
+      video.removeEventListener("pause", updateSnapshot);
+      video.removeEventListener("seeked", updateSnapshot);
+    };
+  }, [originalSrc]);
+
+  useLayoutEffect(() => {
+    if (!videoPreview) return;
+    const previewKey = `${originalSrc}|${compressedSrc}|${String(startOffsetSeconds ?? 0)}`;
+    const lastKey = lastPreviewKeyRef.current;
+    if (!lastKey) {
+      lastPreviewKeyRef.current = previewKey;
+      lastPreviewStartRef.current = previewStartSeconds;
+      return;
+    }
+    if (lastKey === previewKey) return;
+
+    const lastStart = lastPreviewStartRef.current;
+    const paused = playbackSnapshotRef.current?.paused ?? true;
+    const startTime =
+      lastStart !== null && lastStart !== previewStartSeconds
+        ? 0
+        : (playbackSnapshotRef.current?.time ?? 0);
+    restoreStateRef.current = {
+      time: startTime,
+      paused,
+    };
+    lastPreviewKeyRef.current = previewKey;
+    lastPreviewStartRef.current = previewStartSeconds;
+  }, [videoPreview, originalSrc, compressedSrc, startOffsetSeconds, previewStartSeconds]);
 
   useEffect(() => {
     const handleKeyDown = (event: KeyboardEvent) => {
@@ -106,6 +200,7 @@ export function VideoPreview() {
           <div className={cn("size-full")} style={transformStyle}>
             <ReactCompareSlider
               className={cn("size-full", isPanning && "pointer-events-none")}
+              handle={<CompareHandle scale={scale} />}
               itemOne={
                 <div className="relative size-full">
                   <div className="absolute inset-0">
@@ -183,7 +278,7 @@ export function VideoPreview() {
         </Button>
       </div>
       {previewDuration != null && videoDuration != null && (
-        <div className={cn("absolute right-0 bottom-0 left-0 z-20 p-2")}>
+        <div className={cn("absolute inset-x-0 bottom-0 z-20 p-2")}>
           <PreviewRegionTimeline
             duration={videoDuration}
             previewDuration={previewDuration}

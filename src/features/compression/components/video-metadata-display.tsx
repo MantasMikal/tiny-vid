@@ -24,6 +24,9 @@ interface VideoMetadataDisplayProps {
   videoMetadata: VideoMetadata;
   cOptions: COptions;
   estimate?: FfmpegSizeEstimate | null;
+  rateControlMode?: "quality" | "targetSize";
+  targetSizeMb?: number;
+  targetSizeEstimateMb?: number;
 }
 
 function formatBitrateMbps(bps: number): string {
@@ -38,8 +41,15 @@ export function VideoMetadataDisplay({
   videoMetadata,
   cOptions,
   estimate,
+  rateControlMode,
+  targetSizeMb,
+  targetSizeEstimateMb,
 }: VideoMetadataDisplayProps) {
-  const estimateState = computeEstimateDisplayState(estimate, videoMetadata.sizeMB);
+  const showEstimate = rateControlMode !== "targetSize";
+  const estimateState = showEstimate
+    ? computeEstimateDisplayState(estimate, videoMetadata.sizeMB)
+    : null;
+  const showTargetEstimate = rateControlMode === "targetSize" && targetSizeEstimateMb != null;
   const DeltaIcon =
     estimateState?.deltaVariant === "smaller"
       ? ArrowDown
@@ -111,7 +121,24 @@ export function VideoMetadataDisplay({
           )}
         </div>
 
-        {estimateState != null ? (
+        {showTargetEstimate ? (
+          <div className={cn("mt-1 flex flex-wrap items-center gap-2")}>
+            <span className={cn("text-muted-foreground line-through")}>
+              {formatSizeMB(videoMetadata.sizeMB)}
+            </span>
+            <span className={cn("font-semibold text-foreground")}>
+              ~{formatSizeMB(targetSizeEstimateMb)}
+            </span>
+            {targetSizeMb != null && (
+              <Badge
+                variant="outline"
+                className={cn("border-border bg-muted text-muted-foreground")}
+              >
+                Target {formatSizeMB(targetSizeMb)}
+              </Badge>
+            )}
+          </div>
+        ) : estimateState != null ? (
           <div className={cn("mt-1 flex flex-wrap items-center gap-2")}>
             <span className={cn("text-muted-foreground line-through")}>
               {formatSizeMB(videoMetadata.sizeMB)}
