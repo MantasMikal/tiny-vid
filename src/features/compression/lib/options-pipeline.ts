@@ -8,6 +8,8 @@ import {
   getCodecsForFormat,
   getFormatCapabilities,
   isFormat,
+  type RateControlMode,
+  supportsTwoPassCodec,
 } from "@/features/compression/lib/compression-options";
 import type { CodecInfo } from "@/types/tauri";
 
@@ -22,6 +24,8 @@ const DEFAULT_OPTIONS: CompressionOptions = {
   removeAudio: false,
   codec: "libx264",
   outputFormat: "mp4",
+  rateControlMode: "quality",
+  targetSizeMb: undefined,
   generatePreview: true,
   previewDuration: 3,
   tune: undefined,
@@ -99,11 +103,20 @@ export function resolve(
   const codecInfo = getCodecInfo(codec, codecs);
   const supportsTune = codecInfo?.supportsTune ?? false;
   const tune = supportsTune ? (partial.tune ?? undefined) : undefined;
+  let rateControlMode: RateControlMode =
+    partial.rateControlMode === "targetSize" ? "targetSize" : "quality";
+  const targetSizeMb = Number.isFinite(partial.targetSizeMb ?? NaN)
+    ? partial.targetSizeMb
+    : undefined;
 
   const quality =
     oldCodec !== codec
       ? convertQualityForCodecSwitch(partial.quality ?? DEFAULT_OPTIONS.quality, oldCodec, codec)
       : (partial.quality ?? DEFAULT_OPTIONS.quality);
+
+  if (rateControlMode === "targetSize" && !supportsTwoPassCodec(codec)) {
+    rateControlMode = "quality";
+  }
 
   return {
     ...DEFAULT_OPTIONS,
@@ -112,6 +125,8 @@ export function resolve(
     outputFormat: format,
     tune,
     quality,
+    rateControlMode,
+    targetSizeMb,
   };
 }
 
@@ -134,6 +149,8 @@ export function createInitialOptions(
     fps: DEFAULT_FPS,
     scale: 1,
     removeAudio: false,
+    rateControlMode: "quality",
+    targetSizeMb: undefined,
     generatePreview: true,
     previewDuration: 3,
     tune: undefined,
@@ -153,5 +170,5 @@ export function applyPreset(
   codecs: CodecInfo[]
 ): CompressionOptions {
   const overlay = BASIC_PRESETS[presetId];
-  return resolve({ ...current, ...overlay }, codecs);
+  return resolve({ ...current, ...overlay, rateControlMode: "quality" }, codecs);
 }

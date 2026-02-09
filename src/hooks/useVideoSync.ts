@@ -193,7 +193,8 @@ export function useVideoSync(
           if (restoreState) {
             const primaryTime = clampTime(restoreState.time, primary);
             const secondaryTimeRaw = primaryTime - offset;
-            const secondaryTime = secondaryTimeRaw <= 0 ? 0 : clampTime(secondaryTimeRaw, secondary);
+            const secondaryTime =
+              secondaryTimeRaw <= 0 ? 0 : clampTime(secondaryTimeRaw, secondary);
             primary.currentTime = primaryTime;
             secondary.currentTime = secondaryTime;
             pendingSecondaryResume = false;

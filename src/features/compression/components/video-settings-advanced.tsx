@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Slider } from "@/components/ui/slider";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import type { CompressionOptions } from "@/features/compression/lib/compression-options";
 import {
@@ -35,6 +36,7 @@ import {
 } from "@/features/compression/lib/compression-options";
 import type { VideoMetadata } from "@/features/compression/lib/get-video-metadata";
 import { resolve } from "@/features/compression/lib/options-pipeline";
+import { getTargetSizeStatus, getTargetSizeSupport } from "@/features/compression/lib/target-size";
 import { cn } from "@/lib/utils";
 import type { CodecInfo } from "@/types/tauri";
 
@@ -142,6 +144,52 @@ function InputGroup({
   );
 }
 
+function CompressionModeToggle({
+  mode,
+  disabled,
+  supportsTargetSize,
+  supportMessage,
+  onChange,
+}: {
+  mode: "quality" | "targetSize";
+  disabled: boolean;
+  supportsTargetSize: boolean;
+  supportMessage?: string;
+  onChange: (mode: "quality" | "targetSize") => void;
+}) {
+  return (
+    <div className={cn("flex flex-col gap-2")}>
+      <ToggleGroup
+        type="single"
+        variant="outline"
+        size="sm"
+        value={mode}
+        disabled={disabled}
+        className={cn("w-full")}
+        onValueChange={(value) => {
+          if (!value) return;
+          if (value === "targetSize" && !supportsTargetSize) return;
+          onChange(value === "targetSize" ? "targetSize" : "quality");
+        }}
+      >
+        <ToggleGroupItem value="quality" className={cn("flex-1 justify-center")}>
+          Quality
+        </ToggleGroupItem>
+        <ToggleGroupItem
+          value="targetSize"
+          disabled={!supportsTargetSize}
+          className={cn("flex-1 justify-center")}
+        >
+          Target size
+        </ToggleGroupItem>
+      </ToggleGroup>
+      {!supportsTargetSize && mode !== "targetSize" && supportMessage && (
+        <p className={cn("text-xs text-muted-foreground")}>{supportMessage}</p>
+      )}
+    </div>
+  );
+}
+
 export function VideoSettingsAdvanced({
   cOptions,
   setOptions,
@@ -155,6 +203,21 @@ export function VideoSettingsAdvanced({
   const currentCodec = getCodecInfo(cOptions.codec, availableCodecs);
   const hasNoAudio = (videoMetadata?.audioStreamCount ?? 0) === 0;
   const isAlreadyStereo = (videoMetadata?.audioChannels ?? 0) <= 2;
+  const isTargetSizeMode = cOptions.rateControlMode === "targetSize";
+  const targetSupport = getTargetSizeSupport(cOptions.codec);
+  const supportsTargetSize = targetSupport.supported;
+  const targetSize = getTargetSizeStatus({
+    rateControlMode: cOptions.rateControlMode,
+    targetSizeMb: cOptions.targetSizeMb,
+    durationSecs: videoMetadata?.duration,
+    removeAudio: cOptions.removeAudio,
+    audioBitrateKbps: cOptions.audioBitrate,
+    audioStreamCount: videoMetadata?.audioStreamCount,
+    preserveAdditionalAudioStreams: cOptions.preserveAdditionalAudioStreams,
+  });
+  const targetSizeStatus = targetSize.result;
+  const targetSizeError = targetSize.error;
+  const targetSizeDefault = Math.max(1, Math.round(videoMetadata?.sizeMB ?? 50));
 
   const handleAccordionChange = (value: string) => {
     if (value === "ffmpeg-command") {
@@ -232,24 +295,74 @@ export function VideoSettingsAdvanced({
           </Select>
         </LabeledControl>
         <LabeledControl
-          label="Quality"
-          tooltip="Quality vs file size. Higher = better quality, larger file."
+          label="Compression mode"
+          tooltip="Choose quality-based compression or a total output size target (two-pass)."
         >
-          <Slider
+          <CompressionModeToggle
+            mode={isTargetSizeMode ? "targetSize" : "quality"}
             disabled={isDisabled}
-            min={1}
-            max={100}
-            step={1}
-            value={[cOptions.quality]}
-            showValueOnThumb
-            onValueChange={([v]) => {
-              setOptions({ ...cOptions, quality: v }, { triggerPreview: false });
-            }}
-            onValueCommit={([v]) => {
-              setOptions({ ...cOptions, quality: v });
+            supportsTargetSize={supportsTargetSize}
+            supportMessage={targetSupport.reason}
+            onChange={(mode) => {
+              setOptions({
+                ...cOptions,
+                rateControlMode: mode,
+                targetSizeMb:
+                  mode === "targetSize"
+                    ? (cOptions.targetSizeMb ?? targetSizeDefault)
+                    : cOptions.targetSizeMb,
+              });
             }}
           />
         </LabeledControl>
+        {!isTargetSizeMode && (
+          <LabeledControl
+            label="Quality"
+            tooltip="Quality vs file size. Higher = better quality, larger file."
+          >
+            <Slider
+              disabled={isDisabled}
+              min={1}
+              max={100}
+              step={1}
+              value={[cOptions.quality]}
+              showValueOnThumb
+              onValueChange={([v]) => {
+                setOptions({ ...cOptions, quality: v }, { triggerPreview: false });
+              }}
+              onValueCommit={([v]) => {
+                setOptions({ ...cOptions, quality: v });
+              }}
+            />
+          </LabeledControl>
+        )}
+        {isTargetSizeMode && (
+          <LabeledControl
+            label="Target size (MB)"
+            tooltip="Two-pass bitrate mode. Sets a total output size target (video + audio) and derives video bitrate."
+          >
+            <div className={cn("flex flex-col gap-2")}>
+              <ClampedNumberInput
+                disabled={isDisabled || !supportsTargetSize}
+                min={0.1}
+                max={100000}
+                value={cOptions.targetSizeMb ?? targetSizeDefault}
+                onChange={(value) => {
+                  setOptions({ ...cOptions, targetSizeMb: value });
+                }}
+              />
+              {targetSizeError && (
+                <p className={cn("text-xs text-destructive")}>{targetSizeError}</p>
+              )}
+              {targetSizeStatus?.ok && targetSizeStatus.videoBitrateKbps != null && (
+                <p className={cn("text-xs text-muted-foreground")}>
+                  Derived video bitrate: {targetSizeStatus.videoBitrateKbps} kbps
+                  {targetSizeStatus.clamped ? " (clamped)" : ""}
+                </p>
+              )}
+            </div>
+          </LabeledControl>
+        )}
         {currentCodec?.presetType !== "vt" && (
           <LabeledControl
             label="Encoding Preset"

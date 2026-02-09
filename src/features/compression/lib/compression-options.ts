@@ -1,6 +1,7 @@
 import type { CodecInfo } from "@/types/tauri";
 
 export type LicenseProfile = "standalone" | "lgpl";
+export type RateControlMode = "quality" | "targetSize";
 
 /**
  * Codec metadata. Must stay in sync with backend src-tauri/src/codec.rs CODEC_TABLE.
@@ -179,6 +180,8 @@ export interface CompressionOptions {
   removeAudio: boolean;
   codec: Codec;
   outputFormat: Format;
+  rateControlMode: RateControlMode;
+  targetSizeMb?: number;
   generatePreview?: boolean;
   previewDuration?: number;
   tune?: string;
@@ -187,6 +190,10 @@ export interface CompressionOptions {
   audioBitrate?: number;
   downmixToStereo?: boolean;
   preserveSubtitles?: boolean;
+}
+
+export function supportsTwoPassCodec(codec: string): boolean {
+  return ["libx264", "libx265", "libvpx-vp9"].includes(codec.toLowerCase());
 }
 
 function getCrfRange(codec: string): { low: number; high: number } {

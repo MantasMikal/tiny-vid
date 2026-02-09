@@ -9,8 +9,9 @@ mod temp;
 mod verify;
 
 pub use builder::{
-    build_extract_args, build_ffmpeg_command, format_args_for_display_multiline,
-    is_preview_stream_copy_safe_codec,
+    build_extract_args, build_ffmpeg_command, build_two_pass_ffmpeg_commands,
+    format_args_for_display_multiline, is_preview_stream_copy_safe_codec,
+    supports_two_pass_codec,
 };
 pub use error::{FfmpegErrorPayload, parse_ffmpeg_error};
 
@@ -35,7 +36,8 @@ pub use temp::{
 #[cfg(any(test, feature = "integration-test-api"))]
 pub use verify::verify_video;
 
-use serde::Deserialize;
+use serde::{Deserialize, Serialize};
+use crate::error::AppError;
 
 /// Version token for estimate cache key invalidation.
 pub const ESTIMATE_CACHE_VERSION: &str = "estimate-sampled-bitrate";
@@ -62,6 +64,13 @@ pub struct SizeEstimate {
     pub sample_seconds_total: f64,
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub enum RateControlMode {
+    Quality,
+    TargetSize,
+}
+
 #[derive(Debug, Deserialize, Clone)]
 #[serde(rename_all = "camelCase")]
 pub struct TranscodeOptions {
@@ -74,6 +83,8 @@ pub struct TranscodeOptions {
     pub preset: Option<String>,
     pub tune: Option<String>,
     pub output_format: Option<String>,
+    pub rate_control_mode: Option<RateControlMode>,
+    pub target_size_mb: Option<f64>,
     pub preview_duration: Option<u32>,
     pub duration_secs: Option<f64>,
     /// Include all audio streams in output (transcoded to AAC/Opus). Default false.
@@ -108,6 +119,8 @@ impl Default for TranscodeOptions {
             preset: Some("fast".to_string()),
             tune: None,
             output_format: Some("mp4".to_string()),
+            rate_control_mode: Some(RateControlMode::Quality),
+            target_size_mb: None,
             preview_duration: Some(3),
             duration_secs: None,
             preserve_additional_audio_streams: None,
@@ -160,6 +173,14 @@ impl TranscodeOptions {
             .as_deref()
             .unwrap_or("mp4")
             .to_lowercase()
+    }
+
+    pub fn effective_rate_control_mode(&self) -> RateControlMode {
+        self.rate_control_mode.unwrap_or(RateControlMode::Quality)
+    }
+
+    pub fn effective_target_size_mb(&self) -> Option<f64> {
+        self.target_size_mb
     }
 
     pub fn effective_preview_duration(&self) -> u32 {
@@ -219,8 +240,12 @@ impl TranscodeOptions {
     }
 
     fn options_cache_key_common(&self) -> String {
+        let rate_control_mode = match self.effective_rate_control_mode() {
+            RateControlMode::Quality => "quality",
+            RateControlMode::TargetSize => "targetSize",
+        };
         format!(
-            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
+            "{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}|{}",
             self.effective_codec(),
             self.effective_quality(),
             self.max_bitrate
@@ -232,6 +257,11 @@ impl TranscodeOptions {
             self.effective_remove_audio(),
             self.effective_preset(),
             self.tune.as_deref().unwrap_or(""),
+            rate_control_mode,
+            self.target_size_mb
+                .map(|v| format!("{:.4}", v))
+                .as_deref()
+                .unwrap_or(""),
             self.effective_preserve_additional_audio_streams(),
             self.effective_audio_stream_count(),
             self.effective_preserve_metadata(),
@@ -244,6 +274,51 @@ impl TranscodeOptions {
     }
 }
 
+pub fn compute_target_video_bitrate_kbps(options: &TranscodeOptions) -> Result<u32, AppError> {
+    if !supports_two_pass_codec(options.effective_codec()) {
+        return Err(AppError::from(
+            "Target size mode requires libx264, libx265, or libvpx-vp9.",
+        ));
+    }
+    let target_size_mb = options
+        .effective_target_size_mb()
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .ok_or_else(|| AppError::from("Target size must be greater than zero"))?;
+    let duration_secs = options
+        .duration_secs
+        .filter(|v| v.is_finite() && *v > 0.0)
+        .ok_or_else(|| AppError::from("Video duration is required for target size mode"))?;
+
+    let audio_streams = if options.effective_remove_audio() {
+        0
+    } else {
+        let count = options.audio_stream_count.unwrap_or(1);
+        if count == 0 {
+            0
+        } else if options.effective_preserve_additional_audio_streams() {
+            count
+        } else {
+            1
+        }
+    } as f64;
+
+    let audio_bitrate_kbps = options.effective_audio_bitrate() as f64;
+    let audio_bitrate_total_kbps = audio_streams * audio_bitrate_kbps;
+
+    let total_bits = target_size_mb * 1024.0 * 1024.0 * 8.0;
+    let overhead_bits = total_bits * 0.02;
+    let audio_bits = audio_bitrate_total_kbps * 1000.0 * duration_secs;
+    let video_bits = total_bits - overhead_bits - audio_bits;
+
+    if !video_bits.is_finite() || video_bits <= 0.0 {
+        return Err(AppError::from("Target size is too small for audio"));
+    }
+
+    let raw_video_kbps = (video_bits / duration_secs / 1000.0).floor();
+    let clamped = raw_video_kbps.clamp(200.0, 100_000.0);
+    Ok(clamped as u32)
+}
+
 /// Path to string for FFmpeg args or logging.
 pub fn path_to_string(path: &(impl AsRef<std::path::Path> + ?Sized)) -> String {
     path.as_ref().to_string_lossy().to_string()
@@ -251,7 +326,10 @@ pub fn path_to_string(path: &(impl AsRef<std::path::Path> + ?Sized)) -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{ESTIMATE_CACHE_VERSION, TranscodeOptions};
+    use super::{
+        ESTIMATE_CACHE_VERSION, RateControlMode, TranscodeOptions,
+        compute_target_video_bitrate_kbps,
+    };
 
     #[test]
     fn estimate_cache_key_includes_output_format() {
@@ -274,5 +352,29 @@ mod tests {
             key.starts_with(ESTIMATE_CACHE_VERSION),
             "estimate cache key should be prefixed with version token"
         );
+    }
+
+    #[test]
+    fn compute_target_bitrate_errors_when_audio_exceeds_target() {
+        let mut opts = TranscodeOptions::default();
+        opts.rate_control_mode = Some(RateControlMode::TargetSize);
+        opts.target_size_mb = Some(1.0);
+        opts.duration_secs = Some(60.0);
+        opts.audio_bitrate = Some(320);
+        opts.audio_stream_count = Some(2);
+        let result = compute_target_video_bitrate_kbps(&opts);
+        assert!(result.is_err());
+    }
+
+    #[test]
+    fn compute_target_bitrate_returns_value() {
+        let mut opts = TranscodeOptions::default();
+        opts.rate_control_mode = Some(RateControlMode::TargetSize);
+        opts.target_size_mb = Some(50.0);
+        opts.duration_secs = Some(60.0);
+        opts.audio_bitrate = Some(128);
+        opts.audio_stream_count = Some(1);
+        let result = compute_target_video_bitrate_kbps(&opts).unwrap();
+        assert!(result >= 200);
     }
 }

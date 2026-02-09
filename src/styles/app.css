@@ -162,3 +162,46 @@ html::-webkit-scrollbar-thumb:hover {
 [data-slot="scroll-area-viewport"]::-webkit-scrollbar {
   display: none !important;
 }
+
+.window-drag-region {
+  -webkit-app-region: drag;
+}
+
+.window-no-drag-region {
+  -webkit-app-region: no-drag;
+}
+
+/* Compare slider handle focus ring. */
+[data-rcs="handle-container"]:focus-visible [data-compare-handle-button] {
+  outline: 2px solid color-mix(in srgb, var(--foreground) 35%, transparent);
+  outline-offset: 3px;
+}
+
+[data-compare-handle-root] {
+  position: relative;
+  height: 100%;
+  width: var(--compare-handle-size);
+  color: var(--foreground);
+  pointer-events: auto;
+}
+
+[data-compare-handle-root]::before,
+[data-compare-handle-root]::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  width: var(--compare-handle-line-width);
+  height: calc(50% - var(--compare-handle-gap));
+  transform: translateX(-50%);
+  background-color: color-mix(in srgb, var(--foreground) 70%, transparent);
+  box-shadow: 0 0 6px color-mix(in srgb, var(--foreground) 20%, transparent);
+  pointer-events: auto;
+}
+
+[data-compare-handle-root]::before {
+  top: 0;
+}
+
+[data-compare-handle-root]::after {
+  bottom: 0;
+}

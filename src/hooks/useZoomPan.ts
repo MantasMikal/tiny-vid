@@ -73,21 +73,18 @@ export function useZoomPan(options: UseZoomPanOptions = {}): UseZoomPanResult {
     [maxScale, minScale]
   );
 
-  const clampOffset = useCallback(
-    (nextOffset: { x: number; y: number }, nextScale: number) => {
-      const viewport = viewportRef.current;
-      if (!viewport) return nextOffset;
-      const rect = viewport.getBoundingClientRect();
-      if (!rect.width || !rect.height) return nextOffset;
-      const minX = rect.width * (1 - nextScale);
-      const minY = rect.height * (1 - nextScale);
-      return {
-        x: Math.min(0, Math.max(minX, nextOffset.x)),
-        y: Math.min(0, Math.max(minY, nextOffset.y)),
-      };
-    },
-    []
-  );
+  const clampOffset = useCallback((nextOffset: { x: number; y: number }, nextScale: number) => {
+    const viewport = viewportRef.current;
+    if (!viewport) return nextOffset;
+    const rect = viewport.getBoundingClientRect();
+    if (!rect.width || !rect.height) return nextOffset;
+    const minX = rect.width * (1 - nextScale);
+    const minY = rect.height * (1 - nextScale);
+    return {
+      x: Math.min(0, Math.max(minX, nextOffset.x)),
+      y: Math.min(0, Math.max(minY, nextOffset.y)),
+    };
+  }, []);
 
   const applyZoomAtPoint = useCallback(
     (
@@ -206,7 +203,8 @@ export function useZoomPan(options: UseZoomPanOptions = {}): UseZoomPanResult {
         x: (screenPoint.x - transform.offset.x) / transform.scale,
         y: (screenPoint.y - transform.offset.y) / transform.scale,
       };
-      const targetScale = direction === "in" ? transform.scale * zoomStep : transform.scale / zoomStep;
+      const targetScale =
+        direction === "in" ? transform.scale * zoomStep : transform.scale / zoomStep;
       applyZoomAtPoint(targetScale, screenPoint, anchorContent);
     },
     [applyZoomAtPoint, zoomStep]

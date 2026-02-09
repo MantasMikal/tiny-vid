@@ -5,6 +5,7 @@ import { useShallow } from "zustand/react/shallow";
 import { FadeIn } from "@/components/ui/animations";
 import { Button } from "@/components/ui/button";
 import { VideoMetadataDisplay } from "@/features/compression/components/video-metadata-display";
+import { computeTargetVideoBitrateKbps } from "@/features/compression/lib/target-size";
 import { selectIsActionsDisabled } from "@/features/compression/store/compression-selectors";
 import { useCompressionStore, WorkerState } from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
@@ -29,6 +30,19 @@ export function CompressionDetailsCard() {
   );
   const isTranscoding = workerState === WorkerState.Transcoding;
   const isGeneratingPreview = workerState === WorkerState.GeneratingPreview;
+  const isTargetSizeMode = cOptions?.rateControlMode === "targetSize";
+  const targetSizeStatus = isTargetSizeMode
+    ? computeTargetVideoBitrateKbps({
+        targetSizeMb: cOptions.targetSizeMb,
+        durationSecs: videoMetadata?.duration,
+        removeAudio: cOptions.removeAudio,
+        audioBitrateKbps: cOptions.audioBitrate,
+        audioStreamCount: videoMetadata?.audioStreamCount,
+        preserveAdditionalAudioStreams: cOptions.preserveAdditionalAudioStreams,
+      })
+    : null;
+  const isTargetSizeInvalid = Boolean(targetSizeStatus && !targetSizeStatus.ok);
+  const targetSizeEstimateMb = targetSizeStatus?.estimatedSizeMb;
 
   const handleCompressOrStop = () => {
     const { terminate, transcodeAndSave } = useCompressionStore.getState();
@@ -74,13 +88,20 @@ export function CompressionDetailsCard() {
             <VideoMetadataDisplay
               videoMetadata={videoMetadata}
               cOptions={cOptions}
-              estimate={estimate}
+              estimate={isTargetSizeMode ? null : estimate}
+              rateControlMode={cOptions.rateControlMode}
+              targetSizeMb={cOptions.targetSizeMb}
+              targetSizeEstimateMb={targetSizeEstimateMb}
             />
           )}
           <div className={cn("mt-2 flex w-full gap-2")}>
             <Button
               className={cn("grow")}
-              disabled={isGeneratingPreview || (isDisabled && !isTranscoding)}
+              disabled={
+                isGeneratingPreview ||
+                (isDisabled && !isTranscoding) ||
+                (!isTranscoding && isTargetSizeInvalid)
+              }
               onClick={handleCompressOrStop}
             >
               {isTranscoding && <SquareStop className={cn("size-4")} />}

@@ -12,10 +12,7 @@ import { InitErrorDisplay } from "@/features/compression/components/init-error-d
 import { VideoDropZone } from "@/features/compression/components/video-drop-zone";
 import { VideoPreview } from "@/features/compression/components/video-preview";
 import { VideoSettings } from "@/features/compression/components/video-settings";
-import {
-  useCompressionStore,
-  WorkerState,
-} from "@/features/compression/store/compression-store";
+import { useCompressionStore, WorkerState } from "@/features/compression/store/compression-store";
 import { cn } from "@/lib/utils";
 
 export default function Compressor() {

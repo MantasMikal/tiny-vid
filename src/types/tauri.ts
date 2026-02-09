@@ -71,6 +71,8 @@ export interface TranscodeOptions {
   preset?: string;
   tune?: string;
   outputFormat?: string;
+  rateControlMode?: "quality" | "targetSize";
+  targetSizeMb?: number;
   previewDuration?: number;
   durationSecs?: number;
   preserveAdditionalAudioStreams?: boolean;
