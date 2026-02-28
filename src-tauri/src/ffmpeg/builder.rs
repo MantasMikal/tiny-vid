@@ -686,6 +686,33 @@ pub fn format_args_for_display_multiline(args: &[String]) -> String {
     lines.join("\n")
 }
 
+/// Build args for extracting the first video frame as JPEG.
+///
+/// Maps app quality 0–100 → FFmpeg `-q:v` 31–2 (inverted: lower q:v = better quality).
+/// Applies scale filter when `scale < 1.0`.
+pub fn build_first_frame_args(
+    input_path: &str,
+    output_path: &str,
+    quality: u32,
+    scale: f64,
+) -> Vec<String> {
+    let mut args = ffmpeg_base_args();
+    args.extend(["-i".to_string(), input_path.to_string()]);
+    args.extend(["-vframes".to_string(), "1".to_string()]);
+
+    // Map quality 0–100 → q:v 31–2 (inverted: 0=worst=31, 100=best=2)
+    let qv = 31 - ((quality.min(100) as f64 / 100.0) * 29.0).round() as u32;
+    args.extend(["-q:v".to_string(), qv.to_string()]);
+
+    if scale < 1.0 {
+        let scale_filter = format!("scale=round(iw*{}/2)*2:-2", scale);
+        args.extend(["-vf".to_string(), scale_filter]);
+    }
+
+    args.extend(["-y".to_string(), output_path.to_string()]);
+    args
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -1333,5 +1360,40 @@ mod tests {
         assert!(commands.pass1.contains(&"-an".to_string()));
         assert!(commands.pass2.contains(&"-pass".to_string()));
         assert!(commands.pass2.contains(&"2".to_string()));
+    }
+
+    #[test]
+    fn first_frame_basic_args() {
+        let args = build_first_frame_args("/in.mp4", "/out.jpg", 75, 1.0);
+        assert!(args.contains(&"-i".to_string()));
+        assert!(args.contains(&"/in.mp4".to_string()));
+        assert!(args.contains(&"-vframes".to_string()));
+        assert!(args.contains(&"1".to_string()));
+        assert!(args.contains(&"-q:v".to_string()));
+        assert!(args.contains(&"-y".to_string()));
+        assert!(args.last() == Some(&"/out.jpg".to_string()));
+        // No scale filter at scale 1.0
+        assert!(!args.contains(&"-vf".to_string()));
+    }
+
+    #[test]
+    fn first_frame_quality_mapping() {
+        // quality 100 → q:v 2 (best)
+        let args = build_first_frame_args("/in.mp4", "/out.jpg", 100, 1.0);
+        let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
+        assert_eq!(args.get(qv_idx + 1).unwrap(), "2");
+
+        // quality 0 → q:v 31 (worst)
+        let args = build_first_frame_args("/in.mp4", "/out.jpg", 0, 1.0);
+        let qv_idx = args.iter().position(|a| a == "-q:v").unwrap();
+        assert_eq!(args.get(qv_idx + 1).unwrap(), "31");
+    }
+
+    #[test]
+    fn first_frame_scale_filter() {
+        let args = build_first_frame_args("/in.mp4", "/out.jpg", 75, 0.5);
+        assert!(args.contains(&"-vf".to_string()));
+        let vf_idx = args.iter().position(|a| a == "-vf").unwrap();
+        assert_eq!(args.get(vf_idx + 1).unwrap(), "scale=round(iw*0.5/2)*2:-2");
     }
 }

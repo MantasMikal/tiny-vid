@@ -29,6 +29,7 @@ export enum WorkerState {
   Idle = "idle",
   GeneratingPreview = "generating-preview",
   Transcoding = "transcoding",
+  ExtractingFrame = "extracting-frame",
 }
 
 export interface VideoPreview {
@@ -168,6 +169,7 @@ export interface CompressionState {
   selectPath: (path: string) => Promise<void>;
   browseAndSelectFile: () => Promise<void>;
   transcodeAndSave: () => Promise<void>;
+  extractFirstFrame: () => Promise<void>;
   clear: () => void;
   dismissError: () => void;
   generatePreview: (
@@ -403,6 +405,71 @@ export const useCompressionStore = create<CompressionState>((set, get) => ({
               extensions: [ext],
             },
           ],
+        });
+
+        if (!outputPath) {
+          await tryCatch(() => invoke("cleanup_temp_file", { path: tempPath }), "Cleanup Error");
+          return;
+        }
+
+        const moveResult = await tryCatch(
+          () =>
+            invoke("move_compressed_file", {
+              source: tempPath,
+              dest: outputPath,
+            }),
+          "Save Error"
+        );
+        if (!moveResult.ok) {
+          if (!moveResult.aborted) {
+            set({ error: moveResult.error });
+          }
+          await tryCatch(() => invoke("cleanup_temp_file", { path: tempPath }), "Cleanup Error");
+        }
+      },
+      "Save Error",
+      {
+        onFinally: () => {
+          set({ isSaving: false });
+        },
+      }
+    );
+  },
+
+  extractFirstFrame: async () => {
+    const { inputPath, compressionOptions } = get();
+    if (!inputPath || !compressionOptions) return;
+
+    set({ workerState: WorkerState.ExtractingFrame, error: null });
+    const extractResult = await tryCatch(
+      () =>
+        invoke<string>("extract_first_frame", {
+          inputPath,
+          quality: compressionOptions.quality,
+          scale: compressionOptions.scale,
+        }),
+      "Extract Frame Error"
+    );
+    if (!extractResult.ok) {
+      if (!extractResult.aborted) {
+        set({
+          workerState: WorkerState.Idle,
+          error: extractResult.error,
+        });
+      }
+      return;
+    }
+    const tempPath = extractResult.value;
+    set({ workerState: WorkerState.Idle });
+
+    set({ isSaving: true });
+    await tryCatch(
+      async () => {
+        const inputFilename = inputPath.split(/[/\\]/).pop() ?? "output";
+        const basename = inputFilename.replace(/\.[^.]+$/, "") || "output";
+        const outputPath = await save({
+          defaultPath: `${basename}-poster.jpg`,
+          filters: [{ name: "JPEG Image", extensions: ["jpg"] }],
         });
 
         if (!outputPath) {

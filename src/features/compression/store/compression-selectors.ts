@@ -7,4 +7,5 @@ export const selectIsActionsDisabled = (s: CompressionState): boolean =>
   !s.inputPath ||
   s.compressionOptions == null ||
   s.isSaving ||
-  s.workerState === WorkerState.Transcoding;
+  s.workerState === WorkerState.Transcoding ||
+  s.workerState === WorkerState.ExtractingFrame;

@@ -9,8 +9,9 @@ use crate::codec::BuildVariantResult;
 use crate::error::AppError;
 use crate::ffmpeg::ffprobe::{VideoMetadata as FfprobeVideoMetadata, get_video_metadata_impl};
 use crate::ffmpeg::{
-    TempFileManager, TranscodeOptions, build_ffmpeg_command, cleanup_transcode_temp,
-    format_args_for_display_multiline, path_to_string, set_transcode_temp, terminate_all_ffmpeg,
+    TempFileManager, TranscodeOptions, build_ffmpeg_command, build_first_frame_args,
+    cleanup_transcode_temp, format_args_for_display_multiline, path_to_string, set_transcode_temp,
+    terminate_all_ffmpeg,
 };
 use crate::preview::{PreviewWithEstimateResult, run_preview_core, run_preview_with_estimate_core};
 use tauri::{Emitter, Manager};
@@ -304,6 +305,34 @@ pub fn cleanup_temp_file(path: PathBuf) -> Result<(), AppError> {
     let _ = fs::remove_file(&path);
     cleanup_transcode_temp();
     Ok(())
+}
+
+#[tauri::command(rename_all = "camelCase")]
+pub async fn extract_first_frame(
+    input_path: PathBuf,
+    quality: u32,
+    scale: f64,
+) -> Result<String, AppError> {
+    log::info!(
+        target: "tiny_vid::commands",
+        "extract_first_frame: input={}",
+        input_path.display()
+    );
+
+    let temp = TempFileManager;
+    let output_path = temp.create("frame.jpg", None).map_err(AppError::from)?;
+    let output_str = path_to_string(&output_path);
+
+    let args = build_first_frame_args(&path_to_string(&input_path), &output_str, quality, scale);
+
+    crate::preview::run_ffmpeg_step(args, None, None, None).await?;
+
+    log::info!(
+        target: "tiny_vid::commands",
+        "extract_first_frame: complete -> {}",
+        output_str
+    );
+    Ok(output_str)
 }
 
 #[tauri::command(rename_all = "camelCase")]

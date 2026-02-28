@@ -1,9 +1,10 @@
-import { SquareStop, TrashIcon } from "lucide-react";
+import { ImageIcon, SquareStop, TrashIcon } from "lucide-react";
 import { AnimatePresence } from "motion/react";
 import { useShallow } from "zustand/react/shallow";
 
 import { FadeIn } from "@/components/ui/animations";
 import { Button } from "@/components/ui/button";
+import { Tooltip, TooltipContent, TooltipTrigger } from "@/components/ui/tooltip";
 import { VideoMetadataDisplay } from "@/features/compression/components/video-metadata-display";
 import { computeTargetVideoBitrateKbps } from "@/features/compression/lib/target-size";
 import { selectIsActionsDisabled } from "@/features/compression/store/compression-selectors";
@@ -30,6 +31,7 @@ export function CompressionDetailsCard() {
   );
   const isTranscoding = workerState === WorkerState.Transcoding;
   const isGeneratingPreview = workerState === WorkerState.GeneratingPreview;
+  const isExtractingFrame = workerState === WorkerState.ExtractingFrame;
   const isTargetSizeMode = cOptions?.rateControlMode === "targetSize";
   const targetSizeStatus = isTargetSizeMode
     ? computeTargetVideoBitrateKbps({
@@ -94,7 +96,7 @@ export function CompressionDetailsCard() {
               targetSizeEstimateMb={targetSizeEstimateMb}
             />
           )}
-          <div className={cn("mt-2 flex w-full gap-2")}>
+          <div className={cn("mt-2 flex w-full items-center gap-2")}>
             <Button
               className={cn("grow")}
               disabled={
@@ -118,6 +120,20 @@ export function CompressionDetailsCard() {
                 {isGeneratingPreview ? "Stop" : "Preview"}
               </Button>
             )}
+            <Tooltip>
+              <TooltipTrigger asChild>
+                <Button
+                  variant="secondary"
+                  disabled={isDisabled || isTranscoding || isGeneratingPreview || isExtractingFrame}
+                  onClick={() => {
+                    void useCompressionStore.getState().extractFirstFrame();
+                  }}
+                >
+                  <ImageIcon className={cn("size-4")} />
+                </Button>
+              </TooltipTrigger>
+              <TooltipContent side="top" sideOffset={6} collisionPadding={8}>Extract poster image</TooltipContent>
+            </Tooltip>
           </div>
         </FadeIn>
       )}

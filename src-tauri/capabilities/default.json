@@ -21,6 +21,7 @@
     "allow-move-compressed-file",
     "allow-cleanup-temp-file",
     "allow-get-build-variant",
-    "allow-get-pending-opened-files"
+    "allow-get-pending-opened-files",
+    "allow-extract-first-frame"
   ]
 }

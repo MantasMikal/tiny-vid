@@ -162,6 +162,7 @@ pub fn run() {
             commands::move_compressed_file,
             commands::cleanup_temp_file,
             commands::get_pending_opened_files,
+            commands::extract_first_frame,
         ])
         .build(tauri::generate_context!())
         .expect("error while building tauri application");

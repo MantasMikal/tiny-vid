@@ -1,0 +1,11 @@
+# Automatically generated - DO NOT EDIT!
+
+[[permission]]
+identifier = "allow-extract-first-frame"
+description = "Enables the extract_first_frame command without any pre-configured scope."
+commands.allow = ["extract_first_frame"]
+
+[[permission]]
+identifier = "deny-extract-first-frame"
+description = "Denies the extract_first_frame command without any pre-configured scope."
+commands.deny = ["extract_first_frame"]

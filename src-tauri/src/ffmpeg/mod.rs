@@ -9,9 +9,9 @@ mod temp;
 mod verify;
 
 pub use builder::{
-    build_extract_args, build_ffmpeg_command, build_two_pass_ffmpeg_commands,
-    format_args_for_display_multiline, is_preview_stream_copy_safe_codec,
-    supports_two_pass_codec,
+    build_extract_args, build_ffmpeg_command, build_first_frame_args,
+    build_two_pass_ffmpeg_commands, format_args_for_display_multiline,
+    is_preview_stream_copy_safe_codec, supports_two_pass_codec,
 };
 pub use error::{FfmpegErrorPayload, parse_ffmpeg_error};
 
